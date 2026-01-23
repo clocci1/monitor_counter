@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Score — Produttività</title>
+  <style>
+    body{font-family:system-ui,Segoe UI,Roboto,Arial;margin:0;background:#0b1220;color:#e8eefc;}
+    header{padding:14px 18px;border-bottom:1px solid rgba(255,255,255,.12);}
+    nav a{color:#e8eefc;text-decoration:none;margin-right:12px;font-weight:800;}
+    .wrap{max-width:1300px;margin:0 auto;padding:16px 18px;}
+    .card{background:#111a2e;border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:14px;margin:12px 0;}
+    table{width:100%;border-collapse:collapse;margin-top:10px;font-size:12px;}
+    th,td{padding:8px;border-bottom:1px solid rgba(255,255,255,.12);vertical-align:top;}
+    th{color:#a9b7d6;text-align:left;}
+    .hint{color:#a9b7d6;font-size:12px;}
+    .mono{font-variant-numeric:tabular-nums;}
+  </style>
+</head>
+<body>
+<header>
+  <nav>
+    <a href="home.html">Home</a>
+    <a href="charts.html">Charts</a>
+    <a href="score.html">Score</a>
+    <a href="quality.html">Quality</a>
+  </nav>
+</header>
+
+<div class="wrap">
+  <div class="card">
+    <div style="font-weight:900;">Score</div>
+    <div class="hint" id="status">Caricamento dataset…</div>
+  </div>
+
+  <div class="card">
+    <div style="font-weight:900;">Score per operatore (placeholder)</div>
+    <div id="scoreWrap"></div>
+  </div>
+</div>
+
+<script type="module">
+  import { state, loadSnapshot, computeAllDayKeys, minToHHMM, SHIFT_TARGET_MIN } from "./app-core.js";
+
+  function renderScore(){
+    const wrap = document.getElementById("scoreWrap");
+    wrap.innerHTML = "";
+    const ops = Array.from(state.derivedIntervalsByOpDay.keys()).sort();
+    const days = computeAllDayKeys();
+
+    if(!ops.length || !days.length){
+      wrap.innerHTML = `<div class="hint">Nessun dato.</div>`;
+      return;
+    }
+
+    // Placeholder: somma minuti produttivi e confronta con target teorico giorni*8h
+    const table=document.createElement("table");
+    table.innerHTML = `<thead><tr>
+      <th>Operatore</th><th>Giorni</th><th>Target</th><th>Prod (PI+WT)</th><th>Pausa</th><th>Indiretta</th><th>% Prod su Target</th>
+    </tr></thead><tbody></tbody>`;
+    const tb=table.querySelector("tbody");
+
+    for(const op of ops){
+      const dm = state.derivedIntervalsByOpDay.get(op);
+      let dayCount=0, prod=0, pause=0, indirect=0;
+      for(const [dk, list] of dm.entries()){
+        dayCount++;
+        for(const it of list){
+          const m=Number(it.minutes||0);
+          if(it.category==="PAUSA") pause+=m;
+          else if(it.category==="INDIRETTA") indirect+=m;
+          else prod+=m;
+        }
+      }
+      const target = dayCount*SHIFT_TARGET_MIN;
+      const pct = target>0 ? Math.round((prod/target)*100) : 0;
+
+      const tr=document.createElement("tr");
+      tr.innerHTML = `
+        <td>${op}</td>
+        <td>${dayCount}</td>
+        <td class="mono">${minToHHMM(target)}</td>
+        <td class="mono">${minToHHMM(prod)}</td>
+        <td class="mono">${minToHHMM(pause)}</td>
+        <td class="mono">${minToHHMM(indirect)}</td>
+        <td>${pct}%</td>
+      `;
+      tb.appendChild(tr);
+    }
+
+    wrap.appendChild(table);
+  }
+
+  (async ()=>{
+    const r=await loadSnapshot();
+    if(!r.ok){
+      document.getElementById("status").textContent="Nessun dataset salvato. Vai in Home e importa.";
+      return;
+    }
+    document.getElementById("status").textContent="Dataset caricato (da cache).";
+    renderScore();
+  })();
+</script>
+</body>
+</html>
