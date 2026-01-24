@@ -1,0 +1,1148 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Overview — Produttività</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+
+  <style>
+    :root{
+      --bg:#0b1220;
+      --card:#111a2e;
+      --border:rgba(255,255,255,.12);
+      --muted:#a9b7d6;
+      --text:#e8eefc;
+      --btn:#6ea8fe;
+      --bad:#ff6b6b;
+      --ok:#76ff7a;
+      --chip:rgba(255,255,255,.06);
+    }
+    body{font-family:system-ui,Segoe UI,Roboto,Arial;margin:0;background:var(--bg);color:var(--text);}
+    header{padding:14px 18px;border-bottom:1px solid var(--border);}
+    nav a{color:var(--text);text-decoration:none;margin-right:12px;font-weight:800;}
+
+    .wrap{max-width:1600px;margin:0 auto;padding:16px 18px;}
+    .layout{display:grid;grid-template-columns:1fr 380px;gap:12px;}
+    @media(max-width:1100px){.layout{grid-template-columns:1fr;}}
+
+    .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;}
+    .hint{color:var(--muted);font-size:12px;}
+    .bad{color:var(--bad);}
+    .ok{color:var(--ok);}
+    .mono{font-variant-numeric:tabular-nums;}
+    button,input,select,textarea{border-radius:10px;border:1px solid var(--border);background:rgba(255,255,255,.06);color:var(--text);padding:10px;}
+    button{background:var(--btn);color:var(--bg);border:0;font-weight:900;cursor:pointer;}
+    button.secondary{background:rgba(255,255,255,.10);color:var(--text);border:1px solid var(--border);}
+    button.small{padding:6px 8px;font-size:12px;border-radius:8px;}
+
+    table{width:100%;border-collapse:collapse;margin-top:10px;font-size:12px;}
+    th,td{padding:8px;border-bottom:1px solid var(--border);vertical-align:top;}
+    th{color:var(--muted);text-align:left;font-weight:800;}
+
+    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;}
+    .col{display:flex;flex-direction:column;gap:6px;min-width:240px;}
+    .chip{display:inline-flex;gap:8px;align-items:center;border:1px solid var(--border);border-radius:999px;padding:6px 10px;background:var(--chip);}
+    .chip strong{font-weight:900;}
+
+    /* Visual 30-min bar */
+    .barWrap{overflow:auto;border:1px solid var(--border);border-radius:12px;background:rgba(255,255,255,.03);}
+    .bar{
+      display:flex;
+      min-width:1200px;
+      height:46px;
+    }
+    .cell{
+      flex:0 0 auto;
+      width:48px;
+      border-right:1px solid rgba(255,255,255,.08);
+      display:flex;align-items:center;justify-content:center;
+      font-size:11px;
+      cursor:pointer;
+      user-select:none;
+    }
+    .cell:last-child{border-right:0;}
+    .legend{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;}
+    .leg{display:flex;gap:6px;align-items:center;}
+    .sw{width:14px;height:14px;border-radius:4px;border:1px solid var(--border);}
+
+    /* Modal */
+    .modalBg{
+      position:fixed; inset:0;
+      background:rgba(0,0,0,.55);
+      display:none;
+      align-items:center; justify-content:center;
+      padding:18px;
+      z-index:999;
+    }
+    .modal{
+      width:min(760px, 100%);
+      background:var(--card);
+      border:1px solid var(--border);
+      border-radius:14px;
+      padding:14px;
+    }
+    .modalHead{display:flex;justify-content:space-between;align-items:center;gap:10px;}
+    .modalHead strong{font-size:14px;}
+    textarea{min-height:80px;resize:vertical;}
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+    @media(max-width:720px){.grid2{grid-template-columns:1fr;}}
+  </style>
+</head>
+
+<body>
+<header>
+  <nav>
+    <a href="index.html">Home</a>
+    <a href="overview.html">Overview</a>
+    <a href="charts.html">Charts</a>
+    <a href="score.html">Score</a>
+  </nav>
+</header>
+
+<div class="wrap">
+  <div class="layout">
+
+    <!-- MAIN -->
+    <div>
+      <div class="card">
+        <div class="row" style="justify-content:space-between;align-items:center;">
+          <div>
+            <div style="font-weight:900;">Overview</div>
+            <div class="hint" id="status">—</div>
+            <div class="hint bad" id="err"></div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="secondary" id="recalcBtn" type="button">Ricalcola</button>
+            <button class="secondary" id="supportBtn" type="button">Supporti</button>
+            <button class="secondary" id="resetLocalBtn" type="button">Reset Supporti/Indirette</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="row">
+          <div class="col" style="min-width:280px;">
+            <label class="hint">Operatore</label>
+            <select id="opSel"></select>
+          </div>
+          <div class="col" style="min-width:240px;">
+            <label class="hint">Giorno</label>
+            <select id="daySel"></select>
+          </div>
+          <div class="col" style="min-width:240px;">
+            <label class="hint">Turno (override opzionale)</label>
+            <select id="shiftOverride">
+              <option value="AUTO" selected>AUTO</option>
+              <option value="AM">AM (05–13)</option>
+              <option value="C">C (08–16)</option>
+              <option value="PM">PM (14–22)</option>
+            </select>
+          </div>
+          <div class="col" style="min-width:240px;">
+            <label class="hint">Vista</label>
+            <select id="viewSel">
+              <option value="summary" selected>KPI + Barra + Timeline</option>
+              <option value="timeline">Solo Timeline</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="row" style="margin-top:12px;">
+          <div class="chip"><span class="hint">Turno</span> <strong id="kShift">—</strong></div>
+          <div class="chip"><span class="hint">Tempo turno</span> <strong id="kShiftMin">—</strong></div>
+          <div class="chip"><span class="hint">Lavoro</span> <strong id="kWork">—</strong></div>
+          <div class="chip"><span class="hint">Pausa</span> <strong id="kPause">—</strong></div>
+          <div class="chip"><span class="hint">Indiretta</span> <strong id="kInd">—</strong></div>
+          <div class="chip"><span class="hint">Cambio task</span> <strong id="kChange">—</strong></div>
+        </div>
+
+        <div style="margin-top:12px;" id="kpiTableWrap"></div>
+      </div>
+
+      <div class="card" id="barCard">
+        <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-end;flex-wrap:wrap;">
+          <div>
+            <div style="font-weight:900;">Sequenza visiva (slot 30 minuti)</div>
+            <div class="hint">Clicca su una cella “PAUSA” per registrare un’attività indiretta (aggiorna KPI e timeline).</div>
+          </div>
+          <div class="hint mono" id="barRange">—</div>
+        </div>
+
+        <div class="barWrap" style="margin-top:10px;">
+          <div id="bar" class="bar"></div>
+        </div>
+
+        <div class="legend">
+          <div class="leg"><span class="sw" style="background:#1f6feb;"></span><span class="hint">PI Pick</span></div>
+          <div class="leg"><span class="sw" style="background:#2ea043;"></span><span class="hint">PI Bulk</span></div>
+          <div class="leg"><span class="sw" style="background:#a371f7;"></span><span class="hint">P2P</span></div>
+          <div class="leg"><span class="sw" style="background:#ffa657;"></span><span class="hint">Clean PICK</span></div>
+          <div class="leg"><span class="sw" style="background:#8b949e;"></span><span class="hint">WT Other</span></div>
+          <div class="leg"><span class="sw" style="background:#ff6b6b;"></span><span class="hint">PAUSA</span></div>
+          <div class="leg"><span class="sw" style="background:#d29922;"></span><span class="hint">INDIRETTA</span></div>
+        </div>
+      </div>
+
+      <div class="card" id="timelineCard">
+        <div style="font-weight:900;">Timeline (intervalli consecutivi)</div>
+        <div class="hint">Durata = differenza tra timestamp consecutivi, con pausa se gap ≥ 30 minuti. (Clippata al turno selezionato.)</div>
+        <div id="timelineWrap"></div>
+      </div>
+    </div>
+
+    <!-- SIDEBAR -->
+    <aside>
+      <div class="card">
+        <div style="font-weight:900;">Dataset presenti</div>
+        <div class="hint" style="margin-top:6px;">Spunta PI/WT per includere quel giorno nell’analisi.</div>
+
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
+          <button class="secondary small" id="clearSelBtn" type="button">Reset</button>
+          <button class="secondary small" id="sel7Btn" type="button">Ultimi 7</button>
+          <button class="secondary small" id="selAllBtn" type="button">Tutti</button>
+        </div>
+
+        <div class="hint" id="selSummary" style="margin-top:8px;"></div>
+        <div id="dsWrap"></div>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<!-- MODAL: Indiretta -->
+<div class="modalBg" id="indModalBg">
+  <div class="modal">
+    <div class="modalHead">
+      <strong>Registra attività indiretta</strong>
+      <button class="secondary small" id="indCloseBtn" type="button">Chiudi</button>
+    </div>
+    <div class="hint" id="indMeta" style="margin-top:6px;">—</div>
+
+    <div class="grid2" style="margin-top:10px;">
+      <div class="col" style="min-width:unset;">
+        <label class="hint">Start (HH:MM)</label>
+        <input id="indStart" placeholder="es: 10:00">
+      </div>
+      <div class="col" style="min-width:unset;">
+        <label class="hint">End (HH:MM)</label>
+        <input id="indEnd" placeholder="es: 10:30">
+      </div>
+    </div>
+
+    <div style="margin-top:10px;">
+      <label class="hint">Descrizione</label>
+      <textarea id="indDesc" placeholder="es: Indiretta - meeting / quality area / training"></textarea>
+    </div>
+
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px;flex-wrap:wrap;">
+      <button class="secondary" id="indDeleteBtn" type="button">Rimuovi indirette del giorno (operatore)</button>
+      <button id="indSaveBtn" type="button">Salva</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Supporti -->
+<div class="modalBg" id="supModalBg">
+  <div class="modal">
+    <div class="modalHead">
+      <strong>Supporti (account SAP → operatore reale)</strong>
+      <button class="secondary small" id="supCloseBtn" type="button">Chiudi</button>
+    </div>
+    <div class="hint" style="margin-top:6px;">
+      Inserisci la fascia oraria in cui l’account (src) è stato usato da un altro operatore (real). La regola si applica al ricalcolo.
+    </div>
+
+    <div class="grid2" style="margin-top:10px;">
+      <div class="col" style="min-width:unset;">
+        <label class="hint">Account (src)</label>
+        <input id="supSrc" placeholder="es: S.ANASS">
+      </div>
+      <div class="col" style="min-width:unset;">
+        <label class="hint">Operatore reale (real)</label>
+        <input id="supReal" placeholder="es: A.BEJAN">
+      </div>
+    </div>
+
+    <div class="grid2" style="margin-top:10px;">
+      <div class="col" style="min-width:unset;">
+        <label class="hint">Giorno (YYYY-MM-DD)</label>
+        <input id="supDay" placeholder="es: 2026-01-21">
+      </div>
+      <div class="col" style="min-width:unset;">
+        <label class="hint">Start (HH:MM) / End (HH:MM)</label>
+        <div style="display:flex;gap:8px;">
+          <input id="supStart" placeholder="08:00">
+          <input id="supEnd" placeholder="11:00">
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px;flex-wrap:wrap;">
+      <button class="secondary" id="supClearBtn" type="button">Svuota supporti</button>
+      <button id="supAddBtn" type="button">Aggiungi regola</button>
+    </div>
+
+    <div style="margin-top:10px;">
+      <div style="font-weight:900;">Regole salvate</div>
+      <div id="supList" class="hint"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+/** =======================
+ *  CONFIG SUPABASE
+ * ======================= */
+const SUPABASE_URL = "https://jslonbsvrtltfnrpneqw.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_OZZhrdcM8Zh3eXcqTdcljw_ZY4faGvl";
+const EVENTS_OPERATOR_COL = "operator";
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+const PAUSE_THRESHOLD_MIN = 30;
+const SHIFT_DEFS = {
+  AM: { start:"05:00", end:"13:00" },
+  C:  { start:"08:00", end:"16:00" },
+  PM: { start:"14:00", end:"22:00" }
+};
+const SHIFT_TARGET_MIN = 480;
+
+/** =======================
+ *  STORAGE KEYS
+ * ======================= */
+const SEL_KEY = "selectedDays";
+const SUPPORT_KEY = "supportRules_v1";   // { srcOp: [{realOp,startISO,endISO}] }
+const INDIRECT_KEY = "indirectRules_v1"; // { op: { dayKey: [{startISO,endISO,desc}] } }
+const SHIFT_OV_KEY = "shiftOverride_v1"; // { op: { dayKey: "AUTO|AM|C|PM" } }
+
+/** =======================
+ *  DOM helpers
+ * ======================= */
+const $ = (id)=>document.getElementById(id);
+function setStatus(t){ $("status").textContent = t; }
+function setErr(t){ $("err").textContent = t||""; }
+function p2(n){ return String(n).padStart(2,'0'); }
+function fmtDDMMYYYY(dayKey){
+  const d = new Date(dayKey + "T00:00:00");
+  if(isNaN(d.getTime())) return dayKey;
+  return `${p2(d.getDate())}-${p2(d.getMonth()+1)}-${d.getFullYear()}`;
+}
+function fmtDT(iso){
+  const d=new Date(iso);
+  if(isNaN(d.getTime())) return iso||'';
+  return `${p2(d.getDate())}-${p2(d.getMonth()+1)}-${d.getFullYear()} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
+}
+function minToHHMM(min){
+  const total = Math.max(0, Math.round(Number(min||0)));
+  const h = Math.floor(total/60);
+  const m = total%60;
+  return `${h}:${String(m).padStart(2,'0')}`;
+}
+function minutesBetween(a,b){ return (b-a)/60000; }
+function clampDate(d, a, b){
+  const t = d.getTime();
+  return new Date(Math.min(Math.max(t, a.getTime()), b.getTime()));
+}
+function parseHHMM(s){
+  const m = String(s||"").trim().match(/^(\d{1,2}):(\d{2})$/);
+  if(!m) return null;
+  const hh = +m[1], mm = +m[2];
+  if(hh<0||hh>23||mm<0||mm>59) return null;
+  return { hh, mm };
+}
+function dayKeyToDate(dayKey){
+  const d = new Date(dayKey + "T00:00:00");
+  return isNaN(d.getTime()) ? null : d;
+}
+function dayTimeToDate(dayKey, hhmm){
+  const base = dayKeyToDate(dayKey);
+  const p = parseHHMM(hhmm);
+  if(!base || !p) return null;
+  return new Date(base.getFullYear(), base.getMonth(), base.getDate(), p.hh, p.mm, 0);
+}
+function opSelect(){
+  return EVENTS_OPERATOR_COL.includes(' ') ? `"${EVENTS_OPERATOR_COL}"` : EVENTS_OPERATOR_COL;
+}
+
+/** =======================
+ *  localStorage load/save
+ * ======================= */
+function getJSON(key, fallback){
+  try{ return JSON.parse(localStorage.getItem(key)||"") ?? fallback; }
+  catch{ return fallback; }
+}
+function setJSON(key, v){ localStorage.setItem(key, JSON.stringify(v)); }
+
+function getSelection(){ return getJSON(SEL_KEY, {}); }
+function setSelection(v){ setJSON(SEL_KEY, v||{}); }
+
+function getSupport(){ return getJSON(SUPPORT_KEY, {}); }
+function setSupport(v){ setJSON(SUPPORT_KEY, v||{}); }
+
+function getIndirect(){ return getJSON(INDIRECT_KEY, {}); }
+function setIndirect(v){ setJSON(INDIRECT_KEY, v||{}); }
+
+function getShiftOv(){ return getJSON(SHIFT_OV_KEY, {}); }
+function setShiftOv(v){ setJSON(SHIFT_OV_KEY, v||{}); }
+
+/** =======================
+ *  Selection utils
+ * ======================= */
+function selectionToDayKeys(sel){
+  return Object.keys(sel||{}).filter(dk => !!sel[dk] && (sel[dk].pi || sel[dk].wt)).sort();
+}
+function updateSelSummary(){
+  const sel=getSelection();
+  const keys=selectionToDayKeys(sel);
+  if(!keys.length){ $("selSummary").textContent = "Nessun giorno selezionato."; return; }
+  $("selSummary").textContent = `Selezionati: ${keys.length} giorni (${fmtDDMMYYYY(keys[0])} → ${fmtDDMMYYYY(keys[keys.length-1])})`;
+}
+
+/** =======================
+ *  Sidebar datasets
+ * ======================= */
+async function loadDatasets(){
+  const { data, error } = await sb
+    .from('datasets')
+    .select('day_key, created_at, pi_rows, wt_rows')
+    .order('day_key', { ascending:false });
+  if(error) throw new Error(error.message);
+
+  const wrap = $("dsWrap");
+  const sel = getSelection();
+
+  if(!data || !data.length){
+    wrap.innerHTML = `<div class="hint">Nessun dataset.</div>`;
+    return;
+  }
+
+  const rows = data.map(d=>{
+    const dk = d.day_key;
+    const piOk = (d.pi_rows||0) > 0;
+    const wtOk = (d.wt_rows||0) > 0;
+    const s = sel[dk] || { pi:false, wt:false };
+    return `
+      <tr>
+        <td class="mono">${fmtDDMMYYYY(dk)}</td>
+        <td class="mono">${fmtDT(d.created_at).slice(0,16)}</td>
+        <td style="text-align:center;">
+          <input type="checkbox" data-day="${dk}" data-kind="pi" ${s.pi?'checked':''} ${piOk?'':'disabled'} />
+        </td>
+        <td style="text-align:center;">
+          <input type="checkbox" data-day="${dk}" data-kind="wt" ${s.wt?'checked':''} ${wtOk?'':'disabled'} />
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  wrap.innerHTML = `
+    <table>
+      <thead>
+        <tr><th>Date</th><th>Load Day</th><th>PI</th><th>WT</th></tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+
+  wrap.querySelectorAll('input[type="checkbox"]').forEach(ch =>{
+    ch.addEventListener('change', ()=>{
+      const dk = ch.getAttribute('data-day');
+      const kind = ch.getAttribute('data-kind');
+      const sel = getSelection();
+      sel[dk] = sel[dk] || { pi:false, wt:false };
+      sel[dk][kind] = ch.checked;
+      if(!sel[dk].pi && !sel[dk].wt) delete sel[dk];
+      setSelection(sel);
+      updateSelSummary();
+      bootDataAndRender().catch(e=>{ console.error(e); setErr(e.message); });
+    });
+  });
+}
+
+/** =======================
+ *  Support mapping
+ * ======================= */
+function mapEffectiveOperator(srcOp, ts){
+  const sup = getSupport();
+  const rules = (sup[srcOp] || []).slice().sort((a,b)=>String(a.startISO).localeCompare(String(b.startISO)));
+  for(const r of rules){
+    const a = new Date(r.startISO), b = new Date(r.endISO);
+    if(ts >= a && ts < b) return r.realOp;
+  }
+  return srcOp;
+}
+
+/** =======================
+ *  Shift inference / window
+ * ======================= */
+function shiftWindow(dayKey, code){
+  const base = dayKeyToDate(dayKey);
+  if(!base) return null;
+  const def = SHIFT_DEFS[code];
+  if(!def) return null;
+  const [sh, sm] = def.start.split(":").map(Number);
+  const [eh, em] = def.end.split(":").map(Number);
+  const start = new Date(base.getFullYear(), base.getMonth(), base.getDate(), sh, sm, 0);
+  const end   = new Date(base.getFullYear(), base.getMonth(), base.getDate(), eh, em, 0);
+  return { start, end };
+}
+
+function inferShift(op, dayKey, events){
+  const ov = getShiftOv();
+  const forced = ov?.[op]?.[dayKey] || "AUTO";
+  if(forced !== "AUTO"){
+    const w = shiftWindow(dayKey, forced);
+    return { code: forced, start:w.start, end:w.end, inferred:false };
+  }
+  // infer by first timestamp
+  const first = events[0]?.ts;
+  if(!first){
+    const w = shiftWindow(dayKey, "C");
+    return { code:"C", start:w.start, end:w.end, inferred:true };
+  }
+  const hm = first.getHours()*60 + first.getMinutes();
+  let code = "C";
+  if(hm < 7*60) code="AM";
+  else if(hm < 12*60) code="C";
+  else code="PM";
+  const w = shiftWindow(dayKey, code);
+  return { code, start:w.start, end:w.end, inferred:true };
+}
+
+/** =======================
+ *  Load events from Supabase for selection
+ * ======================= */
+async function loadEventsForSelection(){
+  const sel = getSelection();
+  const dayKeys = selectionToDayKeys(sel);
+  if(!dayKeys.length) return [];
+
+  const { data, error } = await sb
+    .from('events')
+    .select(`day_key, ts, kind, category, self_count, wo_id, ${opSelect()}`)
+    .in('day_key', dayKeys)
+    .order('ts', { ascending:true });
+  if(error) throw new Error(error.message);
+
+  // day-by-day filter PI/WT
+  return (data||[]).filter(e=>{
+    const s = sel[e.day_key];
+    if(!s) return false;
+    if(e.kind==='PI') return !!s.pi;
+    if(e.kind==='WT') return !!s.wt;
+    return false;
+  });
+}
+
+/** =======================
+ *  Build per op/day normalized model
+ * ======================= */
+function buildOpDay(events){
+  // output: { [op]: { [dayKey]: [{ts:Date, kind, category, self_count, wo_id}] } }
+  const out = {};
+  for(const r of events){
+    const srcOp = r[EVENTS_OPERATOR_COL];
+    const ts = new Date(r.ts);
+    if(isNaN(ts.getTime())) continue;
+
+    const effOp = mapEffectiveOperator(srcOp, ts);
+
+    out[effOp] = out[effOp] || {};
+    out[effOp][r.day_key] = out[effOp][r.day_key] || [];
+    out[effOp][r.day_key].push({
+      ts,
+      kind: r.kind,
+      category: r.category,
+      self_count: !!r.self_count,
+      wo_id: r.wo_id || ""
+    });
+  }
+  // sort lists
+  for(const op of Object.keys(out)){
+    for(const dk of Object.keys(out[op])){
+      out[op][dk].sort((a,b)=>a.ts-b.ts);
+    }
+  }
+  return out;
+}
+
+/** =======================
+ *  Indirect rules apply
+ * ======================= */
+function getIndirectFor(op, dayKey){
+  const ind = getIndirect();
+  const arr = ind?.[op]?.[dayKey] || [];
+  return arr.map(x=>({
+    start: new Date(x.startISO),
+    end: new Date(x.endISO),
+    desc: x.desc || ""
+  })).filter(x=>x.start instanceof Date && x.end instanceof Date && x.end>x.start);
+}
+
+/** =======================
+ *  Build intervals (timeline) inside shift
+ * ======================= */
+function buildIntervals(op, dayKey, evList){
+  if(!evList || evList.length < 2) return { shift:null, intervals:[], events:evList||[] };
+
+  const shift = inferShift(op, dayKey, evList);
+  const aS = shift.start, aE = shift.end;
+
+  const intervals = [];
+  let changeTask = 0;
+  let prevCat = null;
+
+  for(let i=1;i<evList.length;i++){
+    const prev = evList[i-1];
+    const curr = evList[i];
+    const rawGap = minutesBetween(prev.ts, curr.ts);
+    if(!(rawGap>0)) continue;
+
+    // clip to shift
+    const s0 = clampDate(prev.ts, aS, aE);
+    const e0 = clampDate(curr.ts, aS, aE);
+    const gap = minutesBetween(s0, e0);
+    if(!(gap>0)) continue;
+
+    let cat = curr.category;
+    let notes = "";
+    let woCount = 0;
+    let piBins = 0;
+    let selfC = 0;
+
+    if(gap >= PAUSE_THRESHOLD_MIN){
+      cat = "PAUSA";
+      notes = `Gap ${Math.round(rawGap)} min`;
+    }else{
+      if(curr.kind === "PI"){
+        piBins = 1;
+        if(curr.self_count) selfC = 1;
+        notes = curr.self_count ? "Self Count" : "";
+      }else{
+        if(curr.wo_id) { notes = `WO=${curr.wo_id}`; woCount = 1; }
+      }
+    }
+
+    if(prevCat && cat !== prevCat) changeTask++;
+    prevCat = cat;
+
+    intervals.push({
+      start: s0, end: e0,
+      minutes: gap,
+      category: cat,
+      notes,
+      wo_id: curr.wo_id || "",
+      woCount,
+      piBins,
+      selfC
+    });
+  }
+
+  // Apply indirect rules on top of PAUSA (split)
+  const indRules = getIndirectFor(op, dayKey);
+  const out = [];
+
+  for(const it of intervals){
+    if(it.category !== "PAUSA" || !indRules.length){
+      out.push(it); continue;
+    }
+    // split pause by indirect overlaps
+    let remaining = [{ start: it.start, end: it.end }];
+    for(const rule of indRules){
+      const next = [];
+      for(const seg of remaining){
+        const a = Math.max(seg.start.getTime(), rule.start.getTime());
+        const b = Math.min(seg.end.getTime(), rule.end.getTime());
+        if(b<=a){ next.push(seg); continue; }
+
+        if(seg.start.getTime() < a){
+          out.push({ ...it, start: seg.start, end:new Date(a), minutes: minutesBetween(seg.start, new Date(a)), category:"PAUSA" });
+        }
+        out.push({
+          ...it,
+          start: new Date(a),
+          end: new Date(b),
+          minutes: minutesBetween(new Date(a), new Date(b)),
+          category: "INDIRETTA",
+          notes: rule.desc ? `Indiretta: ${rule.desc}` : "Indiretta"
+        });
+        if(b < seg.end.getTime()){
+          next.push({ start:new Date(b), end: seg.end });
+        }
+      }
+      remaining = next;
+      if(!remaining.length) break;
+    }
+    for(const seg of remaining){
+      out.push({ ...it, start: seg.start, end: seg.end, minutes: minutesBetween(seg.start, seg.end), category:"PAUSA" });
+    }
+  }
+
+  out.sort((x,y)=>x.start-y.start);
+
+  return { shift, intervals: out, events: evList, changeTask };
+}
+
+/** =======================
+ *  Aggregation for KPI
+ * ======================= */
+function sumByCategory(intervals){
+  const m = new Map();
+  for(const it of intervals){
+    const k = it.category;
+    m.set(k, (m.get(k)||0) + it.minutes);
+  }
+  return m;
+}
+function uniqueWO(events){
+  const s = new Set();
+  for(const e of events){
+    if(e.kind==="WT" && e.wo_id) s.add(e.wo_id);
+  }
+  return s.size;
+}
+function countPI(events){
+  let pick=0, bulk=0, self=0;
+  for(const e of events){
+    if(e.kind!=="PI") continue;
+    if(e.category==="PI Pick") pick++;
+    if(e.category==="PI Bulk") bulk++;
+    if(e.self_count) self++;
+  }
+  return { pick, bulk, self, total: pick+bulk };
+}
+
+/** =======================
+ *  Visual bar (05–22, slot 30')
+ * ======================= */
+function colorFor(cat){
+  switch(cat){
+    case "PI Pick": return "#1f6feb";
+    case "PI Bulk": return "#2ea043";
+    case "P2P": return "#a371f7";
+    case "Clean PICK": return "#ffa657";
+    case "WT Other": return "#8b949e";
+    case "INDIRETTA": return "#d29922";
+    case "PAUSA": return "#ff6b6b";
+    default: return "rgba(255,255,255,.08)";
+  }
+}
+function buildSlots(shift){
+  // slots from 05:00 to 22:00 always for bar (user request), but we display shift overlay.
+  const base = dayKeyToDate(currentDayKey());
+  const s = new Date(base.getFullYear(), base.getMonth(), base.getDate(), 5, 0, 0);
+  const e = new Date(base.getFullYear(), base.getMonth(), base.getDate(), 22, 0, 0);
+  const slots = [];
+  for(let t = s.getTime(); t < e.getTime(); t += 30*60000){
+    slots.push({ start:new Date(t), end:new Date(t+30*60000) });
+  }
+  return { barStart:s, barEnd:e, slots };
+}
+function dominantCategory(intervals, slot){
+  // sum overlap minutes by category
+  const sums = new Map();
+  for(const it of intervals){
+    const a = Math.max(it.start.getTime(), slot.start.getTime());
+    const b = Math.min(it.end.getTime(), slot.end.getTime());
+    if(b<=a) continue;
+    const min = (b-a)/60000;
+    sums.set(it.category, (sums.get(it.category)||0) + min);
+  }
+  if(!sums.size) return "";
+  let bestK="", bestV=-1;
+  for(const [k,v] of sums.entries()){
+    if(v>bestV){ bestV=v; bestK=k; }
+  }
+  return bestK;
+}
+
+/** =======================
+ *  UI state
+ * ======================= */
+let MODEL = null; // { opDay, ops[], dayKeys[] }
+function currentOp(){ return $("opSel").value || ""; }
+function currentDayKey(){ return $("daySel").value || ""; }
+
+/** =======================
+ *  Render functions
+ * ======================= */
+function renderOperatorOptions(ops){
+  const sel = $("opSel");
+  sel.innerHTML = ops.map(op=>`<option value="${op}">${op}</option>`).join("");
+}
+function renderDayOptions(dayKeys){
+  const sel = $("daySel");
+  sel.innerHTML = dayKeys.map(dk=>`<option value="${dk}">${fmtDDMMYYYY(dk)} (${dk})</option>`).join("");
+}
+function renderShiftOverride(op, dayKey){
+  const ov = getShiftOv();
+  const val = ov?.[op]?.[dayKey] || "AUTO";
+  $("shiftOverride").value = val;
+}
+
+function renderKpi(op, dayKey, built){
+  const shift = built.shift;
+  if(!shift){
+    $("kShift").textContent="—";
+    $("kShiftMin").textContent="—";
+    $("kWork").textContent="—";
+    $("kPause").textContent="—";
+    $("kInd").textContent="—";
+    $("kChange").textContent="—";
+    $("kpiTableWrap").innerHTML = `<div class="hint">Dati insufficienti (servono almeno 2 eventi nel giorno).</div>`;
+    return;
+  }
+
+  const sum = sumByCategory(built.intervals);
+  const pause = (sum.get("PAUSA")||0);
+  const ind = (sum.get("INDIRETTA")||0);
+  const work = Array.from(sum.entries())
+    .filter(([k])=>k!=="PAUSA")
+    .reduce((acc,[,v])=>acc+v,0);
+
+  const shiftMin = minutesBetween(shift.start, shift.end);
+  const pct = (m)=> shiftMin>0 ? Math.round((m/shiftMin)*100) : 0;
+
+  const pi = countPI(built.events);
+  const wo = uniqueWO(built.events);
+
+  $("kShift").textContent = `${shift.code}${shift.inferred ? "" : " (manuale)"}`;
+  $("kShiftMin").textContent = `${minToHHMM(shiftMin)} (target ${minToHHMM(SHIFT_TARGET_MIN)})`;
+  $("kWork").textContent = `${minToHHMM(work)} (${pct(work)}%)`;
+  $("kPause").textContent = `${minToHHMM(pause)} (${pct(pause)}%)`;
+  $("kInd").textContent = `${minToHHMM(ind)} (${pct(ind)}%)`;
+  $("kChange").textContent = String(built.changeTask||0);
+
+  const rows = [
+    ["PI Pick", minToHHMM(sum.get("PI Pick")||0), `${pct(sum.get("PI Pick")||0)}%`, `Bin: ${pi.pick}`],
+    ["PI Bulk", minToHHMM(sum.get("PI Bulk")||0), `${pct(sum.get("PI Bulk")||0)}%`, `Bin: ${pi.bulk}`],
+    ["P2P", minToHHMM(sum.get("P2P")||0), `${pct(sum.get("P2P")||0)}%`, `WO uniche: ${wo}`],
+    ["Clean PICK", minToHHMM(sum.get("Clean PICK")||0), `${pct(sum.get("Clean PICK")||0)}%`, ""],
+    ["WT Other", minToHHMM(sum.get("WT Other")||0), `${pct(sum.get("WT Other")||0)}%`, ""],
+    ["INDIRETTA", minToHHMM(ind), `${pct(ind)}%`, ""],
+    ["PAUSA", minToHHMM(pause), `${pct(pause)}%`, ""],
+    ["Self Count", "-", "-", `Self Count: ${pi.self}`]
+  ];
+
+  $("kpiTableWrap").innerHTML = `
+    <table>
+      <thead><tr><th>Categoria</th><th>Tempo</th><th>% turno</th><th>Note</th></tr></thead>
+      <tbody>
+        ${rows.map(r=>`<tr><td>${r[0]}</td><td class="mono">${r[1]}</td><td class="mono">${r[2]}</td><td class="hint">${r[3]||""}</td></tr>`).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderTimeline(built){
+  const w = $("timelineWrap");
+  const intervals = built.intervals || [];
+  if(!intervals.length){
+    w.innerHTML = `<div class="hint">Nessun intervallo calcolabile.</div>`;
+    return;
+  }
+
+  w.innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th>Start</th><th>End</th><th>Durata</th><th>Categoria</th><th>Note</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${intervals.map(it=>{
+          const s = fmtDT(it.start.toISOString());
+          const e = fmtDT(it.end.toISOString());
+          return `
+            <tr>
+              <td class="mono">${s}</td>
+              <td class="mono">${e}</td>
+              <td class="mono">${minToHHMM(it.minutes)}</td>
+              <td>${it.category}</td>
+              <td class="hint">${it.notes||""}</td>
+            </tr>
+          `;
+        }).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderBar(op, dayKey, built){
+  const bar = $("bar");
+  bar.innerHTML = "";
+
+  const { barStart, barEnd, slots } = buildSlots(built.shift);
+  $("barRange").textContent = `Barra: ${p2(barStart.getHours())}:00 → ${p2(barEnd.getHours())}:00 (slot 30')`;
+
+  for(const slot of slots){
+    const cat = dominantCategory(built.intervals, slot);
+    const div = document.createElement("div");
+    div.className = "cell";
+    div.dataset.cat = cat || "";
+    div.dataset.slotStart = slot.start.toISOString();
+    div.dataset.slotEnd = slot.end.toISOString();
+    div.style.background = cat ? colorFor(cat) : "rgba(255,255,255,.03)";
+    div.style.opacity = cat ? "0.90" : "1";
+    div.title = `${p2(slot.start.getHours())}:${p2(slot.start.getMinutes())}–${p2(slot.end.getHours())}:${p2(slot.end.getMinutes())} | ${cat||"—"}`;
+
+    // show letter code
+    const txt = cat==="PI Pick" ? "PIP" :
+                cat==="PI Bulk" ? "PIB" :
+                cat==="P2P" ? "P2P" :
+                cat==="Clean PICK" ? "CLP" :
+                cat==="WT Other" ? "WTO" :
+                cat==="PAUSA" ? "P" :
+                cat==="INDIRETTA" ? "I" : "";
+    div.textContent = txt;
+
+    div.addEventListener("click", ()=>{
+      if(div.dataset.cat !== "PAUSA"){
+        return; // per ora apriamo form solo sulle pause
+      }
+      openIndirectModal(op, dayKey, slot.start, slot.end);
+    });
+
+    bar.appendChild(div);
+  }
+}
+
+/** =======================
+ *  Indirect modal logic
+ * ======================= */
+function openIndirectModal(op, dayKey, slotStart, slotEnd){
+  $("indMeta").textContent = `Operatore: ${op} | Giorno: ${fmtDDMMYYYY(dayKey)} | Slot: ${p2(slotStart.getHours())}:${p2(slotStart.getMinutes())}–${p2(slotEnd.getHours())}:${p2(slotEnd.getMinutes())}`;
+  $("indStart").value = `${p2(slotStart.getHours())}:${p2(slotStart.getMinutes())}`;
+  $("indEnd").value = `${p2(slotEnd.getHours())}:${p2(slotEnd.getMinutes())}`;
+  $("indDesc").value = "";
+  $("indModalBg").style.display = "flex";
+
+  $("indSaveBtn").onclick = async ()=>{
+    const s = $("indStart").value;
+    const e = $("indEnd").value;
+    const desc = $("indDesc").value || "";
+    const ds = dayTimeToDate(dayKey, s);
+    const de = dayTimeToDate(dayKey, e);
+    if(!ds || !de || de<=ds){
+      alert("Intervallo non valido. Usa HH:MM e assicurati che End > Start.");
+      return;
+    }
+    const ind = getIndirect();
+    ind[op] = ind[op] || {};
+    ind[op][dayKey] = ind[op][dayKey] || [];
+    ind[op][dayKey].push({ startISO: ds.toISOString(), endISO: de.toISOString(), desc });
+    setIndirect(ind);
+    $("indModalBg").style.display = "none";
+    await bootDataAndRender();
+  };
+
+  $("indDeleteBtn").onclick = async ()=>{
+    if(!confirm("Rimuovere TUTTE le indirette di questo operatore per questo giorno?")) return;
+    const ind = getIndirect();
+    if(ind?.[op]?.[dayKey]){
+      delete ind[op][dayKey];
+      if(Object.keys(ind[op]).length===0) delete ind[op];
+      setIndirect(ind);
+    }
+    $("indModalBg").style.display = "none";
+    await bootDataAndRender();
+  };
+}
+
+/** =======================
+ *  Support modal logic
+ * ======================= */
+function renderSupportList(){
+  const sup = getSupport();
+  const lines = [];
+  for(const src of Object.keys(sup).sort()){
+    for(const r of (sup[src]||[])){
+      const a = new Date(r.startISO), b = new Date(r.endISO);
+      lines.push(`${src} → ${r.realOp} | ${fmtDT(a.toISOString())} → ${fmtDT(b.toISOString())}`);
+    }
+  }
+  $("supList").innerHTML = lines.length ? `<ul>${lines.map(x=>`<li class="mono">${x}</li>`).join("")}</ul>` : `<div class="hint">Nessuna regola.</div>`;
+}
+function openSupportModal(){
+  $("supModalBg").style.display = "flex";
+  renderSupportList();
+}
+function closeSupportModal(){ $("supModalBg").style.display = "none"; }
+
+$("supAddBtn").addEventListener("click", async ()=>{
+  const src = ($("supSrc").value||"").trim();
+  const real = ($("supReal").value||"").trim();
+  const day = ($("supDay").value||"").trim();
+  const st = ($("supStart").value||"").trim();
+  const en = ($("supEnd").value||"").trim();
+  if(!src || !real || !day || !st || !en){
+    alert("Compila tutti i campi.");
+    return;
+  }
+  const ds = dayTimeToDate(day, st);
+  const de = dayTimeToDate(day, en);
+  if(!ds || !de || de<=ds){
+    alert("Fascia oraria non valida.");
+    return;
+  }
+  const sup = getSupport();
+  sup[src] = sup[src] || [];
+  sup[src].push({ realOp: real, startISO: ds.toISOString(), endISO: de.toISOString() });
+  setSupport(sup);
+
+  $("supSrc").value=""; $("supReal").value=""; $("supDay").value=""; $("supStart").value=""; $("supEnd").value="";
+  renderSupportList();
+  await bootDataAndRender();
+});
+
+$("supClearBtn").addEventListener("click", async ()=>{
+  if(!confirm("Svuotare tutte le regole supporti?")) return;
+  setSupport({});
+  renderSupportList();
+  await bootDataAndRender();
+});
+
+/** =======================
+ *  Build data + render page
+ * ======================= */
+async function bootDataAndRender(){
+  setErr("");
+  const sel = getSelection();
+  const dayKeys = selectionToDayKeys(sel);
+  if(!dayKeys.length){
+    setStatus("Seleziona almeno un giorno dalla sidebar.");
+    $("opSel").innerHTML = "";
+    $("daySel").innerHTML = "";
+    $("kpiTableWrap").innerHTML = `<div class="hint">—</div>`;
+    $("timelineWrap").innerHTML = `<div class="hint">—</div>`;
+    $("bar").innerHTML = "";
+    return;
+  }
+
+  setStatus("Caricamento eventi…");
+  const raw = await loadEventsForSelection();
+  const opDay = buildOpDay(raw);
+
+  const ops = Object.keys(opDay).sort((a,b)=>a.localeCompare(b));
+  const allDays = Array.from(new Set(
+    ops.flatMap(op => Object.keys(opDay[op]||{}))
+  )).sort((a,b)=>a.localeCompare(b));
+
+  MODEL = { opDay, ops, dayKeys: allDays };
+
+  // populate selects
+  renderOperatorOptions(ops);
+  renderDayOptions(allDays);
+
+  // default selection persists
+  const lastOp = localStorage.getItem("overview_last_op");
+  const lastDay = localStorage.getItem("overview_last_day");
+  if(lastOp && ops.includes(lastOp)) $("opSel").value = lastOp;
+  if(lastDay && allDays.includes(lastDay)) $("daySel").value = lastDay;
+
+  const op = currentOp() || ops[0];
+  const dk = currentDayKey() || allDays[0];
+  if(op) $("opSel").value = op;
+  if(dk) $("daySel").value = dk;
+
+  await renderAll();
+  setStatus("OK.");
+}
+
+async function renderAll(){
+  const op = currentOp();
+  const dk = currentDayKey();
+  if(!op || !dk){
+    return;
+  }
+  localStorage.setItem("overview_last_op", op);
+  localStorage.setItem("overview_last_day", dk);
+
+  // apply shift override UI
+  renderShiftOverride(op, dk);
+
+  const list = MODEL?.opDay?.[op]?.[dk] || [];
+  const built = buildIntervals(op, dk, list);
+
+  renderKpi(op, dk, built);
+  renderBar(op, dk, built);
+  renderTimeline(built);
+
+  const v = $("viewSel").value;
+  $("barCard").style.display = (v==="timeline") ? "none" : "block";
+  $("timelineCard").style.display = "block";
+}
+
+/** shift override update */
+$("shiftOverride").addEventListener("change", async ()=>{
+  const op = currentOp();
+  const dk = currentDayKey();
+  const val = $("shiftOverride").value || "AUTO";
+  const ov = getShiftOv();
+  ov[op] = ov[op] || {};
+  ov[op][dk] = val;
+  setShiftOv(ov);
+  await renderAll();
+});
+
+/** view switch */
+$("viewSel").addEventListener("change", ()=> renderAll());
+
+$("opSel").addEventListener("change", ()=> renderAll());
+$("daySel").addEventListener("change", ()=> renderAll());
+$("recalcBtn").addEventListener("click", ()=> bootDataAndRender().catch(e=>{console.error(e); setErr(e.message); setStatus("Errore");}));
+
+$("supportBtn").addEventListener("click", openSupportModal);
+$("resetLocalBtn").addEventListener("click", async ()=>{
+  if(!confirm("Vuoi cancellare tutte le regole Supporti + Indirette + Turni (solo nel browser)?")) return;
+  setSupport({});
+  setIndirect({});
+  setShiftOv({});
+  await bootDataAndRender();
+});
+
+$("indCloseBtn").addEventListener("click", ()=> $("indModalBg").style.display="none");
+$("supCloseBtn").addEventListener("click", closeSupportModal);
+
+/** Sidebar quick selections */
+$("clearSelBtn").addEventListener("click", async ()=>{
+  setSelection({});
+  updateSelSummary();
+  await loadDatasets();
+  await bootDataAndRender();
+});
+$("selAllBtn").addEventListener("click", async ()=>{
+  const { data } = await sb.from('datasets').select('day_key, pi_rows, wt_rows');
+  const out={};
+  for(const d of (data||[])) out[d.day_key] = { pi:(d.pi_rows||0)>0, wt:(d.wt_rows||0)>0 };
+  setSelection(out);
+  updateSelSummary();
+  await loadDatasets();
+  await bootDataAndRender();
+});
+$("sel7Btn").addEventListener("click", async ()=>{
+  const { data } = await sb.from('datasets').select('day_key, pi_rows, wt_rows').order('day_key',{ascending:false}).limit(7);
+  const out={};
+  for(const d of (data||[])) out[d.day_key] = { pi:(d.pi_rows||0)>0, wt:(d.wt_rows||0)>0 };
+  setSelection(out);
+  updateSelSummary();
+  await loadDatasets();
+  await bootDataAndRender();
+});
+
+(async function boot(){
+  try{
+    setStatus("Caricamento dataset…");
+    await loadDatasets();
+    updateSelSummary();
+    await bootDataAndRender();
+  }catch(e){
+    console.error(e);
+    setErr(e.message);
+    setStatus("Errore");
+  }
+})();
+</script>
+</body>
+</html>

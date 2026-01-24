@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Score — Produttività</title>
 
-  <!-- Supabase JS (UMD) -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 
   <style>
@@ -46,6 +45,7 @@
 <header>
   <nav>
     <a href="index.html">Home</a>
+    <a href="overview.html">Overview</a>
     <a href="charts.html">Charts</a>
     <a href="score.html">Score</a>
   </nav>
@@ -94,26 +94,13 @@
 </div>
 
 <script>
-/** =======================
- *  CONFIG SUPABASE
- * ======================= */
 const SUPABASE_URL = "https://jslonbsvrtltfnrpneqw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_OZZhrdcM8Zh3eXcqTdcljw_ZY4faGvl";
-
-// Se nella tabella `events` la colonna dell'operatore NON si chiama `operator`,
-// cambia qui (esempio: "src operator").
 const EVENTS_OPERATOR_COL = "operator";
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-function opSelect(){
-  return EVENTS_OPERATOR_COL.includes(' ') ? `"${EVENTS_OPERATOR_COL}"` : EVENTS_OPERATOR_COL;
-}
+function opSelect(){ return EVENTS_OPERATOR_COL.includes(' ') ? `"${EVENTS_OPERATOR_COL}"` : EVENTS_OPERATOR_COL; }
 
-function opSelect(){
-  return EVENTS_OPERATOR_COL.includes(' ') ? `"${EVENTS_OPERATOR_COL}"` : EVENTS_OPERATOR_COL;
-}
-
-/** Utilities */
 const $ = (id)=>document.getElementById(id);
 function setStatus(t){ $("status").textContent=t; }
 function setErr(t){ $("err").textContent=t||""; }
@@ -130,7 +117,6 @@ function fmtDT(iso){
   return `${p(d.getDate())}-${p(d.getMonth()+1)}-${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-/** Selection map: { [day_key]: {pi:boolean, wt:boolean} } */
 function getSelection(){
   try{
     const raw = localStorage.getItem('selectedDays');
@@ -138,9 +124,7 @@ function getSelection(){
     return (obj && typeof obj==='object') ? obj : {};
   }catch{ return {}; }
 }
-function setSelection(obj){
-  localStorage.setItem('selectedDays', JSON.stringify(obj||{}));
-}
+function setSelection(obj){ localStorage.setItem('selectedDays', JSON.stringify(obj||{})); }
 function selectionToDayKeys(sel){
   return Object.keys(sel||{}).filter(dk => !!sel[dk] && (sel[dk].pi || sel[dk].wt)).sort();
 }
@@ -151,7 +135,6 @@ function updateSelSummary(){
   $("selSummary").textContent = `Selezionati: ${keys.length} giorni (${fmtDDMMYYYY(keys[0])} → ${fmtDDMMYYYY(keys[keys.length-1])})`;
 }
 
-/** Sidebar datasets */
 async function loadDatasets(){
   setErr('');
   const { data, error } = await sb
@@ -191,14 +174,7 @@ async function loadDatasets(){
 
   wrap.innerHTML = `
     <table>
-      <thead>
-        <tr>
-          <th>Date</th>
-          <th>Load Day</th>
-          <th>PI</th>
-          <th>WT</th>
-        </tr>
-      </thead>
+      <thead><tr><th>Date</th><th>Load Day</th><th>PI</th><th>WT</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
   `;
@@ -218,22 +194,17 @@ async function loadDatasets(){
   });
 }
 
-/** =======================
- *  SCORE KPI (semplice)
- * ======================= */
 async function loadEventsForSelection(){
   const sel=getSelection();
   const dayKeys=selectionToDayKeys(sel);
   if(!dayKeys.length) return [];
 
-  // NB: supabase .in() non accetta array vuoti, qui siamo ok.
   const { data, error } = await sb
     .from('events')
     .select(`day_key, ${opSelect()}, kind, category, self_count, wo_id`)
     .in('day_key', dayKeys);
   if(error) throw new Error(error.message);
 
-  // Applica filtro PI/WT day-by-day
   return (data||[]).filter(e=>{
     const s = sel[e.day_key];
     if(!s) return false;
@@ -308,7 +279,6 @@ function renderKpiTable(events){
     `;
     tb.appendChild(tr);
   }
-
   wrap.appendChild(table);
 }
 
@@ -333,7 +303,6 @@ async function run(){
   }
 }
 
-// Sidebar quick selections
 $("clearSelBtn").addEventListener('click', async ()=>{
   setSelection({});
   updateSelSummary();

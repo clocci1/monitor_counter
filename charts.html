@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Charts — Produttività</title>
 
-  <!-- Supabase JS (UMD) -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js"></script>
 
@@ -55,6 +54,7 @@
 <header>
   <nav>
     <a href="index.html">Home</a>
+    <a href="overview.html">Overview</a>
     <a href="charts.html">Charts</a>
     <a href="score.html">Score</a>
   </nav>
@@ -113,43 +113,28 @@
 </div>
 
 <script>
-/** =======================
- *  CONFIG (stessi valori di Home)
- * ======================= */
 const SUPABASE_URL = "https://jslonbsvrtltfnrpneqw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_OZZhrdcM8Zh3eXcqTdcljw_ZY4faGvl";
-
-// Se nella tabella `events` la colonna dell'operatore NON si chiama `operator`,
-// cambia qui (esempio: "src operator").
 const EVENTS_OPERATOR_COL = "operator";
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-function opSelect(){
-  return EVENTS_OPERATOR_COL.includes(' ') ? `"${EVENTS_OPERATOR_COL}"` : EVENTS_OPERATOR_COL;
-}
+function opSelect(){ return EVENTS_OPERATOR_COL.includes(' ') ? `"${EVENTS_OPERATOR_COL}"` : EVENTS_OPERATOR_COL; }
 
 const $ = (id)=>document.getElementById(id);
 function setStatus(t){ $("status").textContent = t; }
 function setErr(t){ $("err").textContent = t || ""; }
 
-/** =======================
- *  SELECTION STATE
- *  { [day_key]: { pi:boolean, wt:boolean } }
- * ======================= */
 function getSelection(){
   try{ return JSON.parse(localStorage.getItem('selectedDays')||'{}') || {}; }
   catch{ return {}; }
 }
-function setSelection(sel){
-  localStorage.setItem('selectedDays', JSON.stringify(sel||{}));
-}
+function setSelection(sel){ localStorage.setItem('selectedDays', JSON.stringify(sel||{})); }
 
 function ddmmyyyy(dayKey){
   const d = new Date(dayKey + 'T00:00:00');
   const p = n => String(n).padStart(2,'0');
   return `${p(d.getDate())}-${p(d.getMonth()+1)}-${d.getFullYear()}`;
 }
-
 function updateSelSummary(){
   const sel = getSelection();
   const dayKeys = Object.keys(sel).sort();
@@ -158,9 +143,6 @@ function updateSelSummary(){
   $("selPiDays").textContent = String(piDays.length);
 }
 
-/** =======================
- *  DATASET SIDEBAR
- * ======================= */
 async function loadDatasets(){
   const { data, error } = await sb
     .from('datasets')
@@ -181,18 +163,16 @@ async function loadDatasets(){
     const s = sel[dk] || { pi:false, wt:false };
     const canPi = (d.pi_rows||0) > 0;
     const canWt = (d.wt_rows||0) > 0;
-    const piChecked = !!s.pi;
-    const wtChecked = !!s.wt;
 
     return `
       <tr>
         <td class="mono">${dk ? ddmmyyyy(dk) : (d.label||'—')}</td>
         <td class="mono">${(d.created_at||'').replace('T',' ').slice(0,16)}</td>
         <td style="text-align:center;">
-          <input class="checkbox" type="checkbox" data-day="${dk}" data-kind="pi" ${canPi?'':'disabled'} ${piChecked?'checked':''}>
+          <input class="checkbox" type="checkbox" data-day="${dk}" data-kind="pi" ${canPi?'':'disabled'} ${s.pi?'checked':''}>
         </td>
         <td style="text-align:center;">
-          <input class="checkbox" type="checkbox" data-day="${dk}" data-kind="wt" ${canWt?'':'disabled'} ${wtChecked?'checked':''}>
+          <input class="checkbox" type="checkbox" data-day="${dk}" data-kind="wt" ${canWt?'':'disabled'} ${s.wt?'checked':''}>
         </td>
       </tr>
     `;
@@ -200,14 +180,7 @@ async function loadDatasets(){
 
   wrap.innerHTML = `
     <table>
-      <thead>
-        <tr>
-          <th>Date</th>
-          <th>Load Day</th>
-          <th>PI</th>
-          <th>WT</th>
-        </tr>
-      </thead>
+      <thead><tr><th>Date</th><th>Load Day</th><th>PI</th><th>WT</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
   `;
@@ -219,7 +192,6 @@ async function loadDatasets(){
       const selNow = getSelection();
       if(!selNow[day]) selNow[day] = { pi:false, wt:false };
       selNow[day][kind] = cb.checked;
-      // se entrambi false => rimuovo la riga (pulito)
       if(!selNow[day].pi && !selNow[day].wt) delete selNow[day];
       setSelection(selNow);
       updateSelSummary();
@@ -227,9 +199,6 @@ async function loadDatasets(){
   });
 }
 
-/** =======================
- *  CHARTS
- * ======================= */
 function buildHeatmap(ops, yLabels, rows, rowToKeyFn){
   const z = yLabels.map(()=> ops.map(()=>0));
   const yIndex = new Map(yLabels.map((v,i)=>[String(v), i]));
@@ -269,7 +238,6 @@ function renderHeatmaps(piRows){
     return;
   }
 
-  // hours 05-22
   const hours = [];
   for(let h=5; h<=22; h++) hours.push(String(h).padStart(2,'0')+':00');
   const hourKey = (r)=>{
@@ -279,6 +247,7 @@ function renderHeatmaps(piRows){
     return String(h).padStart(2,'0')+':00';
   };
   const zH = buildHeatmap(ops, hours, piRows, hourKey);
+
   Plotly.newPlot('heatHour', [{
     z:zH, x:ops, y:hours, type:'heatmap',
     hovertemplate:'%{x}<br>%{y}<br>Conte=%{z}<extra></extra>'
@@ -287,11 +256,11 @@ function renderHeatmaps(piRows){
     margin:{l:70,r:20,t:10,b:80}, font:{color:'#e8eefc'}
   }, {displayModeBar:false, responsive:true});
 
-  // lanes 01-50
   const lanes = [];
   for(let l=1; l<=50; l++) lanes.push(String(l).padStart(2,'0'));
   const laneKey = (r)=> String(r.lane).padStart(2,'0');
   const zL = buildHeatmap(ops, lanes, piRows, laneKey);
+
   Plotly.newPlot('heatLane', [{
     z:zL, x:ops, y:lanes, type:'heatmap',
     hovertemplate:'%{x}<br>Corsia=%{y}<br>Conte=%{z}<extra></extra>'
@@ -320,25 +289,18 @@ async function run(){
   setStatus('OK.');
 }
 
-/** Quick selections */
 $("clearSelBtn").addEventListener('click', async ()=>{ setSelection({}); updateSelSummary(); await loadDatasets(); run(); });
 $("selAllBtn").addEventListener('click', async ()=>{
   const { data } = await sb.from('datasets').select('day_key, pi_rows, wt_rows');
   const out={};
   for(const d of (data||[])) out[d.day_key] = { pi:(d.pi_rows||0)>0, wt:(d.wt_rows||0)>0 };
-  setSelection(out);
-  updateSelSummary();
-  await loadDatasets();
-  run();
+  setSelection(out); updateSelSummary(); await loadDatasets(); run();
 });
 $("sel7Btn").addEventListener('click', async ()=>{
   const { data } = await sb.from('datasets').select('day_key, pi_rows, wt_rows').order('day_key',{ascending:false}).limit(7);
   const out={};
   for(const d of (data||[])) out[d.day_key] = { pi:(d.pi_rows||0)>0, wt:(d.wt_rows||0)>0 };
-  setSelection(out);
-  updateSelSummary();
-  await loadDatasets();
-  run();
+  setSelection(out); updateSelSummary(); await loadDatasets(); run();
 });
 $("reloadBtn").addEventListener('click', ()=> run().catch(e=>{console.error(e); setErr(e.message); setStatus('Errore');}));
 

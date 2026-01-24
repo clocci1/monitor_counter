@@ -7,7 +7,6 @@
 
   <!-- XLSX parser -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-
   <!-- Supabase JS (UMD) -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 
@@ -28,7 +27,6 @@
 
     .wrap{max-width:1400px;margin:0 auto;padding:16px 18px;}
 
-    /* Layout: contenuto + sidebar destra */
     .layout{display:flex;gap:12px;align-items:flex-start;}
     .main{flex:1;min-width:580px;}
     .side{width:360px;position:sticky;top:16px;}
@@ -72,6 +70,7 @@
 <header>
   <nav>
     <a href="index.html">Home</a>
+    <a href="overview.html">Overview</a>
     <a href="charts.html">Charts</a>
     <a href="score.html">Score</a>
   </nav>
@@ -114,8 +113,8 @@
       <div class="card">
         <div style="font-weight:900;">Debug rapido (se qualcosa non torna)</div>
         <div class="hint">
-          1) Console (F12) → <span class="mono">Console</span> e <span class="mono">Network</span>
-          2) Se vedi <span class="mono">400 Bad Request</span>, quasi sempre è un mismatch di colonne/tabella in Supabase.
+          1) Console (F12) → <span class="mono">Console</span> e <span class="mono">Network</span><br/>
+          2) Se vedi <span class="mono">400 Bad Request</span>, quasi sempre è un mismatch di colonne/tabella in Supabase.<br/>
           3) Se vedi <span class="mono">Identifier 'supabase' has already been declared</span>, hai due <span class="mono">const supabase = ...</span> nello stesso file.
         </div>
       </div>
@@ -143,26 +142,18 @@
 </div>
 
 <script>
-/** =======================
- *  CONFIG (Supabase)
- *  - Le trovi in Supabase: Settings → API
- * ======================= */
+/** CONFIG */
 const SUPABASE_URL = "https://jslonbsvrtltfnrpneqw.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_OZZhrdcM8Zh3eXcqTdcljw_ZY4faGvl"; // <- incolla qui la tua anon/public key
-
-// Se nella tabella `events` la colonna dell'operatore NON si chiama `operator`,
-// cambia qui (esempio: "src operator").
+const SUPABASE_ANON_KEY = "sb_publishable_OZZhrdcM8Zh3eXcqTdcljw_ZY4faGvl";
 const EVENTS_OPERATOR_COL = "operator";
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 /** Operators di interesse */
 const INTEREST_OPERATORS = new Set(["A.BEJAN","M.HAYAT","L.VUONO","S.ANASS","S.RODRIGUE."]);
 
-/** Helpers DOM */
+/** Helpers */
 const $ = (id)=>document.getElementById(id);
-function setStatus(t, ok=false){
-  $("status").innerHTML = `Stato: <span class="${ok?'ok':''}">${t}</span>`;
-}
+function setStatus(t, ok=false){ $("status").innerHTML = `Stato: <span class="${ok?'ok':''}">${t}</span>`; }
 function setErr(t){ $("err").textContent = t||""; }
 function setWarn(t){ $("warn").innerHTML = t||""; }
 function normStr(v){ return (v===null||v===undefined) ? "" : String(v).trim(); }
@@ -170,7 +161,6 @@ function isNonEmptyBin(v){ const s=normStr(v); return s!=="" && s!=="0"; }
 function p2(n){ return String(n).padStart(2,'0'); }
 function dayKeyFromDate(dt){ return `${dt.getFullYear()}-${p2(dt.getMonth()+1)}-${p2(dt.getDate())}`; }
 function fmtLabelFromDayKey(dayKey, fmt){
-  // dayKey = YYYY-MM-DD
   const d = new Date(dayKey + "T00:00:00");
   if(isNaN(d.getTime())) return dayKey;
   const dd = p2(d.getDate());
@@ -238,10 +228,7 @@ async function readFirstSheetAsObjects(file){
   return XLSX.utils.sheet_to_json(ws, {defval:""});
 }
 
-/** =======================
- *  SELEZIONE dataset (checkbox)
- *  Struttura: { [day_key]: { pi:boolean, wt:boolean } }
- * ======================= */
+/** Selection */
 const SEL_KEY = "selectedDays";
 function getSelection(){
   try{
@@ -260,7 +247,7 @@ function updateSelSummary(){
   $("selSummary").textContent = `${picked.length} selezionati`;
 }
 
-/** Supabase: inserimento chunk */
+/** Insert chunk */
 async function insertInChunks(table, rows, chunkSize=1000){
   for(let i=0;i<rows.length;i+=chunkSize){
     const chunk = rows.slice(i, i+chunkSize);
@@ -269,10 +256,7 @@ async function insertInChunks(table, rows, chunkSize=1000){
   }
 }
 
-/** =======================
- *  LISTA DATASET (sidebar)
- *  Richiede in tabella datasets almeno: id, day_key, created_at, label, pi_rows, wt_rows
- * ======================= */
+/** Sidebar datasets */
 async function loadDatasets(){
   setErr("");
   setWarn("");
@@ -327,7 +311,6 @@ async function loadDatasets(){
     </table>
   `;
 
-  // checkbox listeners
   wrap.querySelectorAll('input[type="checkbox"][data-day]').forEach(chk=>{
     chk.addEventListener('change', ()=>{
       const day = chk.getAttribute('data-day');
@@ -335,7 +318,6 @@ async function loadDatasets(){
       const sel2 = getSelection();
       if(!sel2[day]) sel2[day] = { pi:false, wt:false };
       sel2[day][kind] = chk.checked;
-      // se entrambe false -> rimuovi entry
       if(!sel2[day].pi && !sel2[day].wt) delete sel2[day];
       setSelection(sel2);
     });
@@ -344,14 +326,11 @@ async function loadDatasets(){
   updateSelSummary();
 }
 
-/** =======================
- *  IMPORT: split automatico per data
- * ======================= */
+/** Split per giorno */
 function groupRowsByDay(piRows, wtRows){
   const piByDay = new Map();
   const wtByDay = new Map();
 
-  // PI → usa Count Date / Count Time
   for(const r of (piRows||[])){
     const counter = normStr(r["Counter"]);
     if(!INTEREST_OPERATORS.has(counter)) continue;
@@ -362,7 +341,6 @@ function groupRowsByDay(piRows, wtRows){
     piByDay.get(dayKey).push(r);
   }
 
-  // WT → preferisci Confirmation Date/Time (se presenti), altrimenti Created On/At
   for(const r of (wtRows||[])){
     if(!isNonEmptyBin(r["Source Storage Bin"])) continue;
     const createdBy = normStr(r["Created By"]);
@@ -385,13 +363,7 @@ function groupRowsByDay(piRows, wtRows){
 }
 
 async function upsertDatasetForDay(dayKey, label, piCount, wtCount){
-  // Richiede unique constraint su datasets.day_key
-  const payload = {
-    day_key: dayKey,
-    label,
-    pi_rows: piCount,
-    wt_rows: wtCount
-  };
+  const payload = { day_key: dayKey, label, pi_rows: piCount, wt_rows: wtCount };
   const { data, error } = await sb
     .from('datasets')
     .upsert([payload], { onConflict: 'day_key' })
@@ -400,7 +372,6 @@ async function upsertDatasetForDay(dayKey, label, piCount, wtCount){
   if(error) throw new Error(error.message);
   return data;
 }
-
 async function deleteEventsForDataset(datasetId){
   const { error } = await sb.from('events').delete().eq('dataset_id', datasetId);
   if(error) throw new Error(error.message);
@@ -423,15 +394,9 @@ $("analyzeBtn").addEventListener("click", async ()=>{
 
     setStatus("Lettura Excel…");
     const piRowsAll = [];
-    for(const f of piFiles){
-      const rows = await readFirstSheetAsObjects(f);
-      piRowsAll.push(...rows);
-    }
+    for(const f of piFiles) piRowsAll.push(...await readFirstSheetAsObjects(f));
     const wtRowsAll = [];
-    for(const f of wtFiles){
-      const rows = await readFirstSheetAsObjects(f);
-      wtRowsAll.push(...rows);
-    }
+    for(const f of wtFiles) wtRowsAll.push(...await readFirstSheetAsObjects(f));
 
     setStatus("Analisi date (split per giorno)…");
     const { dayKeys, piByDay, wtByDay } = groupRowsByDay(piRowsAll, wtRowsAll);
@@ -440,16 +405,6 @@ $("analyzeBtn").addEventListener("click", async ()=>{
       setErr("Nessun evento generabile: verifica che i nomi colonne corrispondano (es. 'Counter', 'Count Date', 'Created On', ...)." );
       setStatus("Nessun dato importato");
       return;
-    }
-
-    // warning mismatch PI vs WT
-    const onlyPI = dayKeys.filter(k => piByDay.has(k) && !wtByDay.has(k));
-    const onlyWT = dayKeys.filter(k => !piByDay.has(k) && wtByDay.has(k));
-    if(onlyPI.length || onlyWT.length){
-      const parts=[];
-      if(onlyPI.length) parts.push(`<span class="badge pillBad">Solo PI</span> ${onlyPI.join(', ')}`);
-      if(onlyWT.length) parts.push(`<span class="badge pillBad">Solo WT</span> ${onlyWT.join(', ')}`);
-      setWarn(`ATTENZIONE: date non perfettamente allineate tra PI/WT. Importo comunque per giorno. ${parts.join(' | ')}`);
     }
 
     let totalInserted = 0;
@@ -463,18 +418,15 @@ $("analyzeBtn").addEventListener("click", async ()=>{
       const ds = await upsertDatasetForDay(dayKey, label, piRows.length, wtRows.length);
       const datasetId = ds.id;
 
-      // evita duplicati se ri-importi lo stesso giorno
       setStatus(`Pulizia eventi esistenti (${label})…`);
       await deleteEventsForDataset(datasetId);
 
       setStatus(`Normalizzazione eventi (${label})…`);
       const events = [];
 
-      // PI
       for(const r of piRows){
         const counter = normStr(r["Counter"]);
         if(!INTEREST_OPERATORS.has(counter)) continue;
-
         const ts = combineDateTime(r["Count Date"], r["Count Time"]);
         if(!ts) continue;
 
@@ -497,7 +449,6 @@ $("analyzeBtn").addEventListener("click", async ()=>{
         });
       }
 
-      // WT
       for(const r of wtRows){
         if(!isNonEmptyBin(r["Source Storage Bin"])) continue;
         const createdBy = normStr(r["Created By"]);
@@ -548,7 +499,7 @@ $("analyzeBtn").addEventListener("click", async ()=>{
 $("refreshBtn").addEventListener("click", loadDatasets);
 
 // Selezioni rapide
-$("clearSelBtn").addEventListener('click', ()=> setSelection({}));
+$("clearSelBtn").addEventListener('click', ()=> { setSelection({}); loadDatasets(); });
 $("selAllBtn").addEventListener('click', async ()=>{
   const { data } = await sb.from('datasets').select('day_key, pi_rows, wt_rows');
   const out={};
@@ -583,6 +534,5 @@ $("sel7Btn").addEventListener('click', async ()=>{
   setStatus("Pronto.");
 })();
 </script>
-
 </body>
 </html>
