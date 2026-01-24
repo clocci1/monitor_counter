@@ -10,43 +10,30 @@
 
   <style>
     :root{
-      --bg:#0b1220;
-      --card:#111a2e;
-      --border:rgba(255,255,255,.12);
-      --muted:#a9b7d6;
-      --text:#e8eefc;
-      --btn:#6ea8fe;
-      --bad:#ff6b6b;
+      --bg:#0b1220; --card:#111a2e; --border:rgba(255,255,255,.12);
+      --muted:#a9b7d6; --text:#e8eefc; --btn:#6ea8fe; --bad:#ff6b6b;
     }
     body{font-family:system-ui,Segoe UI,Roboto,Arial;margin:0;background:var(--bg);color:var(--text);}
     header{padding:14px 18px;border-bottom:1px solid var(--border);}
     nav a{color:var(--text);text-decoration:none;margin-right:12px;font-weight:800;}
+    .wrap{max-width:1750px;margin:0 auto;padding:16px 18px;}
+    .layout{display:grid;grid-template-columns:1fr 460px;gap:12px;align-items:start;}
+    @media(max-width:1200px){.layout{grid-template-columns:1fr;}}
+    aside{position:sticky;top:16px;}
+    @media(max-width:1200px){aside{position:static;}}
 
-    .wrap{max-width:1500px;margin:0 auto;padding:16px 18px;}
-    .layout{display:grid;grid-template-columns:1fr 360px;gap:12px;}
-    @media(max-width:1100px){.layout{grid-template-columns:1fr;}}
-
-    .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:12px;}
     .hint{color:var(--muted);font-size:12px;}
     .bad{color:var(--bad);}
-    .mono{font-variant-numeric:tabular-nums;}
-    .plot{height:420px;}
-
-    table{width:100%;border-collapse:collapse;margin-top:10px;font-size:12px;}
-    th,td{padding:8px;border-bottom:1px solid var(--border);vertical-align:top;}
-    th{color:var(--muted);text-align:left;}
-
-    button,input{border-radius:10px;border:1px solid var(--border);background:rgba(255,255,255,.06);color:var(--text);padding:10px;}
-    button{background:var(--btn);color:var(--bg);border:0;font-weight:900;cursor:pointer;}
-    button.secondary{background:rgba(255,255,255,.10);color:var(--text);border:1px solid var(--border);}
-
+    button{border-radius:10px;border:1px solid var(--border);background:rgba(255,255,255,.10);color:var(--text);padding:10px;cursor:pointer;font-weight:900;}
+    button.secondary{background:rgba(255,255,255,.08);}
+    button.small{padding:6px 8px;font-size:12px;border-radius:8px;}
     .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between;}
-    .chip{display:inline-flex;gap:6px;align-items:center;border:1px solid var(--border);border-radius:999px;padding:6px 10px;background:rgba(255,255,255,.06);}
-    .chip strong{font-weight:900;}
-
-    .dsControls{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
-    .dsControls button{padding:8px 10px;font-size:12px;}
-    .checkbox{transform:scale(1.05);}
+    .plot{height:420px;}
+    .plotTall{height:520px;}
+    table{width:100%;border-collapse:collapse;margin-top:10px;font-size:12px;}
+    th,td{padding:8px;border-bottom:1px solid var(--border);vertical-align:middle;}
+    th{color:var(--muted);text-align:left;font-weight:800;}
   </style>
 </head>
 
@@ -62,50 +49,64 @@
 
 <div class="wrap">
   <div class="layout">
-    <!-- MAIN -->
     <div>
       <div class="card">
         <div class="row">
-          <div style="font-weight:900;">Charts</div>
+          <div>
+            <div style="font-weight:900;">Charts</div>
+            <div class="hint" id="status">—</div>
+            <div class="hint bad" id="err"></div>
+          </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
-            <button class="secondary" id="reloadBtn" type="button">Ricarica</button>
+            <button class="secondary" id="reloadBtn" type="button">Ricalcola</button>
           </div>
         </div>
-        <div class="hint" id="status">—</div>
-        <div class="hint bad" id="err" style="margin-top:6px;"></div>
       </div>
 
-      <div class="card" style="margin-top:12px;">
-        <div class="row">
-          <div class="chip"><span class="hint">Giorni selezionati</span> <strong id="selDays">0</strong></div>
-          <div class="chip"><span class="hint">PI attivo</span> <strong id="selPiDays">0</strong></div>
+      <div class="card">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div>
+            <div style="font-weight:900;">PI Pick vs PI Bulk (conte)</div>
+            <div id="piePi" class="plot"></div>
+          </div>
+          <div>
+            <div style="font-weight:900;">Tempo per categoria (hh:mm)</div>
+            <div id="pieTime" class="plot"></div>
+          </div>
         </div>
       </div>
 
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;">
-        <div class="card">
-          <div style="font-weight:900;">Heatmap conte PI per ora (X=operatore, Y=05–22)</div>
-          <div id="heatHour" class="plot"></div>
-        </div>
-        <div class="card">
-          <div style="font-weight:900;">Heatmap conte PI per corsia (X=operatore, Y=01–50)</div>
-          <div id="heatLane" class="plot"></div>
-        </div>
+      <div class="card">
+        <div style="font-weight:900;">Produttività vs Cambi task</div>
+        <div class="hint">Produttività = (PI bin + WT task) / ore lavorate (esclude pause). Cambi task = passaggi tra categorie consecutive.</div>
+        <div id="prodChange" class="plot"></div>
+      </div>
+
+      <div class="card">
+        <div style="font-weight:900;">Heatmap PI — conte per corsia (01–50) per ora (05–22)</div>
+        <div class="hint">Z = conte PI. X = ora. Y = corsia (primi due numeri).</div>
+        <div id="heatPiLaneHour" class="plotTall"></div>
+      </div>
+
+      <div class="card">
+        <div style="font-weight:900;">Heatmap Task (tutto) — conte per corsia (01–50) per ora (05–22)</div>
+        <div class="hint">Z = conte PI+WT (serve WT importati con lane).</div>
+        <div id="heatAllLaneHour" class="plotTall"></div>
       </div>
     </div>
 
-    <!-- SIDEBAR -->
     <aside>
       <div class="card">
         <div style="font-weight:900;">Dataset presenti</div>
-        <div class="hint">Seleziona i giorni e (facoltativo) abilita PI/WT per ogni giorno.</div>
+        <div class="hint">Selezione coerente con Home/Overview/Score. Spunta PI/WT per giorno.</div>
 
-        <div class="dsControls">
-          <button class="secondary" id="selAllBtn" type="button">Seleziona tutto</button>
-          <button class="secondary" id="sel7Btn" type="button">Ultimi 7</button>
-          <button class="secondary" id="clearSelBtn" type="button">Svuota</button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
+          <button class="secondary small" id="clearSelBtn" type="button">Reset</button>
+          <button class="secondary small" id="sel7Btn" type="button">Ultimi 7</button>
+          <button class="secondary small" id="selAllBtn" type="button">Tutti</button>
         </div>
 
+        <div class="hint" id="selSummary" style="margin-top:8px;"></div>
         <div id="dsWrap"></div>
       </div>
     </aside>
@@ -118,202 +119,438 @@ const SUPABASE_ANON_KEY = "sb_publishable_OZZhrdcM8Zh3eXcqTdcljw_ZY4faGvl";
 const EVENTS_OPERATOR_COL = "operator";
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-function opSelect(){ return EVENTS_OPERATOR_COL.includes(' ') ? `"${EVENTS_OPERATOR_COL}"` : EVENTS_OPERATOR_COL; }
+const PAUSE_THRESHOLD_MIN = 30;
+const SHIFT_DEFS = { AM:{start:"05:00",end:"13:00"}, C:{start:"08:00",end:"16:00"}, PM:{start:"14:00",end:"22:00"} };
+const SHIFT_TARGET_MIN = 480;
+
+const SEL_KEY="selectedDays";
+const SUPPORT_KEY="supportRules_v1";
+const SHIFT_OV_KEY="shiftOverride_v1";
+const INDIRECT_KEY="indirectRules_v1";
 
 const $ = (id)=>document.getElementById(id);
-function setStatus(t){ $("status").textContent = t; }
-function setErr(t){ $("err").textContent = t || ""; }
-
-function getSelection(){
-  try{ return JSON.parse(localStorage.getItem('selectedDays')||'{}') || {}; }
-  catch{ return {}; }
+function setStatus(t){ $("status").textContent=t; }
+function setErr(t){ $("err").textContent=t||""; }
+function p2(n){ return String(n).padStart(2,'0'); }
+function fmtDDMMYYYY(dayKey){
+  const d=new Date(dayKey+"T00:00:00");
+  if(isNaN(d.getTime())) return dayKey;
+  return `${p2(d.getDate())}-${p2(d.getMonth()+1)}-${d.getFullYear()}`;
 }
-function setSelection(sel){ localStorage.setItem('selectedDays', JSON.stringify(sel||{})); }
+function getJSON(key, fallback){ try{ return JSON.parse(localStorage.getItem(key)||"") ?? fallback; }catch{ return fallback; } }
+function getSelection(){ return getJSON(SEL_KEY, {}); }
+function setSelection(v){ localStorage.setItem(SEL_KEY, JSON.stringify(v||{})); }
+function getSupport(){ return getJSON(SUPPORT_KEY, {}); }
+function getShiftOv(){ return getJSON(SHIFT_OV_KEY, {}); }
+function getIndirect(){ return getJSON(INDIRECT_KEY, {}); }
 
-function ddmmyyyy(dayKey){
-  const d = new Date(dayKey + 'T00:00:00');
-  const p = n => String(n).padStart(2,'0');
-  return `${p(d.getDate())}-${p(d.getMonth()+1)}-${d.getFullYear()}`;
-}
+function selectionToDayKeys(sel){ return Object.keys(sel||{}).filter(dk=>!!sel[dk] && (sel[dk].pi||sel[dk].wt)).sort(); }
 function updateSelSummary(){
-  const sel = getSelection();
-  const dayKeys = Object.keys(sel).sort();
-  const piDays = dayKeys.filter(dk => !!sel[dk]?.pi);
-  $("selDays").textContent = String(dayKeys.length);
-  $("selPiDays").textContent = String(piDays.length);
+  const sel=getSelection();
+  const keys=selectionToDayKeys(sel);
+  if(!keys.length){ $("selSummary").textContent="Nessun giorno selezionato."; return; }
+  const piDays=keys.filter(dk=>!!sel[dk]?.pi).length;
+  const wtDays=keys.filter(dk=>!!sel[dk]?.wt).length;
+  $("selSummary").textContent=`Giorni: ${keys.length} (PI ${piDays}, WT ${wtDays}) | ${fmtDDMMYYYY(keys[0])} → ${fmtDDMMYYYY(keys[keys.length-1])}`;
 }
 
 async function loadDatasets(){
-  const { data, error } = await sb
-    .from('datasets')
-    .select('id, day_key, created_at, label, pi_rows, wt_rows')
-    .order('day_key', {ascending:false});
+  const { data, error } = await sb.from('datasets')
+    .select('day_key, created_at, pi_rows, wt_rows')
+    .order('day_key',{ascending:false});
   if(error) throw new Error(error.message);
 
-  const wrap = $("dsWrap");
-  const sel = getSelection();
+  const wrap=$("dsWrap");
+  const sel=getSelection();
+  if(!data||!data.length){ wrap.innerHTML=`<div class="hint">Nessun dataset.</div>`; return; }
 
-  if(!data || !data.length){
-    wrap.innerHTML = `<div class="hint">Nessun dataset.</div>`;
-    return;
-  }
-
-  const rows = data.map(d=>{
-    const dk = d.day_key;
-    const s = sel[dk] || { pi:false, wt:false };
-    const canPi = (d.pi_rows||0) > 0;
-    const canWt = (d.wt_rows||0) > 0;
-
-    return `
-      <tr>
-        <td class="mono">${dk ? ddmmyyyy(dk) : (d.label||'—')}</td>
-        <td class="mono">${(d.created_at||'').replace('T',' ').slice(0,16)}</td>
-        <td style="text-align:center;">
-          <input class="checkbox" type="checkbox" data-day="${dk}" data-kind="pi" ${canPi?'':'disabled'} ${s.pi?'checked':''}>
-        </td>
-        <td style="text-align:center;">
-          <input class="checkbox" type="checkbox" data-day="${dk}" data-kind="wt" ${canWt?'':'disabled'} ${s.wt?'checked':''}>
-        </td>
-      </tr>
-    `;
-  }).join('');
-
-  wrap.innerHTML = `
+  wrap.innerHTML=`
     <table>
-      <thead><tr><th>Date</th><th>Load Day</th><th>PI</th><th>WT</th></tr></thead>
-      <tbody>${rows}</tbody>
+      <thead><tr><th>Date</th><th>Load</th><th>PI</th><th>WT</th></tr></thead>
+      <tbody>
+        ${data.map(d=>{
+          const dk=d.day_key;
+          const s=sel[dk]||{pi:false,wt:false};
+          const piOk=(d.pi_rows||0)>0, wtOk=(d.wt_rows||0)>0;
+          return `
+            <tr>
+              <td class="mono">${fmtDDMMYYYY(dk)}</td>
+              <td class="mono">${String(d.created_at||"").replace('T',' ').slice(0,16)}</td>
+              <td style="text-align:center;"><input type="checkbox" data-day="${dk}" data-kind="pi" ${s.pi?'checked':''} ${piOk?'':'disabled'}></td>
+              <td style="text-align:center;"><input type="checkbox" data-day="${dk}" data-kind="wt" ${s.wt?'checked':''} ${wtOk?'':'disabled'}></td>
+            </tr>
+          `;
+        }).join('')}
+      </tbody>
     </table>
   `;
 
-  wrap.querySelectorAll('input[type="checkbox"]').forEach(cb=>{
-    cb.addEventListener('change', ()=>{
-      const day = cb.getAttribute('data-day');
-      const kind = cb.getAttribute('data-kind');
-      const selNow = getSelection();
-      if(!selNow[day]) selNow[day] = { pi:false, wt:false };
-      selNow[day][kind] = cb.checked;
-      if(!selNow[day].pi && !selNow[day].wt) delete selNow[day];
-      setSelection(selNow);
+  wrap.querySelectorAll('input[type="checkbox"]').forEach(ch=>{
+    ch.addEventListener('change', async ()=>{
+      const dk=ch.getAttribute('data-day');
+      const kind=ch.getAttribute('data-kind');
+      const sel2=getSelection();
+      sel2[dk]=sel2[dk]||{pi:false,wt:false};
+      sel2[dk][kind]=ch.checked;
+      if(!sel2[dk].pi && !sel2[dk].wt) delete sel2[dk];
+      setSelection(sel2);
       updateSelSummary();
     });
   });
 }
 
-function buildHeatmap(ops, yLabels, rows, rowToKeyFn){
-  const z = yLabels.map(()=> ops.map(()=>0));
-  const yIndex = new Map(yLabels.map((v,i)=>[String(v), i]));
-  const xIndex = new Map(ops.map((v,i)=>[v, i]));
-  for(const r of rows){
-    const x = r[EVENTS_OPERATOR_COL];
-    const yk = rowToKeyFn(r);
-    const xi = xIndex.get(x);
-    const yi = yIndex.get(String(yk));
-    if(xi===undefined || yi===undefined) continue;
-    z[yi][xi] += 1;
+function mapEffectiveOperator(srcOp, ts){
+  const sup=getSupport();
+  const rules=(sup[srcOp]||[]).slice().sort((a,b)=>String(a.startISO).localeCompare(String(b.startISO)));
+  for(const r of rules){
+    const a=new Date(r.startISO), b=new Date(r.endISO);
+    if(ts>=a && ts<b) return r.realOp;
   }
-  return z;
+  return srcOp;
+}
+function shiftWindow(dayKey, code){
+  const base=new Date(dayKey+"T00:00:00");
+  const def=SHIFT_DEFS[code];
+  const [sh,sm]=def.start.split(":").map(Number);
+  const [eh,em]=def.end.split(":").map(Number);
+  return {
+    start:new Date(base.getFullYear(),base.getMonth(),base.getDate(),sh,sm,0),
+    end:new Date(base.getFullYear(),base.getMonth(),base.getDate(),eh,em,0)
+  };
+}
+function inferShift(op, dayKey, events){
+  const ov=getShiftOv();
+  const forced=ov?.[op]?.[dayKey] || "AUTO";
+  if(forced!=="AUTO"){
+    const w=shiftWindow(dayKey, forced);
+    return {code:forced,start:w.start,end:w.end,inferred:false};
+  }
+  const first=events[0]?.ts;
+  let code="C";
+  if(first){
+    const hm=first.getHours()*60+first.getMinutes();
+    if(hm<7*60) code="AM"; else if(hm<12*60) code="C"; else code="PM";
+  }
+  const w=shiftWindow(dayKey, code);
+  return {code,start:w.start,end:w.end,inferred:true};
+}
+function clampDate(d, a, b){
+  const t=d.getTime();
+  return new Date(Math.min(Math.max(t,a.getTime()), b.getTime()));
+}
+function minutesBetween(a,b){ return (b-a)/60000; }
+
+function getIndirectFor(op, dayKey){
+  const ind=getIndirect();
+  const arr=ind?.[op]?.[dayKey]||[];
+  return arr.map(x=>({start:new Date(x.startISO), end:new Date(x.endISO), desc:x.desc||""})).filter(x=>x.end>x.start);
 }
 
-async function loadPiRowsForSelectedDays(){
-  const sel = getSelection();
-  const dayKeys = Object.keys(sel).filter(dk => !!sel[dk]?.pi).sort();
+function buildIntervals(op, dayKey, evList){
+  if(!evList || evList.length<2) return {shift:null, intervals:[], changeTask:0};
+
+  const shift=inferShift(op, dayKey, evList);
+  const aS=shift.start, aE=shift.end;
+
+  const intervals=[];
+  let changeTask=0, prevCat=null;
+
+  for(let i=1;i<evList.length;i++){
+    const prev=evList[i-1], curr=evList[i];
+    const rawGap=minutesBetween(prev.ts, curr.ts);
+    if(!(rawGap>0)) continue;
+
+    const s0=clampDate(prev.ts, aS, aE);
+    const e0=clampDate(curr.ts, aS, aE);
+    const gap=minutesBetween(s0,e0);
+    if(!(gap>0)) continue;
+
+    let cat=(gap>=PAUSE_THRESHOLD_MIN) ? "PAUSA" : curr.category;
+
+    if(prevCat && cat!==prevCat) changeTask++;
+    prevCat=cat;
+
+    intervals.push({start:s0,end:e0,minutes:gap,category:cat,kind:curr.kind});
+  }
+
+  // apply indirect on pauses
+  const indRules=getIndirectFor(op, dayKey);
+  const out=[];
+  for(const it of intervals){
+    if(it.category!=="PAUSA" || !indRules.length){ out.push(it); continue; }
+    let remaining=[{start:it.start,end:it.end}];
+    for(const rule of indRules){
+      const next=[];
+      for(const seg of remaining){
+        const a=Math.max(seg.start.getTime(), rule.start.getTime());
+        const b=Math.min(seg.end.getTime(), rule.end.getTime());
+        if(b<=a){ next.push(seg); continue; }
+        if(seg.start.getTime()<a){
+          out.push({...it,start:seg.start,end:new Date(a),minutes:(a-seg.start.getTime())/60000,category:"PAUSA"});
+        }
+        out.push({...it,start:new Date(a),end:new Date(b),minutes:(b-a)/60000,category:"INDIRETTA"});
+        if(b<seg.end.getTime()) next.push({start:new Date(b), end:seg.end});
+      }
+      remaining=next;
+      if(!remaining.length) break;
+    }
+    for(const seg of remaining){
+      out.push({...it,start:seg.start,end:seg.end,minutes:(seg.end-seg.start)/60000,category:"PAUSA"});
+    }
+  }
+  out.sort((a,b)=>a.start-b.start);
+  return {shift, intervals:out, changeTask};
+}
+
+function sumByCategory(intervals){
+  const m=new Map();
+  for(const it of intervals) m.set(it.category, (m.get(it.category)||0)+it.minutes);
+  return m;
+}
+function hhmmFromMin(min){
+  const total=Math.max(0,Math.round(min||0));
+  const h=Math.floor(total/60), m=total%60;
+  return `${h}:${String(m).padStart(2,'0')}`;
+}
+
+/** Load events from DB for selected days */
+async function loadEventsForSelection(){
+  const sel=getSelection();
+  const dayKeys=selectionToDayKeys(sel);
   if(!dayKeys.length) return [];
 
   const { data, error } = await sb
     .from('events')
-    .select(`day_key, ts, lane, ${opSelect()}`)
+    .select(`day_key, ts, kind, category, self_count, wo_id, lane, ${EVENTS_OPERATOR_COL}`)
     .in('day_key', dayKeys)
-    .eq('kind', 'PI')
-    .not('lane','is', null);
+    .order('ts',{ascending:true});
   if(error) throw new Error(error.message);
-  return data || [];
+
+  return (data||[]).filter(e=>{
+    const s=sel[e.day_key];
+    if(!s) return false;
+    if(e.kind==="PI") return !!s.pi;
+    if(e.kind==="WT") return !!s.wt;
+    return false;
+  }).map(e=>({
+    ...e,
+    tsObj:new Date(e.ts),
+    effOp: mapEffectiveOperator(e[EVENTS_OPERATOR_COL], new Date(e.ts))
+  }));
 }
 
-function renderHeatmaps(piRows){
-  const ops = Array.from(new Set(piRows.map(r=>r[EVENTS_OPERATOR_COL]))).sort();
-  if(!ops.length){
-    Plotly.purge('heatHour');
-    Plotly.purge('heatLane');
-    setStatus('Nessun dato PI con lane nei giorni selezionati.');
-    return;
+/** Build aggregates for pies & prod */
+function computeAgg(events){
+  const piPick=events.filter(e=>e.kind==="PI" && e.category==="PI Pick").length;
+  const piBulk=events.filter(e=>e.kind==="PI" && e.category==="PI Bulk").length;
+
+  // per op/day build intervals
+  const byOpDay=new Map();
+  for(const e of events){
+    const k=`${e.effOp}|${e.day_key}`;
+    if(!byOpDay.has(k)) byOpDay.set(k, []);
+    byOpDay.get(k).push({ts:e.tsObj, kind:e.kind, category:e.category});
+  }
+  for(const [k,arr] of byOpDay.entries()) arr.sort((a,b)=>a.ts-b.ts);
+
+  const opAgg=new Map(); // op -> {workMin, change, piCount, wtCount, sumByCat}
+  let sumAll=new Map(); // sum durations for pieTime
+
+  for(const [k,evList] of byOpDay.entries()){
+    const [op, dayKey]=k.split("|");
+    const built=buildIntervals(op, dayKey, evList);
+    if(!built.shift) continue;
+
+    const sum=sumByCategory(built.intervals);
+    // work excludes PAUSA
+    const work=Array.from(sum.entries()).filter(([c])=>c!=="PAUSA").reduce((a,[,v])=>a+v,0);
+
+    if(!opAgg.has(op)){
+      opAgg.set(op, {workMin:0, change:0, piCount:0, wtCount:0, catMin:new Map()});
+    }
+    const a=opAgg.get(op);
+    a.workMin += work;
+    a.change += built.changeTask||0;
+    a.piCount += evList.filter(x=>x.kind==="PI").length;
+    a.wtCount += evList.filter(x=>x.kind==="WT").length;
+
+    for(const [cat,min] of sum.entries()){
+      a.catMin.set(cat, (a.catMin.get(cat)||0)+min);
+      sumAll.set(cat, (sumAll.get(cat)||0)+min);
+    }
   }
 
-  const hours = [];
-  for(let h=5; h<=22; h++) hours.push(String(h).padStart(2,'0')+':00');
-  const hourKey = (r)=>{
-    const dt = new Date(r.ts);
-    const h = dt.getHours();
-    if(h<5 || h>22) return null;
-    return String(h).padStart(2,'0')+':00';
-  };
-  const zH = buildHeatmap(ops, hours, piRows, hourKey);
+  return { piPick, piBulk, opAgg, sumAll };
+}
 
-  Plotly.newPlot('heatHour', [{
-    z:zH, x:ops, y:hours, type:'heatmap',
-    hovertemplate:'%{x}<br>%{y}<br>Conte=%{z}<extra></extra>'
-  }], {
+/** Heatmaps lane x hour */
+function hourLabel(h){ return String(h).padStart(2,'0')+":00"; }
+
+function buildLaneHourMatrix(rows){
+  // x=hours 05-22, y=lanes 01-50
+  const hours=[]; for(let h=5;h<=22;h++) hours.push(hourLabel(h));
+  const lanes=[]; for(let l=1;l<=50;l++) lanes.push(String(l).padStart(2,'0'));
+
+  const xIndex=new Map(hours.map((v,i)=>[v,i]));
+  const yIndex=new Map(lanes.map((v,i)=>[v,i]));
+  const z=lanes.map(()=>hours.map(()=>0));
+
+  for(const r of rows){
+    if(!r.lane) continue;
+    const dt=r.tsObj;
+    const h=dt.getHours();
+    if(h<5 || h>22) continue;
+    const x=hourLabel(h);
+    const y=String(r.lane).padStart(2,'0');
+    const xi=xIndex.get(x), yi=yIndex.get(y);
+    if(xi===undefined || yi===undefined) continue;
+    z[yi][xi] += 1;
+  }
+  return {hours, lanes, z};
+}
+
+function plotHeat(targetId, title, mat){
+  Plotly.newPlot(targetId, [{
+    z: mat.z,
+    x: mat.hours,
+    y: mat.lanes,
+    type: 'heatmap',
+    hovertemplate: 'Ora=%{x}<br>Corsia=%{y}<br>Conte=%{z}<extra></extra>'
+  }],{
+    title: {text: "", font:{color:"#e8eefc"}},
     paper_bgcolor:'rgba(0,0,0,0)', plot_bgcolor:'rgba(0,0,0,0)',
-    margin:{l:70,r:20,t:10,b:80}, font:{color:'#e8eefc'}
-  }, {displayModeBar:false, responsive:true});
+    margin:{l:70,r:20,t:10,b:60},
+    font:{color:'#e8eefc'},
+    yaxis:{title:"Corsia (01–50)"},
+    xaxis:{title:"Ora (05–22)"}
+  },{displayModeBar:false, responsive:true});
+}
 
-  const lanes = [];
-  for(let l=1; l<=50; l++) lanes.push(String(l).padStart(2,'0'));
-  const laneKey = (r)=> String(r.lane).padStart(2,'0');
-  const zL = buildHeatmap(ops, lanes, piRows, laneKey);
-
-  Plotly.newPlot('heatLane', [{
-    z:zL, x:ops, y:lanes, type:'heatmap',
-    hovertemplate:'%{x}<br>Corsia=%{y}<br>Conte=%{z}<extra></extra>'
-  }], {
+function plotPies(agg){
+  Plotly.newPlot('piePi', [{
+    type:'pie',
+    labels:['PI Pick','PI Bulk'],
+    values:[agg.piPick, agg.piBulk],
+    textinfo:'label+percent',
+    hovertemplate:'%{label}: %{value}<extra></extra>'
+  }],{
     paper_bgcolor:'rgba(0,0,0,0)', plot_bgcolor:'rgba(0,0,0,0)',
-    margin:{l:70,r:20,t:10,b:80}, font:{color:'#e8eefc'}
-  }, {displayModeBar:false, responsive:true});
+    margin:{l:10,r:10,t:10,b:10},
+    font:{color:'#e8eefc'}
+  },{displayModeBar:false, responsive:true});
+
+  // pie tempo per categorie principali
+  const wanted = ["PI Pick","PI Bulk","P2P","Clean PICK","WT Other","INDIRETTA","PAUSA"];
+  const labels=[], values=[];
+  for(const k of wanted){
+    const v=agg.sumAll.get(k)||0;
+    if(v>0){ labels.push(k); values.push(v); }
+  }
+  Plotly.newPlot('pieTime', [{
+    type:'pie', labels, values,
+    textinfo:'label+percent',
+    hovertemplate:'%{label}: %{value:.0f} min<extra></extra>'
+  }],{
+    paper_bgcolor:'rgba(0,0,0,0)', plot_bgcolor:'rgba(0,0,0,0)',
+    margin:{l:10,r:10,t:10,b:10},
+    font:{color:'#e8eefc'}
+  },{displayModeBar:false, responsive:true});
+}
+
+function plotProdChange(opAgg){
+  const ops=Array.from(opAgg.keys()).sort();
+  const prod=[], change=[];
+  for(const op of ops){
+    const a=opAgg.get(op);
+    const hours = (a.workMin||0)/60;
+    const totalTasks = (a.piCount||0) + (a.wtCount||0);
+    const p = hours>0 ? (totalTasks/hours) : 0;
+    prod.push(Number(p.toFixed(2)));
+    change.push(a.change||0);
+  }
+
+  Plotly.newPlot('prodChange', [
+    { type:'bar', x:ops, y:prod, name:'Produttività (task/h)', yaxis:'y' },
+    { type:'scatter', x:ops, y:change, name:'Cambi task', yaxis:'y2', mode:'lines+markers' }
+  ],{
+    paper_bgcolor:'rgba(0,0,0,0)', plot_bgcolor:'rgba(0,0,0,0)',
+    margin:{l:60,r:60,t:10,b:80},
+    font:{color:'#e8eefc'},
+    yaxis:{title:'Produttività (task/h)'},
+    yaxis2:{title:'Cambi task', overlaying:'y', side:'right'},
+    legend:{orientation:'h'}
+  },{displayModeBar:false, responsive:true});
 }
 
 async function run(){
-  setErr('');
-  updateSelSummary();
+  try{
+    setErr("");
+    updateSelSummary();
 
-  const sel = getSelection();
-  const dayKeys = Object.keys(sel).sort();
-  if(!dayKeys.length){
-    setStatus('Nessun giorno selezionato. Vai in Home o usa i checkbox a destra.');
-    Plotly.purge('heatHour');
-    Plotly.purge('heatLane');
-    return;
+    const sel=getSelection();
+    const keys=selectionToDayKeys(sel);
+    if(!keys.length){
+      setStatus("Seleziona almeno un giorno.");
+      Plotly.purge("piePi"); Plotly.purge("pieTime");
+      Plotly.purge("prodChange");
+      Plotly.purge("heatPiLaneHour");
+      Plotly.purge("heatAllLaneHour");
+      return;
+    }
+
+    setStatus("Caricamento eventi…");
+    const events=await loadEventsForSelection();
+
+    setStatus("Calcolo KPI e grafici…");
+    const agg=computeAgg(events);
+    plotPies(agg);
+    plotProdChange(agg.opAgg);
+
+    // Heatmap PI
+    const piRows=events.filter(e=>e.kind==="PI" && e.lane!=null);
+    const matPi=buildLaneHourMatrix(piRows);
+    plotHeat("heatPiLaneHour", "PI", matPi);
+
+    // Heatmap All (PI+WT) con lane valorizzata
+    const allRows=events.filter(e=>e.lane!=null);
+    const matAll=buildLaneHourMatrix(allRows);
+    plotHeat("heatAllLaneHour", "All", matAll);
+
+    setStatus("OK.");
+  }catch(e){
+    console.error(e);
+    setErr(e.message||String(e));
+    setStatus("Errore");
   }
-
-  setStatus('Caricamento PI (giorni selezionati)…');
-  const piRows = await loadPiRowsForSelectedDays();
-  renderHeatmaps(piRows);
-  setStatus('OK.');
 }
 
-$("clearSelBtn").addEventListener('click', async ()=>{ setSelection({}); updateSelSummary(); await loadDatasets(); run(); });
-$("selAllBtn").addEventListener('click', async ()=>{
+$("clearSelBtn").addEventListener("click", async ()=>{
+  setSelection({}); updateSelSummary(); await loadDatasets(); await run();
+});
+$("selAllBtn").addEventListener("click", async ()=>{
   const { data } = await sb.from('datasets').select('day_key, pi_rows, wt_rows');
   const out={};
-  for(const d of (data||[])) out[d.day_key] = { pi:(d.pi_rows||0)>0, wt:(d.wt_rows||0)>0 };
-  setSelection(out); updateSelSummary(); await loadDatasets(); run();
+  for(const d of (data||[])) out[d.day_key]={pi:(d.pi_rows||0)>0, wt:(d.wt_rows||0)>0};
+  setSelection(out); updateSelSummary(); await loadDatasets(); await run();
 });
-$("sel7Btn").addEventListener('click', async ()=>{
+$("sel7Btn").addEventListener("click", async ()=>{
   const { data } = await sb.from('datasets').select('day_key, pi_rows, wt_rows').order('day_key',{ascending:false}).limit(7);
   const out={};
-  for(const d of (data||[])) out[d.day_key] = { pi:(d.pi_rows||0)>0, wt:(d.wt_rows||0)>0 };
-  setSelection(out); updateSelSummary(); await loadDatasets(); run();
+  for(const d of (data||[])) out[d.day_key]={pi:(d.pi_rows||0)>0, wt:(d.wt_rows||0)>0};
+  setSelection(out); updateSelSummary(); await loadDatasets(); await run();
 });
-$("reloadBtn").addEventListener('click', ()=> run().catch(e=>{console.error(e); setErr(e.message); setStatus('Errore');}));
+$("reloadBtn").addEventListener("click", run);
 
 (async function boot(){
   try{
-    setStatus('Caricamento dataset…');
+    setStatus("Caricamento dataset…");
     await loadDatasets();
     updateSelSummary();
     await run();
   }catch(e){
     console.error(e);
     setErr(e.message);
-    setStatus('Errore');
+    setStatus("Errore");
   }
 })();
 </script>
