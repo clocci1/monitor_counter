@@ -2,791 +2,2758 @@
 <html lang="it">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Overview — Produttività</title>
 
-  <!-- Plotly (heatmap in drilldown, se serve in futuro) -->
-  <script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js"></script>
-  <!-- Chart.js (torta tempo nel drilldown) -->
+  <!-- XLSX -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <!-- Plotly -->
+  <script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js"></script>
 
   <style>
     :root{
-      --bg:#0b1220;
-      --card:#111a2e;
-      --border:rgba(255,255,255,.12);
-      --muted:#a9b7d6;
-      --text:#e8eefc;
-      --btn:#6ea8fe;
-      --bad:#ff6b6b;
-      --ok:#76ff7a;
-
-      --pipick:rgba(110,168,254,.55);
-      --pibulk:rgba(110,168,254,.28);
-      --p2p:rgba(81,207,102,.55);
-      --clean:rgba(81,207,102,.28);
-      --other:rgba(255,255,255,.18);
-      --pause:rgba(255,107,107,.55);
-      --indirect:rgba(255,193,7,.55);
+      --bg:#0b1220; --panel:#111a2e; --text:#e8eefc; --muted:#a9b7d6;
+      --border:rgba(255,255,255,.12); --accent:#6ea8fe; --bad:#ff6b6b;
     }
     *{box-sizing:border-box;}
-    body{font-family:system-ui,Segoe UI,Roboto,Arial;margin:0;background:var(--bg);color:var(--text);}
-    header{padding:14px 18px;border-bottom:1px solid var(--border);}
-    nav a{color:var(--text);text-decoration:none;margin-right:12px;font-weight:800;}
-
-    .wrap{max-width:1700px;margin:0 auto;padding:16px 18px;}
-    .layout{display:flex;gap:12px;align-items:flex-start;}
-    .left{flex:1;min-width:680px;}
-    .right{width:420px;position:sticky;top:16px;}
-    @media(max-width:1200px){
-      .layout{flex-direction:column;}
-      .right{width:100%;position:static;}
-      .left{min-width:unset;}
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);color:var(--text);}
+    header{padding:14px 20px;border-bottom:1px solid var(--border);background:linear-gradient(180deg,rgba(255,255,255,.06),transparent);position:sticky;top:0;z-index:10;}
+    .topbar{display:flex;gap:14px;align-items:center;justify-content:space-between;flex-wrap:wrap;}
+    h1{margin:0;font-size:16px;font-weight:800;}
+    .nav{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+    .nav button{
+      background:rgba(255,255,255,.06);color:var(--text);border:1px solid var(--border);
+      padding:8px 12px;border-radius:12px;font-weight:800;cursor:pointer;
     }
+    .nav button.active{border-color:rgba(110,168,254,.55);box-shadow:0 0 0 2px rgba(110,168,254,.15) inset;}
+    .container{padding:16px 20px 28px;max-width:1500px;margin:0 auto;}
 
-    .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;margin:12px 0;}
-    .hint{color:var(--muted);font-size:12px;}
-    .mono{font-variant-numeric:tabular-nums;}
-    .bad{color:var(--bad);} .ok{color:var(--ok);}
-
-    button,input,select,textarea{
-      border-radius:10px;border:1px solid var(--border);
-      background:rgba(255,255,255,.06);color:var(--text);padding:10px;
+    .card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:14px;margin:12px 0;}
+    .row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;}
+    .col{display:flex;flex-direction:column;gap:6px;min-width:220px;}
+    label{font-size:12px;color:var(--muted);}
+    input[type="file"], input[type="text"], input[type="datetime-local"], input[type="date"], select{
+      background:rgba(255,255,255,.06);border:1px solid var(--border);color:var(--text);
+      padding:10px;border-radius:10px;
     }
-    button{background:var(--btn);color:var(--bg);border:0;font-weight:900;cursor:pointer;}
+    textarea{
+      width:100%;min-height:80px;resize:vertical;
+      background:rgba(255,255,255,.06);border:1px solid var(--border);color:var(--text);
+      padding:10px;border-radius:10px;
+    }
+    button{
+      background:var(--accent);border:0;padding:10px 14px;border-radius:10px;font-weight:800;cursor:pointer;color:#0b1220;
+    }
     button.secondary{background:rgba(255,255,255,.10);color:var(--text);border:1px solid var(--border);}
-    button.small{padding:6px 8px;font-size:12px;border-radius:8px;}
+    button.tertiary{background:rgba(255,255,255,.06);color:var(--text);border:1px solid var(--border);}
+    button.small{padding:6px 10px;font-size:12px;border-radius:10px;}
+    button:disabled{opacity:.55;cursor:not-allowed;}
+    .hint{color:var(--muted);font-size:12px;line-height:1.35;}
+    .status{font-size:13px;color:var(--muted);}
+    .status strong{color:var(--text);}
+    .error{color:var(--bad);font-size:13px;margin-top:6px;}
+    .hidden{display:none !important;}
 
     table{width:100%;border-collapse:collapse;margin-top:10px;font-size:12px;}
-    th,td{padding:8px;border-bottom:1px solid var(--border);vertical-align:top;}
-    th{color:var(--muted);text-align:left;font-weight:800;}
-    tr.clickable:hover{background:rgba(255,255,255,.04);cursor:pointer;}
+    th,td{padding:8px 8px;border-bottom:1px solid var(--border);vertical-align:top;}
+    th{position:sticky;top:0;background:rgba(17,26,46,.96);text-align:left;font-size:12px;color:var(--muted);z-index:1;}
+    tr:hover td{background:rgba(255,255,255,.03);}
 
-    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between;}
-    .chip{display:inline-flex;gap:6px;align-items:center;border:1px solid var(--border);border-radius:999px;padding:6px 10px;background:rgba(255,255,255,.06);}
-    .chip strong{font-weight:900;}
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+    @media (max-width:980px){.grid2{grid-template-columns:1fr;}}
 
-    /* Timebar */
+    .clickable{cursor:pointer;}
+    .clickable td:nth-child(2){color:var(--accent);font-weight:800;}
+
+    .pill{
+      display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;
+      border:1px solid var(--border);background:rgba(255,255,255,.04);color:var(--text);font-size:12px;
+    }
+    .badge{display:inline-block;padding:2px 8px;border-radius:999px;border:1px solid var(--border);font-size:11px;color:var(--muted);}
+    .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+
+    #toTopBtn{
+      position:fixed;right:16px;bottom:16px;width:44px;height:44px;border-radius:12px;
+      display:none;align-items:center;justify-content:center;
+      background:rgba(255,255,255,.10);border:1px solid var(--border);
+      color:var(--text);font-size:18px;cursor:pointer;backdrop-filter: blur(6px);
+      z-index:20;
+    }
+
+    /* Sequenza visiva */
+    .dayBarsWrap{margin-top:12px;display:flex;flex-direction:column;gap:10px;}
+    .barRow{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+    .barLabel{min-width:170px;font-size:12px;color:var(--muted);}
+    .dayBar{
+      width:100%;
+      max-width: 100%;
+      height:22px;
+      border-radius:12px;
+      border:1px solid var(--border);
+      background:rgba(255,255,255,.04);
+      overflow:hidden;
+      display:flex;
+    }
+    .seg{height:100%;min-width:1px;}
+    .seg.pipick{background:rgba(110,168,254,.60);}
+    .seg.pibulk{background:rgba(110,168,254,.28);}
+    .seg.p2p{background:rgba(81,207,102,.55);}
+    .seg.clean{background:rgba(81,207,102,.28);}
+    .seg.other{background:rgba(255,255,255,.18);}
+    .seg.pause{background:rgba(255,107,107,.55);cursor:pointer;}
+    .seg.indirect{background:rgba(255,193,7,.55);}
+
     .legend{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;}
-    .li{display:flex;gap:6px;align-items:center;font-size:12px;color:var(--muted)}
-    .sw{width:14px;height:10px;border-radius:4px;border:1px solid var(--border)}
-
-    .barWrap{margin-top:10px;border:1px solid var(--border);border-radius:10px;overflow:hidden;background:rgba(255,255,255,.04);}
-    .barRow{display:flex;}
-    .barCell{flex:1;min-width:14px;height:22px;border-right:1px solid rgba(255,255,255,.06);}
-    .barCell:last-child{border-right:0;}
-    .barCell[data-cat="PI Pick"]{background:var(--pipick)}
-    .barCell[data-cat="PI Bulk"]{background:var(--pibulk)}
-    .barCell[data-cat="P2P"]{background:var(--p2p)}
-    .barCell[data-cat="Clean PICK"]{background:var(--clean)}
-    .barCell[data-cat="WT Other"]{background:var(--other)}
-    .barCell[data-cat="PAUSA"]{background:var(--pause)}
-    .barCell[data-cat="INDIRETTA"]{background:var(--indirect)}
-
-    .barAxis{display:flex;justify-content:space-between;color:var(--muted);font-size:11px;margin-top:6px;}
+    .legendItem{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);}
+    .swatch{width:12px;height:12px;border-radius:4px;border:1px solid var(--border);}
 
     /* Modal */
-    .modalMask{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.55);z-index:50;}
-    .modal{width:min(860px,92vw);max-height:86vh;overflow:auto;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px;}
-    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
-    @media(max-width:900px){.grid2{grid-template-columns:1fr;}}
-    textarea{min-height:90px;resize:vertical;}
+    .modalOverlay{
+      position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;z-index:9999;
+    }
+    .modal{
+      width:min(1060px, 94vw);
+      background:var(--panel);
+      border:1px solid var(--border);
+      border-radius:14px;
+      padding:14px;
+    }
+    .modalHeader{display:flex;align-items:center;justify-content:space-between;gap:10px;}
+    .modalTitle{font-weight:900;}
+    .modalBody{margin-top:12px;}
+    .modalFooter{display:flex;gap:10px;justify-content:flex-end;margin-top:12px;flex-wrap:wrap;}
+    .gridForm{
+      display:grid;
+      grid-template-columns: 1fr 240px 240px 160px;
+      gap:10px;
+      align-items:end;
+    }
+    .gridForm3{
+      display:grid;
+      grid-template-columns: 240px 240px 1fr;
+      gap:10px;
+      align-items:end;
+    }
+    .gridFormIndirect{
+      display:grid;
+      grid-template-columns: 240px 240px 220px 1fr;
+      gap:10px;
+      align-items:end;
+    }
+
+    /* Charts */
+    .chartBox{height:320px;}
+    .plotWide{height:380px;} /* coerente con i 2 pie sopra (griglia 2 colonne -> altezza simile) */
+    .plotWideTall{height:420px;}
+
+    /* Filter strip */
+    .filterStrip{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;}
+    .filterStrip .col{min-width:180px;}
+    .mono{font-variant-numeric: tabular-nums;}
   </style>
 </head>
 
 <body>
-<header>
-  <nav>
-    <a href="index.html">Home</a>
-    <a href="overview.html">Overview</a>
-    <a href="charts.html">Charts</a>
-    <a href="score.html">Score</a>
+<header style="padding:14px 18px;border-bottom:1px solid rgba(255,255,255,.12);position:sticky;top:0;background:#0b1220;z-index:999;">
+  <nav style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
+    <a href="index.html" style="color:#e8eefc;text-decoration:none;font-weight:800;">Home</a>
+    <a href="overview.html" style="color:#e8eefc;text-decoration:none;font-weight:800;">Overview</a>
+    <a href="charts.html" style="color:#e8eefc;text-decoration:none;font-weight:800;">Charts</a>
+    <a href="score.html" style="color:#e8eefc;text-decoration:none;font-weight:800;">Score</a>
   </nav>
 </header>
 
-<div class="wrap">
-  <div class="layout">
-    <div class="left">
-      <div class="card">
-        <div class="row">
-          <div>
-            <div style="font-weight:900;">Overview</div>
-            <div class="hint" id="status">—</div>
-            <div class="hint bad" id="err"></div>
-          </div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-            <button class="secondary" id="reloadBtn" type="button">Ricarica</button>
-            <label class="chip" style="cursor:pointer;user-select:none;">
-              <input id="supportToggle" type="checkbox" style="transform:translateY(1px);" />
-              <strong>Supporto?</strong>
-              <span class="hint">(gestisci account condivisi)</span>
-            </label>
-          </div>
+<header>
+  <div class="topbar">
+    <h1>Produttività Reparto — PI + WT</h1>
+    <div class="nav">
+      <button id="navHome" type="button">Home</button>
+      <button id="navCharts" type="button">Charts</button>
+      <button id="navScore" type="button">Score</button>
+      <button id="navQuality" type="button">Quality Area</button>
+    </div>
+  </div>
+</header>
+
+<div class="container">
+  <!-- GLOBAL FILTERS (multi-day across all pages) -->
+  <div class="card">
+    <div class="status"><strong>Filtri temporali (globali)</strong></div>
+    <div class="filterStrip" style="margin-top:10px;">
+      <div class="col">
+        <label>Modalità</label>
+        <select id="filterMode">
+          <option value="all">Tutti i giorni caricati</option>
+          <option value="single">Giorno singolo</option>
+          <option value="range">Intervallo date</option>
+          <option value="week">Settimana (ISO) da data</option>
+        </select>
+      </div>
+      <div class="col">
+        <label>Data riferimento</label>
+        <input id="filterRefDate" type="date" />
+      </div>
+      <div class="col">
+        <label>Dal</label>
+        <input id="filterFrom" type="date" />
+      </div>
+      <div class="col">
+        <label>Al</label>
+        <input id="filterTo" type="date" />
+      </div>
+      <div class="col" style="min-width:240px;">
+        <button id="applyFilterBtn" class="secondary" type="button" disabled>Applica filtri</button>
+      </div>
+      <div class="col" style="min-width:320px;">
+        <div class="hint" id="filterSummary">Nessun dato caricato.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- HOME -->
+  <section id="viewHome" data-view="home">
+    <div class="card">
+      <div class="row">
+        <div class="col">
+          <label>Carica PI (anche più file)</label>
+          <input id="piFile" type="file" accept=".xlsx,.xls" multiple />
+        </div>
+        <div class="col">
+          <label>Carica WT (anche più file)</label>
+          <input id="wtFile" type="file" accept=".xlsx,.xls" multiple />
+        </div>
+        <div class="col" style="min-width:160px">
+          <button id="runBtn" type="button">Analizza</button>
+        </div>
+        <div class="col" style="min-width:220px">
+          <button id="clearSupportBtn" class="secondary" type="button" disabled>Reset Supporti</button>
+        </div>
+        <div class="col" style="min-width:240px">
+          <button id="clearIndirectBtn" class="secondary" type="button" disabled>Reset Indirette</button>
         </div>
       </div>
 
-      <div class="card" id="summaryCard">
-        <div class="row">
-          <div class="chip"><span class="hint">Giorni</span> <strong id="kDays">0</strong></div>
-          <div class="chip"><span class="hint">Operatori</span> <strong id="kOps">0</strong></div>
-          <div class="chip"><span class="hint">Finestra</span> <strong id="kRange">—</strong></div>
-        </div>
+      <p class="hint">
+        Logica corretta multi-day: gli intervalli sono calcolati <strong>per operatore e per giorno</strong>.
+        Gap fuori turno non sono PAUSA ma <strong>FUORI TURNO</strong> (esclusi da KPI). Turno AM/C/PM viene inferito e può essere corretto manualmente.
+      </p>
 
-        <div style="margin-top:12px;font-weight:900;">Riepilogo operatori (clic per drill-down)</div>
+      <div id="status" class="status">Stato: <strong>in attesa dei file</strong></div>
+      <div id="error" class="error"></div>
+    </div>
+
+    <div class="grid2">
+      <div class="card">
+        <div class="status"><strong>Riepilogo</strong> (clicca operatore)</div>
         <div id="summaryWrap"></div>
       </div>
+      <div class="card">
+        <div class="status"><strong>Overview KPI</strong> (medie + %)</div>
+        <div id="overviewWrap"></div>
+      </div>
+    </div>
 
-      <div class="card" id="drillCard" style="display:none;">
-        <div class="row">
-          <div>
-            <div style="font-weight:900;">Dettaglio — <span id="ddOp" class="mono"></span></div>
-            <div class="hint" id="ddHint">—</div>
-          </div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-            <button class="secondary" id="backBtn" type="button">Indietro</button>
-            <button class="secondary" id="toggleBtn" type="button">Sintesi</button>
-            <button class="secondary" id="exportBtn" type="button">Export CSV</button>
-          </div>
-        </div>
+    <!-- Drilldown -->
+    <div id="drilldownCard" class="card hidden">
+      <div class="toolbar">
+        <span class="pill">Operatore: <strong id="ddOp">—</strong></span>
+        <span class="pill">Giorni selezionati: <strong id="ddDays">—</strong></span>
+        <span class="pill">Turno: <strong id="ddShift">—</strong></span>
+        <span class="pill">Cambio Task: <strong id="ddSwitchCount">—</strong></span>
 
-        <div class="grid2" style="margin-top:12px;">
-          <div>
-            <div class="hint">Giorni visibili (max 5 per vista barre multi-day)</div>
-            <select id="ddDays" multiple style="width:100%;min-height:110px;"></select>
-            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
-              <button class="secondary small" id="ddAllBtn" type="button">Tutti</button>
-              <button class="secondary small" id="ddLast5Btn" type="button">Ultimi 5</button>
-              <button class="secondary small" id="ddApplyBtn" type="button">Applica</button>
+        <button id="detailBtn" class="tertiary" type="button">Dettaglio</button>
+        <button id="backBtn" class="secondary" type="button">Chiudi</button>
+        <button id="exportBtn" class="secondary" type="button" disabled>Esporta (CSV)</button>
+      </div>
+
+      <div class="hint" id="ddHint" style="margin-top:10px;"></div>
+
+      <div class="card" style="margin-top:12px;">
+        <div class="status"><strong>Filtro giorni (Drilldown)</strong></div>
+        <div class="row" style="margin-top:10px;">
+          <div class="col">
+            <label>Giorni disponibili (max 5 barre in multi-day)</label>
+            <select id="ddDaySelect" multiple size="6"></select>
+          </div>
+          <div class="col" style="min-width:240px;">
+            <button id="ddApplyDaysBtn" class="secondary" type="button">Applica selezione</button>
+            <div class="hint" style="margin-top:8px;">
+              In modalità multi-day, se selezioni più di 5 giorni verranno considerati i primi 5 (ordinati).
             </div>
           </div>
-          <div>
-            <div class="hint">Turno (override manuale)</div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-              <select id="ddShiftSel" style="min-width:180px;">
-                <option value="AUTO">AUTO</option>
-                <option value="AM">AM (05–13)</option>
-                <option value="C">C (08–16)</option>
-                <option value="PM">PM (14–22)</option>
-              </select>
-              <button class="secondary small" id="ddShiftApply" type="button">Applica turno</button>
+          <div class="col" style="min-width:240px;">
+            <label>Override turno per giorno selezionato</label>
+            <select id="ddShiftOverride">
+              <option value="AUTO">AUTO (inferito)</option>
+              <option value="AM">AM (05–13)</option>
+              <option value="C">C (08–16)</option>
+              <option value="PM">PM (14–22)</option>
+            </select>
+            <button id="ddSetShiftBtn" class="secondary" type="button" style="margin-top:8px;">Imposta turno</button>
+            <div class="hint" style="margin-top:8px;">
+              L’override serve per evitare falsi “FUORI TURNO” e rendere PAUSA corretta.
             </div>
-            <div class="hint" style="margin-top:8px;">Se un account appare in più turni, usa i <strong>supporti</strong> per riassegnare correttamente le fasce.</div>
           </div>
         </div>
+      </div>
 
-        <!-- Sintesi -->
-        <div id="ddSynth" style="margin-top:14px;">
-          <div style="font-weight:900;">Sintesi sequenziale</div>
-          <div class="hint">Blocchi consecutivi raggruppati (PI Pick/Bulk, P2P, Clean, Other, Pausa, Indiretta). Note: include Self Count.</div>
-          <div id="ddSynthTable"></div>
+      <!-- Sintesi + Sequenze -->
+      <div id="ddSummaryArea" style="margin-top:14px;">
+        <div class="status"><strong>Sintesi sequenziale</strong> (per giorno)</div>
+        <div id="sequenceWrap"></div>
 
+        <div class="dayBarWrap" style="margin-top:16px;">
+          <div class="status"><strong>Sequenza visiva</strong> (clic PAUSA → Indiretta)</div>
           <div class="legend">
-            <div class="li"><span class="sw" style="background:var(--pipick)"></span> PI Pick</div>
-            <div class="li"><span class="sw" style="background:var(--pibulk)"></span> PI Bulk</div>
-            <div class="li"><span class="sw" style="background:var(--p2p)"></span> P2P</div>
-            <div class="li"><span class="sw" style="background:var(--clean)"></span> Clean PICK</div>
-            <div class="li"><span class="sw" style="background:var(--other)"></span> WT Other</div>
-            <div class="li"><span class="sw" style="background:var(--pause)"></span> Pausa</div>
-            <div class="li"><span class="sw" style="background:var(--indirect)"></span> Indiretta</div>
+            <div class="legendItem"><span class="swatch" style="background:rgba(110,168,254,.60)"></span> PI Pick</div>
+            <div class="legendItem"><span class="swatch" style="background:rgba(110,168,254,.28)"></span> PI Bulk</div>
+            <div class="legendItem"><span class="swatch" style="background:rgba(81,207,102,.55)"></span> P2P</div>
+            <div class="legendItem"><span class="swatch" style="background:rgba(81,207,102,.28)"></span> Clean PICK</div>
+            <div class="legendItem"><span class="swatch" style="background:rgba(255,255,255,.18)"></span> WT Other</div>
+            <div class="legendItem"><span class="swatch" style="background:rgba(255,107,107,.55)"></span> PAUSA</div>
+            <div class="legendItem"><span class="swatch" style="background:rgba(255,193,7,.55)"></span> Indiretta</div>
           </div>
-
-          <div style="margin-top:12px;font-weight:900;">Sequenza visiva (slot da 30 min)</div>
-          <div class="hint">Click su una cella <strong>Pausa</strong> per inserire un'attività indiretta (aggiorna KPI e note).</div>
-          <div id="ddBars"></div>
-
-          <div class="card" style="margin-top:12px;">
-            <div style="font-weight:900;">Distribuzione tempo (media sui giorni selezionati)</div>
-            <div style="height:320px;"><canvas id="ddPie"></canvas></div>
-          </div>
+          <div id="dayBarsHost" class="dayBarsWrap"></div>
         </div>
 
-        <!-- Dettaglio -->
-        <div id="ddDetail" style="margin-top:14px;display:none;">
-          <div style="font-weight:900;">Dettaglio intervalli</div>
-          <div class="hint">Mostra ogni intervallo (inizio, fine, durata, note). Utile per verificare i calcoli.</div>
-          <div id="ddDetailTable"></div>
+        <div class="card" style="margin-top:14px;">
+          <div class="status"><strong>Distribuzione tempo (media sui giorni selezionati)</strong></div>
+          <div class="chartBox"><canvas id="ddPieTime"></canvas></div>
         </div>
       </div>
+
+      <!-- Dettaglio -->
+      <div id="ddDetailArea" class="hidden" style="margin-top:14px;">
+        <div class="status"><strong>Dettaglio intervalli</strong></div>
+        <div id="intervalsWrap"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CHARTS -->
+  <section id="viewCharts" data-view="charts" class="hidden">
+    <div class="card">
+      <div class="status"><strong>Charts</strong></div>
+      <div class="hint">Tutti i grafici rispettano i filtri globali (giorno/settimana/intervallo).</div>
+      <div id="chartsEmpty" class="hint" style="margin-top:10px;">Carica e analizza i file in Home.</div>
     </div>
 
-    <aside class="right">
+    <div id="chartsContent" class="hidden">
       <div class="card">
-        <div style="font-weight:900;">Dataset presenti</div>
-        <div class="hint">La selezione si fa da Home. Qui vedi cosa è caricato e il filtro corrente.</div>
-        <div style="margin-top:10px;" id="dsInfo"></div>
+        <div class="status"><strong>Tabella principale (filtrata)</strong></div>
+        <div id="chartsTableWrap"></div>
+      </div>
+
+      <div class="grid2">
+        <div class="card">
+          <div class="status"><strong>Distribuzione BIN — PI Pick</strong></div>
+          <div class="chartBox"><canvas id="piePick"></canvas></div>
+        </div>
+        <div class="card">
+          <div class="status"><strong>Distribuzione BIN — PI Bulk</strong></div>
+          <div class="chartBox"><canvas id="pieBulk"></canvas></div>
+        </div>
+      </div>
+
+      <div class="grid2">
+        <div class="card">
+          <div class="status"><strong>Heatmap PI per Ora</strong> (X=Operatori, Y=05–22, Z=#conte)</div>
+          <div id="heatmapHour" class="plotWide"></div>
+          <div class="hint">Hover: include breakdown corsie (01–50) per quella cella.</div>
+        </div>
+        <div class="card">
+          <div class="status"><strong>Heatmap PI per Corsia</strong> (X=Operatori, Y=Corsie 01–50, Z=#conte)</div>
+          <div id="heatmapLane" class="plotWide"></div>
+          <div class="hint">Hover: include breakdown ore (05–22) per quella cella.</div>
+        </div>
       </div>
 
       <div class="card">
-        <div style="font-weight:900;">Overview KPI (filtrato)</div>
-        <div class="hint">KPI sintetici: % tempo per categoria, Self Count, pick vs bulk.</div>
-        <div id="kpiWrap"></div>
+        <div class="status"><strong>Produttività vs Cambi Task</strong></div>
+        <div class="chartBox"><canvas id="comboChart"></canvas></div>
       </div>
-    </aside>
-  </div>
+    </div>
+  </section>
+
+  <!-- SCORE -->
+  <section id="viewScore" data-view="score" class="hidden">
+    <div class="card">
+      <div class="status"><strong>Score</strong> (Target vs Actual vs Effettivo + TPH)</div>
+      <div class="hint">
+        Target = durata nominale turno (8h). Actual = presenza osservata nel turno (prima→ultima attività nel turno).
+        Effettivo = tempo operativo (PI/WT) e Indiretta (separata). Inattività = Target − Actual.
+      </div>
+      <div id="scoreEmpty" class="hint" style="margin-top:10px;">Carica e analizza i file in Home.</div>
+    </div>
+
+    <div id="scoreContent" class="hidden">
+      <div class="card">
+        <div class="status"><strong>Score per operatore (filtrato)</strong></div>
+        <div id="scoreTableWrap"></div>
+      </div>
+
+      <div class="card">
+        <div class="status"><strong>TPH & sec/task (filtrato)</strong></div>
+        <div id="tphTableWrap"></div>
+      </div>
+
+      <div class="card">
+        <div class="status"><strong>Dettaglio giornaliero (opzionale, filtrato)</strong></div>
+        <div class="hint">Mostra righe per operatore e giorno (utile per debug turni, inattività e out-of-shift).</div>
+        <div id="scoreDailyWrap"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- QUALITY -->
+  <section id="viewQuality" data-view="quality" class="hidden">
+    <div class="card">
+      <div class="status"><strong>Quality Area</strong> (placeholder)</div>
+      <div class="hint">In futuro: inserimento PI aggiuntive e controlli qualità.</div>
+    </div>
+  </section>
 </div>
 
-<!-- MODAL SUPPORTI -->
-<div class="modalMask" id="supportMask">
+<div id="toTopBtn" title="Torna su">↑</div>
+
+<!-- SUPPORT MODAL -->
+<div id="supportModalOverlay" class="modalOverlay">
   <div class="modal">
-    <div class="row">
+    <div class="modalHeader">
       <div>
-        <div style="font-weight:900;">Supporti (account → operatore reale)</div>
-        <div class="hint">Inserisci fascia oraria: l'account verrà "splittato" e ricalcoliamo tutto sulle fasce.</div>
+        <div class="modalTitle">Supporto account: <span id="supportSourceLabel"></span></div>
+        <div class="hint" id="supportSourceHint"></div>
       </div>
-      <button class="secondary" id="supportClose" type="button">Chiudi</button>
+      <button id="supportCloseX" class="secondary small" type="button">Chiudi</button>
     </div>
 
-    <div class="grid2" style="margin-top:12px;">
-      <div>
-        <label class="hint">Account (nome che appare nei file)</label>
-        <select id="supSrc" style="width:100%;"></select>
+    <div class="modalBody">
+      <div class="gridForm">
+        <div class="col" style="min-width:unset">
+          <label>Supporto reale (nome operatore)</label>
+          <input id="supportRealInput" type="text" placeholder="Es. M.HAYAT" />
+        </div>
+        <div class="col" style="min-width:unset">
+          <label>Start</label>
+          <input id="supportStartInput" type="datetime-local" />
+        </div>
+        <div class="col" style="min-width:unset">
+          <label>End</label>
+          <input id="supportEndInput" type="datetime-local" />
+        </div>
+        <div class="col" style="min-width:unset">
+          <button id="supportAddBtn" class="tertiary" type="button">Aggiungi</button>
+        </div>
       </div>
-      <div>
-        <label class="hint">Supporto reale</label>
-        <input id="supReal" type="text" placeholder="es. A.BEJAN" style="width:100%;" />
+
+      <div style="margin-top:12px;">
+        <div class="status"><strong>Fasce inserite</strong></div>
+        <div id="supportAllocTableWrap"></div>
       </div>
-      <div>
-        <label class="hint">Inizio</label>
-        <input id="supStart" type="datetime-local" style="width:100%;" />
-      </div>
-      <div>
-        <label class="hint">Fine</label>
-        <input id="supEnd" type="datetime-local" style="width:100%;" />
-      </div>
-    </div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center;">
-      <button id="supAdd" type="button">Aggiungi supporto</button>
-      <button class="secondary" id="supClear" type="button">Reset supporti</button>
-      <div class="hint" id="supMsg"></div>
     </div>
 
-    <div style="margin-top:12px;font-weight:900;">Supporti attivi</div>
-    <div id="supTable"></div>
+    <div class="modalFooter">
+      <button id="supportClearBtn" class="secondary" type="button">Svuota</button>
+      <button id="supportOkBtn" type="button">OK (Ricalcola)</button>
+    </div>
   </div>
 </div>
 
-<!-- MODAL INDIRETTA -->
-<div class="modalMask" id="indMask">
+<!-- INDIRECT MODAL -->
+<div id="indirectModalOverlay" class="modalOverlay">
   <div class="modal">
-    <div class="row">
+    <div class="modalHeader">
       <div>
-        <div style="font-weight:900;">Inserisci attività indiretta</div>
-        <div class="hint">Sostituisce una porzione di pausa (solo per l'operatore/giorno selezionati).</div>
+        <div class="modalTitle">Inserisci attività indiretta — <span id="indirectOpLabel"></span></div>
+        <div class="hint" id="indirectHint"></div>
       </div>
-      <button class="secondary" id="indClose" type="button">Chiudi</button>
+      <button id="indirectCloseX" class="secondary small" type="button">Chiudi</button>
     </div>
 
-    <div class="grid2" style="margin-top:12px;">
-      <div>
-        <label class="hint">Inizio</label>
-        <input id="indStart" type="datetime-local" style="width:100%;" />
+    <div class="modalBody">
+      <div class="gridFormIndirect">
+        <div class="col" style="min-width:unset">
+          <label>Start</label>
+          <input id="indirectStartInput" type="datetime-local" />
+        </div>
+        <div class="col" style="min-width:unset">
+          <label>End</label>
+          <input id="indirectEndInput" type="datetime-local" />
+        </div>
+        <div class="col" style="min-width:unset">
+          <label>Turno (override) per quel giorno</label>
+          <select id="indirectShiftOverride">
+            <option value="NOCHANGE">Nessuna modifica turno</option>
+            <option value="AUTO">AUTO (inferito)</option>
+            <option value="AM">AM (05–13)</option>
+            <option value="C">C (08–16)</option>
+            <option value="PM">PM (14–22)</option>
+          </select>
+        </div>
+        <div class="col" style="min-width:unset">
+          <label>Descrizione (note)</label>
+          <textarea id="indirectDescInput" placeholder="Es. meeting, training, 5S, supporto, ecc."></textarea>
+        </div>
       </div>
-      <div>
-        <label class="hint">Fine</label>
-        <input id="indEnd" type="datetime-local" style="width:100%;" />
+
+      <div style="margin-top:12px;">
+        <div class="status"><strong>Indirette già inserite (operatore)</strong></div>
+        <div id="indirectListWrap"></div>
       </div>
     </div>
-    <div style="margin-top:10px;">
-      <label class="hint">Descrizione</label>
-      <textarea id="indDesc" placeholder="es. Indiretta: meeting, training, sistemazioni, ..."></textarea>
-    </div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center;">
-      <button id="indSave" type="button">Salva</button>
-      <div class="hint" id="indMsg"></div>
+
+    <div class="modalFooter">
+      <button id="indirectDeleteAllBtn" class="secondary" type="button">Svuota Indirette (operatore)</button>
+      <button id="indirectSaveBtn" type="button">Salva</button>
     </div>
   </div>
 </div>
 
-<script type="module">
-  import {
-    loadSnapshot, saveSnapshot,
-    computeAllDayKeys, listOperators,
-    getSelectionDayKeys,
-    buildChartsRows, buildOverviewKpiRows,
-    concatIntervalsForOp,
-    exportIntervalsCSV,
-    buildSequentialBlocks,
-    buildHalfHourBars,
-    addSupportRule, clearSupports,
-    listSupportRules,
-    addIndirectRule,
-    setShiftOverrideForOpDays,
-    getShiftOverrideForOpDay,
-    minToHHMM
-  } from './app-core.js';
+<script>
+/** =========================================
+ *  CONFIG
+ * ========================================= */
+const INTEREST_OPERATORS = new Set(["A.BEJAN","M.HAYAT","L.VUONO","S.ANASS","S.RODRIGUE"]);
+const PAUSE_THRESHOLD_MIN = 30;
+const MAX_WORK_GAP_MIN = 240;
 
-  const $ = (id)=>document.getElementById(id);
-  function setStatus(t){ $('status').textContent = t; }
-  function setErr(t){ $('err').textContent = t || ''; }
+const SHIFT_DEFS = {
+  AM: { start:"05:00", end:"13:00" },
+  C:  { start:"08:00", end:"16:00" },
+  PM: { start:"14:00", end:"22:00" }
+};
+const SHIFT_TARGET_MIN = 480; // 8h
 
-  let currentOp = null;
-  let currentDayKeys = [];
-  let detailMode = false; // false=sintesi, true=dettaglio
-  let pieChart = null;
+/** =========================================
+ *  STATE
+ * ========================================= */
+// Raw events by source operator/day
+let eventsByOpDay = new Map(); // op -> Map(dayKey -> [events])
 
-  function ddmmyyyy(dk){
-    const d = new Date(dk+'T00:00:00');
-    const p=n=>String(n).padStart(2,'0');
-    return `${p(d.getDate())}-${p(d.getMonth()+1)}-${d.getFullYear()}`;
+// Support rules by SOURCE account (as before)
+let supportRules = new Map(); // sourceOp -> [{realOp, start:Date, end:Date}]
+
+// Shift override by EFFECTIVE operator (after support) and dayKey
+let shiftOverride = new Map(); // op -> Map(dayKey -> "AM"|"C"|"PM"|"AUTO")
+
+// Indirect rules by EFFECTIVE operator and dayKey
+let indirectRules = new Map(); // op -> Map(dayKey -> [{start,end,desc}])
+
+// Derived intervals by EFFECTIVE operator/day
+let derivedIntervalsByOpDay = new Map(); // op -> Map(dayKey -> [intervals])
+
+// Out-of-shift minutes by EFFECTIVE operator/day (for debugging / actual vs target)
+let outOfShiftByOpDay = new Map(); // op -> Map(dayKey -> minutes)
+
+// Effective shifts inferred/overridden
+let shiftByOpDay = new Map(); // op -> Map(dayKey -> {code, start:Date, end:Date, inferred:boolean})
+
+// PI events (for heatmaps), already remapped to EFFECTIVE operator
+let piCounts = []; // [{op, dayKey, hour, lane(1..50)}]
+
+// Filter state
+let allDayKeys = []; // sorted unique day keys present in dataset
+let filterState = { mode:"all", refDate:null, from:null, to:null, selectedDayKeys:[] };
+
+// Drilldown state
+let currentDrillOp = null;
+let currentDrillDayKeys = [];
+let currentDetail = false;
+
+// Charts instances
+let chartPiePick=null, chartPieBulk=null, chartCombo=null, chartDdPie=null;
+
+/** =========================================
+ *  HELPERS
+ * ========================================= */
+function setStatus(msg){ document.getElementById("status").innerHTML = `Stato: <strong>${msg}</strong>`; }
+function setError(msg){ document.getElementById("error").textContent = msg || ""; }
+function normStr(v){ if(v===null||v===undefined) return ""; return String(v).trim(); }
+function minutesBetween(a,b){ return (b-a)/60000; }
+function round1(x){ return Math.round(x*10)/10; }
+
+function minToHHMM(min){
+  const total = Math.max(0, Math.round(Number(min || 0)));
+  const h = Math.floor(total/60);
+  const m = total % 60;
+  return `${h}:${String(m).padStart(2,"0")}`;
+}
+
+function fmtDateTime(dt){
+  if(!(dt instanceof Date) || isNaN(dt.getTime())) return "";
+  const p = n => String(n).padStart(2,"0");
+  return `${dt.getFullYear()}-${p(dt.getMonth()+1)}-${p(dt.getDate())} ${p(dt.getHours())}:${p(dt.getMinutes())}:${p(dt.getSeconds())}`;
+}
+function toDTLocalValue(d){
+  if(!(d instanceof Date) || isNaN(d.getTime())) return "";
+  const p = n=>String(n).padStart(2,"0");
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+function dayKeyFromDate(dt){
+  const p=n=>String(n).padStart(2,"0");
+  return `${dt.getFullYear()}-${p(dt.getMonth()+1)}-${p(dt.getDate())}`;
+}
+
+function excelDateToYMD(d){
+  if(!d) return null;
+  if(d instanceof Date && !isNaN(d.getTime())) return { y:d.getFullYear(), m:d.getMonth()+1, day:d.getDate() };
+  const dt = new Date(d);
+  if(!isNaN(dt.getTime())) return { y:dt.getFullYear(), m:dt.getMonth()+1, day:dt.getDate() };
+  return null;
+}
+function parseTimeToHMS(t){
+  if(t===null||t===undefined||t==="") return { h:0, min:0, s:0 };
+  if(t instanceof Date && !isNaN(t.getTime())) return { h:t.getHours(), min:t.getMinutes(), s:t.getSeconds() };
+  if(typeof t==="number" && isFinite(t)){
+    const totalSeconds = Math.round(t*24*3600);
+    return { h:Math.floor(totalSeconds/3600)%24, min:Math.floor((totalSeconds%3600)/60), s:totalSeconds%60 };
+  }
+  const s = String(t).trim();
+  const m = s.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if(m) return { h:+m[1], min:+m[2], s:m[3]?+m[3]:0 };
+  const dt = new Date(s);
+  if(!isNaN(dt.getTime())) return { h:dt.getHours(), min:dt.getMinutes(), s:dt.getSeconds() };
+  return { h:0, min:0, s:0 };
+}
+function combineDateTime(dateVal, timeVal){
+  const ymd = excelDateToYMD(dateVal);
+  if(!ymd) return null;
+  const hms = parseTimeToHMS(timeVal);
+  const dt = new Date(ymd.y, ymd.m-1, ymd.day, hms.h, hms.min, hms.s);
+  return isNaN(dt.getTime()) ? null : dt;
+}
+
+function isNonEmptyBin(v){ const s = normStr(v); return s!=="" && s!=="0"; }
+function safeProcType(v){ return normStr(v); }
+
+function isPickBin(bin){
+  const s = normStr(bin);
+  if(!s) return false;
+  const parts = s.split("-");
+  return parts[parts.length-1] === "1";
+}
+function laneFromStorageBin(bin){
+  // prime 2 cifre (01..50). Se fuori range -> null
+  const s = normStr(bin);
+  if(!s) return null;
+  const m = s.match(/(\d{2})/);
+  if(!m) return null;
+  const n = parseInt(m[1],10);
+  if(!isFinite(n) || n<1 || n>50) return null;
+  return n;
+}
+function downloadText(filename, text){
+  const blob = new Blob([text], {type:"text/plain;charset=utf-8"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); }, 0);
+}
+function parseISODate(s){
+  if(!s) return null;
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
+}
+function dayKeyToDate(dayKey){
+  const d = new Date(dayKey + "T00:00:00");
+  return isNaN(d.getTime()) ? null : d;
+}
+function compareDayKey(a,b){ return a.localeCompare(b); }
+
+function getOrInitMap(map, key){
+  if(!map.has(key)) map.set(key, new Map());
+  return map.get(key);
+}
+function getOrInitArrMap(map, key){
+  if(!map.has(key)) map.set(key, []);
+  return map.get(key);
+}
+function mapGetNested(map, k1, k2, defVal){
+  const m = map.get(k1);
+  if(!m) return defVal;
+  return m.get(k2) ?? defVal;
+}
+
+/** =========================================
+ *  ROUTER
+ * ========================================= */
+function setActiveNav(view){
+  document.querySelectorAll(".nav button").forEach(b=>b.classList.remove("active"));
+  document.getElementById(view==="home" ? "navHome" : view==="charts" ? "navCharts" : view==="score" ? "navScore" : "navQuality")
+    .classList.add("active");
+}
+function showView(view){
+  document.querySelectorAll("[data-view]").forEach(v=>v.classList.add("hidden"));
+  document.querySelector(`[data-view="${view}"]`).classList.remove("hidden");
+  setActiveNav(view);
+  document.getElementById("toTopBtn").style.display = "flex";
+}
+function route(){
+  const h = (location.hash || "#home").replace("#","");
+  if(h==="charts") showView("charts");
+  else if(h==="score") showView("score");
+  else if(h==="quality") showView("quality");
+  else showView("home");
+}
+document.getElementById("navHome").addEventListener("click", ()=> location.hash="#home");
+document.getElementById("navCharts").addEventListener("click", ()=> location.hash="#charts");
+document.getElementById("navScore").addEventListener("click", ()=> location.hash="#score");
+document.getElementById("navQuality").addEventListener("click", ()=> location.hash="#quality");
+window.addEventListener("hashchange", route);
+
+/** =========================================
+ *  XLSX READ (multi-files)
+ * ========================================= */
+async function readFirstSheetAsObjects(file){
+  const arrayBuffer = await file.arrayBuffer();
+  const wb = XLSX.read(arrayBuffer, { type:"array", cellDates:true });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  return XLSX.utils.sheet_to_json(ws, { defval:"" });
+}
+async function readManyFiles(files){
+  const all = [];
+  for(const f of files){
+    const rows = await readFirstSheetAsObjects(f);
+    all.push({ file:f, rows });
+  }
+  return all;
+}
+
+/** =========================================
+ *  CATEGORIES
+ * ========================================= */
+function wtCategory(procType){
+  const n = parseInt(procType, 10);
+  // Pick to Pick
+  if(n === 9994 || n === 9995) return "P2P";
+  // Clean PICK includes 3060/3062 + 3040/3041/3042
+  if(n === 3060 || n === 3062 || n === 3040 || n === 3041 || n === 3042) return "Clean PICK";
+  return "WT Other";
+}
+function piCategory(storageBin){
+  return isPickBin(storageBin) ? "PI Pick" : "PI Bulk";
+}
+function catToClass(cat){
+  if(cat==="PI Pick") return "pipick";
+  if(cat==="PI Bulk") return "pibulk";
+  if(cat==="P2P") return "p2p";
+  if(cat==="Clean PICK") return "clean";
+  if(cat==="INDIRETTA") return "indirect";
+  if(cat==="PAUSA") return "pause";
+  return "other";
+}
+
+/** =========================================
+ *  SUPPORT HELPERS
+ * ========================================= */
+function mapEffectiveOperator(srcOp, ts){
+  const rules = (supportRules.get(srcOp) || []).slice().sort((a,b)=>a.start-b.start);
+  for(const r of rules){
+    const s = r.start, e = r.end;
+    if(ts >= s && ts < e) return r.realOp;
+  }
+  return srcOp;
+}
+
+/** =========================================
+ *  SHIFT LOGIC
+ * ========================================= */
+function shiftWindow(dayKey, code){
+  const base = dayKeyToDate(dayKey);
+  if(!base) return null;
+  const def = SHIFT_DEFS[code];
+  if(!def) return null;
+
+  const [sh, sm] = def.start.split(":").map(Number);
+  const [eh, em] = def.end.split(":").map(Number);
+
+  const start = new Date(base.getFullYear(), base.getMonth(), base.getDate(), sh, sm, 0);
+  const end = new Date(base.getFullYear(), base.getMonth(), base.getDate(), eh, em, 0);
+  return { start, end };
+}
+
+function inferShiftForOpDay(op, dayKey, events){
+  // If override exists, use it
+  const ovMap = shiftOverride.get(op);
+  const ov = ovMap ? ovMap.get(dayKey) : null;
+  if(ov && ov !== "AUTO"){
+    const w = shiftWindow(dayKey, ov);
+    return { code: ov, start:w.start, end:w.end, inferred:false };
   }
 
-  function renderDatasetInfo(allDayKeys){
-    if(!allDayKeys.length){ $('dsInfo').innerHTML = `<div class="hint">Nessun dataset caricato. Vai in Home.</div>`; return; }
-    const sel = getSelectionDayKeys(allDayKeys);
-    const range = sel.length ? `${ddmmyyyy(sel[0])} → ${ddmmyyyy(sel[sel.length-1])}` : '—';
-    $('dsInfo').innerHTML = `
-      <div class="chip"><span class="hint">Caricati</span> <strong>${allDayKeys.length}</strong></div>
-      <div style="margin-top:8px;" class="chip"><span class="hint">Filtro</span> <strong class="mono">${range}</strong></div>
-      <div class="hint" style="margin-top:8px;">Per cambiare selezione: Home → Dataset presenti.</div>
-    `;
-  }
-
-  function renderSummary(rows, dayKeys){
-    $('kDays').textContent = String(dayKeys.length);
-    $('kOps').textContent = String(rows.length);
-    $('kRange').textContent = dayKeys.length ? `${ddmmyyyy(dayKeys[0])} → ${ddmmyyyy(dayKeys[dayKeys.length-1])}` : '—';
-
-    if(!rows.length){
-      $('summaryWrap').innerHTML = `<div class="hint">Nessun dato nel filtro. Controlla selezione giorni in Home.</div>`;
-      return;
+  // Infer by maximum event count inside shift window (robust and simple)
+  const counts = { AM:0, C:0, PM:0 };
+  for(const e of events){
+    for(const code of ["AM","C","PM"]){
+      const w = shiftWindow(dayKey, code);
+      if(e.timestamp >= w.start && e.timestamp <= w.end) counts[code] += 1;
     }
-
-    const table = document.createElement('table');
-    table.innerHTML = `
-      <thead><tr>
-        <th>Operatore</th><th>Giorni</th><th>Turno</th>
-        <th>T Lavoro</th>
-        <th>PI Pick</th><th>PI Bulk</th><th>P2P</th><th>Clean</th><th>WT Other</th>
-        <th>Indiretto</th><th>Pausa</th>
-        <th>Bin Pick</th><th>Bin Bulk</th>
-        <th>WO P2P</th><th>WO Clean</th><th>WO Other</th>
-        <th>Self Count</th>
-        <th>Cambi</th><th>T Cambi</th>
-      </tr></thead>
-      <tbody></tbody>
-    `;
-    const tb = table.querySelector('tbody');
-
-    for(const r of rows){
-      const tr = document.createElement('tr');
-      tr.className = 'clickable';
-      tr.innerHTML = `
-        <td class="mono">${r.operator}</td>
-        <td class="mono">${r.dayCount}</td>
-        <td class="mono">${r.shiftLabel||'—'}</td>
-        <td class="mono">${minToHHMM(r.totalWorkMin)}</td>
-        <td class="mono">${minToHHMM(r.minPiPick)}</td>
-        <td class="mono">${minToHHMM(r.minPiBulk)}</td>
-        <td class="mono">${minToHHMM(r.minP2P)}</td>
-        <td class="mono">${minToHHMM(r.minClean)}</td>
-        <td class="mono">${minToHHMM(r.minOther)}</td>
-        <td class="mono">${minToHHMM(r.minIndirect)}</td>
-        <td class="mono">${minToHHMM(r.minPause)}</td>
-        <td class="mono">${r.piPickBins}</td>
-        <td class="mono">${r.piBulkBins}</td>
-        <td class="mono">${r.woP2P}</td>
-        <td class="mono">${r.woClean}</td>
-        <td class="mono">${r.woOther}</td>
-        <td class="mono">${r.selfCountBins}</td>
-        <td class="mono">${r.switchCount}</td>
-        <td class="mono">${minToHHMM(r.switchMin)}</td>
-      `;
-      tr.addEventListener('click', ()=> openDrill(r.operator, dayKeys));
-      tb.appendChild(tr);
+  }
+  let best = "AM";
+  for(const code of ["C","PM"]){
+    if(counts[code] > counts[best]) best = code;
+  }
+  // Tie-break by first event time
+  const first = events.length ? events[0].timestamp : null;
+  if(first){
+    const h = first.getHours();
+    const m = first.getMinutes();
+    const hm = h*60+m;
+    // Simple thresholds
+    const AMcut = 7*60;      // <07:00 => AM
+    const Ccut = 12*60;      // <12:00 => C else PM
+    if(counts.AM === counts.C && counts.C === counts.PM){
+      if(hm < AMcut) best = "AM";
+      else if(hm < Ccut) best = "C";
+      else best = "PM";
     }
-    $('summaryWrap').innerHTML = '';
-    $('summaryWrap').appendChild(table);
   }
+  const w = shiftWindow(dayKey, best);
+  return { code: best, start:w.start, end:w.end, inferred:true };
+}
 
-  function renderKpi(rows){
-    if(!rows.length){ $('kpiWrap').innerHTML = `<div class="hint">Nessun KPI.</div>`; return; }
-    const t = document.createElement('table');
-    t.innerHTML = `
-      <thead><tr>
-        <th>Operatore</th>
-        <th>% PI</th><th>% WT</th><th>% Pausa</th><th>% Indiretto</th>
-        <th>Self Count</th>
-        <th>% Pick su PI</th>
-      </tr></thead>
-      <tbody></tbody>
-    `;
-    const tb=t.querySelector('tbody');
-    for(const r of rows){
-      const tr=document.createElement('tr');
-      tr.innerHTML = `
-        <td class="mono">${r.operator}</td>
-        <td class="mono">${r.pctPI}%</td>
-        <td class="mono">${r.pctWT}%</td>
-        <td class="mono">${r.pctPause}%</td>
-        <td class="mono">${r.pctIndirect}%</td>
-        <td class="mono">${r.selfCountBins}</td>
-        <td class="mono">${r.pctPickOfPI}%</td>
-      `;
-      tb.appendChild(tr);
-    }
-    $('kpiWrap').innerHTML='';
-    $('kpiWrap').appendChild(t);
-  }
+function classifyAndSplitInterval(start, end, baseCategory, shiftStart, shiftEnd){
+  // Split any interval into: inside shift + outside shift
+  const parts = [];
+  const a = start.getTime(), b = end.getTime();
+  if(b <= a) return parts;
 
-  function renderSupportModal(){
-    const ops = listOperators();
-    $('supSrc').innerHTML = ops.map(o=>`<option value="${o}">${o}</option>`).join('');
-    $('supReal').value = '';
-    $('supStart').value = '';
-    $('supEnd').value = '';
-    $('supMsg').textContent = '';
-    refreshSupportTable();
-  }
+  const inStart = Math.max(a, shiftStart.getTime());
+  const inEnd = Math.min(b, shiftEnd.getTime());
 
-  function refreshSupportTable(){
-    const rows = listSupportRules();
-    if(!rows.length){ $('supTable').innerHTML = `<div class="hint">Nessun supporto inserito.</div>`; return; }
-    const t=document.createElement('table');
-    t.innerHTML = `
-      <thead><tr><th>Account</th><th>Reale</th><th>Inizio</th><th>Fine</th></tr></thead>
-      <tbody></tbody>
-    `;
-    const tb=t.querySelector('tbody');
-    for(const r of rows){
-      const tr=document.createElement('tr');
-      tr.innerHTML = `
-        <td class="mono">${r.srcOp}</td>
-        <td class="mono">${r.realOp}</td>
-        <td class="mono">${r.startStr}</td>
-        <td class="mono">${r.endStr}</td>
-      `;
-      tb.appendChild(tr);
-    }
-    $('supTable').innerHTML='';
-    $('supTable').appendChild(t);
-  }
-
-  function showMask(id, on){
-    $(id).style.display = on ? 'flex' : 'none';
-  }
-
-  function openDrill(op, dayKeys){
-    currentOp = op;
-    currentDayKeys = dayKeys.slice();
-    $('ddOp').textContent = op;
-    $('drillCard').style.display = 'block';
-    $('summaryCard').style.display = 'none';
-
-    // days list
-    const sel = $('ddDays');
-    sel.innerHTML = dayKeys.map(dk=>`<option value="${dk}">${ddmmyyyy(dk)}</option>`).join('');
-    // default: all (limit 5 for multi-bars handled in render)
-    Array.from(sel.options).forEach(o=>o.selected=true);
-
-    // shift default: AUTO
-    // if a single day selected, show its override
-    const dk = dayKeys.length===1 ? dayKeys[0] : null;
-    $('ddShiftSel').value = (dk ? (getShiftOverrideForOpDay(op, dk) || 'AUTO') : 'AUTO');
-
-    detailMode = false;
-    $('toggleBtn').textContent = 'Dettaglio';
-    $('ddSynth').style.display = '';
-    $('ddDetail').style.display = 'none';
-
-    renderDrill();
-    window.scrollTo({top:0, behavior:'smooth'});
-  }
-
-  function closeDrill(){
-    currentOp=null;
-    $('drillCard').style.display='none';
-    $('summaryCard').style.display='';
-  }
-
-  function getDrillSelectedDays(){
-    const sel = $('ddDays');
-    const picked = Array.from(sel.selectedOptions).map(o=>o.value).sort();
-    return picked;
-  }
-
-  function renderDrill(){
-    if(!currentOp) return;
-    const dks = getDrillSelectedDays();
-    $('ddHint').textContent = dks.length ? `Giorni: ${dks.length} (${ddmmyyyy(dks[0])} → ${ddmmyyyy(dks[dks.length-1])})` : 'Nessun giorno selezionato.';
-
-    const intervals = concatIntervalsForOp(currentOp, dks);
-    if(!intervals.length){
-      $('ddSynthTable').innerHTML = `<div class="hint">Nessun intervallo (verifica filtri/turno/supporti).</div>`;
-      $('ddBars').innerHTML = '';
-      $('ddDetailTable').innerHTML = '';
-      if(pieChart){ pieChart.destroy(); pieChart=null; }
-      return;
-    }
-
-    const blocks = buildSequentialBlocks(intervals);
-    $('ddSynthTable').innerHTML = '';
-    $('ddSynthTable').appendChild(renderBlocksTable(blocks));
-
-    // Bars: se multi-day, max 5 barre
-    const barDayKeys = dks.slice(-5);
-    $('ddBars').innerHTML = '';
-    for(const dk of barDayKeys){
-      const ints = concatIntervalsForOp(currentOp, [dk]);
-      const bar = buildHalfHourBars(ints, dk);
-      const host = document.createElement('div');
-      host.style.marginTop = '10px';
-      host.innerHTML = `<div class="hint" style="margin-bottom:6px;"><strong>${ddmmyyyy(dk)}</strong></div>`;
-      host.appendChild(renderBar(bar, dk));
-      $('ddBars').appendChild(host);
-    }
-
-    $('ddDetailTable').innerHTML = '';
-    $('ddDetailTable').appendChild(renderIntervalsTable(intervals));
-
-    renderPie(blocks);
-  }
-
-  function renderBlocksTable(blocks){
-    const t=document.createElement('table');
-    t.innerHTML = `
-      <thead><tr>
-        <th>Start</th><th>End</th><th>Durata</th><th>Categoria</th><th>Note</th><th>Bin</th><th>WO</th>
-      </tr></thead>
-      <tbody></tbody>
-    `;
-    const tb=t.querySelector('tbody');
-    for(const b of blocks){
-      const tr=document.createElement('tr');
-      const notes = b.notes?.join(' | ') || '';
-      tr.innerHTML = `
-        <td class="mono">${b.startStr}</td>
-        <td class="mono">${b.endStr}</td>
-        <td class="mono">${minToHHMM(b.minutes)}</td>
-        <td class="mono">${b.category}</td>
-        <td>${notes}</td>
-        <td class="mono">${b.piBins || 0}${b.selfCountBins ? ` (Self ${b.selfCountBins})` : ''}</td>
-        <td class="mono">${b.woCount || 0}</td>
-      `;
-      tb.appendChild(tr);
-    }
-    return t;
-  }
-
-  function renderIntervalsTable(intervals){
-    const t=document.createElement('table');
-    t.innerHTML = `
-      <thead><tr>
-        <th>Day</th><th>Start</th><th>End</th><th>Durata</th><th>Categoria</th><th>Note</th><th>Bin</th><th>WO</th>
-      </tr></thead>
-      <tbody></tbody>
-    `;
-    const tb=t.querySelector('tbody');
-    for(const it of intervals){
-      const tr=document.createElement('tr');
-      tr.innerHTML = `
-        <td class="mono">${it.dayKey}</td>
-        <td class="mono">${it.startStr}</td>
-        <td class="mono">${it.endStr}</td>
-        <td class="mono">${minToHHMM(it.minutes)}</td>
-        <td class="mono">${it.category}</td>
-        <td>${it.notes||''}</td>
-        <td class="mono">${it.piBins||0}${it.selfCount?` (Self ${it.selfCount})`:''}</td>
-        <td class="mono">${it.woId||''}</td>
-      `;
-      tb.appendChild(tr);
-    }
-    return t;
-  }
-
-  function renderBar(bar, dayKey){
-    const wrap=document.createElement('div');
-    wrap.className = 'barWrap';
-    const row=document.createElement('div');
-    row.className = 'barRow';
-    for(const cell of bar.cells){
-      const div=document.createElement('div');
-      div.className = 'barCell';
-      div.dataset.cat = cell.category;
-      div.title = `${cell.label}\n${cell.category}`;
-      if(cell.category === 'PAUSA'){
-        div.style.cursor = 'pointer';
-        div.addEventListener('click', ()=> openIndirectModal(currentOp, dayKey, cell.start, cell.end));
-      }
-      row.appendChild(div);
-    }
-    wrap.appendChild(row);
-
-    const axis=document.createElement('div');
-    axis.className='barAxis mono';
-    axis.innerHTML = `<span>${bar.startLabel}</span><span>${bar.endLabel}</span>`;
-    const host=document.createElement('div');
-    host.appendChild(wrap);
-    host.appendChild(axis);
-    return host;
-  }
-
-  function renderPie(blocks){
-    const sums = new Map();
-    for(const b of blocks){
-      sums.set(b.category, (sums.get(b.category)||0) + (b.minutes||0));
-    }
-    const labels = Array.from(sums.keys());
-    const data = labels.map(l=>Math.round(sums.get(l)));
-    if(pieChart) pieChart.destroy();
-    pieChart = new Chart(document.getElementById('ddPie'), {
-      type:'pie',
-      data:{ labels, datasets:[{ data }] },
-      options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'bottom' } } }
+  if(inEnd > inStart){
+    parts.push({
+      start: new Date(inStart),
+      end: new Date(inEnd),
+      minutes: round1((inEnd-inStart)/60000),
+      category: baseCategory
     });
   }
 
-  function openIndirectModal(op, dayKey, start, end){
-    $('indMsg').textContent='';
-    $('indDesc').value='';
-    // default values from clicked slot
-    $('indStart').value = toLocalDT(start);
-    $('indEnd').value = toLocalDT(end);
-    $('indSave').dataset.op = op;
-    $('indSave').dataset.dayKey = dayKey;
-    showMask('indMask', true);
+  // Outside shift is everything else
+  // We don't store as interval for KPI; we keep minutes separately.
+  const outMin = ((b-a)/60000) - (inEnd>inStart ? (inEnd-inStart)/60000 : 0);
+  return { inside: parts, outMinutes: Math.max(0, outMin) };
+}
+
+/** =========================================
+ *  EVENT BUILDING (PI + WT)
+ *  - events are grouped by SOURCE operator/day
+ *  - then later remapped to EFFECTIVE operator via support rules
+ * ========================================= */
+function pushEvent(mapOpDay, op, dayKey, ev){
+  const m = getOrInitMap(mapOpDay, op);
+  if(!m.has(dayKey)) m.set(dayKey, []);
+  m.get(dayKey).push(ev);
+}
+
+function buildEvents(piBatches, wtBatches){
+  const out = new Map(); // sourceOp -> Map(dayKey -> [events])
+  const rawPiCounts = []; // store PI counts for heatmap later (still source op; remap later)
+
+  // PI
+  for(const b of piBatches){
+    for(const r of b.rows){
+      const counter = normStr(r["Counter"]);
+      if(!INTEREST_OPERATORS.has(counter)) continue;
+
+      const ts = combineDateTime(r["Count Date"], r["Count Time"]);
+      if(!ts) continue;
+
+      const createdBy = normStr(r["Created By"]);
+      const storageBin = normStr(r["Storage Bin"]);
+      const dayKey = dayKeyFromDate(ts);
+
+      const cat = piCategory(storageBin);
+
+      const ev = {
+        timestamp: ts,
+        timestampStr: fmtDateTime(ts),
+        operator: counter,
+        kind: "PI",
+        category: cat,
+        selfCount: (counter && counter === createdBy) ? "Yes" : "No",
+        storageBin
+      };
+      pushEvent(out, counter, dayKey, ev);
+
+      const lane = laneFromStorageBin(storageBin);
+      if(lane !== null){
+        rawPiCounts.push({
+          srcOp: counter,
+          timestamp: ts,
+          dayKey,
+          hour: ts.getHours(),
+          lane
+        });
+      }
+    }
   }
 
-  function toLocalDT(dt){
-    const p=n=>String(n).padStart(2,'0');
-    return `${dt.getFullYear()}-${p(dt.getMonth()+1)}-${p(dt.getDate())}T${p(dt.getHours())}:${p(dt.getMinutes())}`;
+  // WT
+  for(const b of wtBatches){
+    for(const r of b.rows){
+      if(!isNonEmptyBin(r["Source Storage Bin"])) continue;
+
+      const createdBy = normStr(r["Created By"]);
+      const confirmedBy = normStr(r["Confirmed by"]);
+      const operator = confirmedBy || createdBy;
+      if(!INTEREST_OPERATORS.has(operator)) continue;
+
+      const ts = combineDateTime(r["Created On"], r["Created At"]);
+      if(!ts) continue;
+
+      const dayKey = dayKeyFromDate(ts);
+
+      const procType = safeProcType(r["Whse Proc. Type"]);
+      const cat = wtCategory(procType);
+      const wo = normStr(r["Warehouse Order"]);
+
+      const ev = {
+        timestamp: ts,
+        timestampStr: fmtDateTime(ts),
+        operator,
+        kind: "WT",
+        category: cat,
+        woId: wo
+      };
+      pushEvent(out, operator, dayKey, ev);
+    }
   }
 
-  async function run(){
-    setErr('');
-    setStatus('Caricamento snapshot…');
-    const snap = await loadSnapshot();
-    if(!snap.ok){
-      setStatus('Nessun dataset.');
-      setErr('Vai in Home e importa PI/WT, poi torna qui.');
-      $('summaryWrap').innerHTML = `<div class="hint">Nessun dataset caricato.</div>`;
-      $('kpiWrap').innerHTML='';
-      renderDatasetInfo([]);
-      return;
+  // Sort each day list
+  for(const [op, m] of out.entries()){
+    for(const [dayKey, list] of m.entries()){
+      list.sort((a,b)=>a.timestamp-b.timestamp);
+    }
+  }
+
+  return { eventsByOpDaySrc: out, rawPiCounts };
+}
+
+/** =========================================
+ *  BUILD INTERVALS (per EFFECTIVE operator/day)
+ *  - Remap events from SOURCE to EFFECTIVE via support
+ *  - Build intervals inside shift
+ *  - Classify PAUSA vs work
+ * ========================================= */
+function addInterval(op, dayKey, interval){
+  const m = getOrInitMap(derivedIntervalsByOpDay, op);
+  if(!m.has(dayKey)) m.set(dayKey, []);
+  m.get(dayKey).push(interval);
+}
+
+function addOutOfShift(op, dayKey, minutes){
+  const m = getOrInitMap(outOfShiftByOpDay, op);
+  m.set(dayKey, (m.get(dayKey) || 0) + minutes);
+}
+
+function buildDerivedIntervals(){
+  derivedIntervalsByOpDay = new Map();
+  outOfShiftByOpDay = new Map();
+  shiftByOpDay = new Map();
+  piCounts = [];
+
+  // Step A: remap events into effective operator/day buckets
+  const effEventsByOpDay = new Map(); // effOp -> Map(dayKey -> [events])
+
+  for(const [srcOp, dayMap] of eventsByOpDay.entries()){
+    for(const [dayKey, events] of dayMap.entries()){
+      for(const e of events){
+        const effOp = mapEffectiveOperator(srcOp, e.timestamp);
+        // Keep all events even if effOp not in base list (support could introduce new names)
+        const m = getOrInitMap(effEventsByOpDay, effOp);
+        if(!m.has(dayKey)) m.set(dayKey, []);
+        m.get(dayKey).push({ ...e, operator: effOp });
+      }
+    }
+  }
+  for(const [op, m] of effEventsByOpDay.entries()){
+    for(const [dayKey, list] of m.entries()){
+      list.sort((a,b)=>a.timestamp-b.timestamp);
+    }
+  }
+
+  // Step B: infer/override shift per op/day and build intervals
+  for(const [op, dayMap] of effEventsByOpDay.entries()){
+    for(const [dayKey, events] of dayMap.entries()){
+      if(events.length < 2) continue;
+
+      const sh = inferShiftForOpDay(op, dayKey, events);
+      const shMap = getOrInitMap(shiftByOpDay, op);
+      shMap.set(dayKey, sh);
+
+      // Build intervals from consecutive events, then split by shift window
+      for(let i=1;i<events.length;i++){
+        const prev = events[i-1];
+        const curr = events[i];
+        const gap = minutesBetween(prev.timestamp, curr.timestamp);
+        if(!(gap > 0)) continue;
+
+        // Determine base category for this interval
+        let baseCat = curr.category;
+        let notes = "";
+        let piBins = 0, selfCount=0, woId="";
+
+        if(gap >= PAUSE_THRESHOLD_MIN || gap > MAX_WORK_GAP_MIN){
+          baseCat = "PAUSA";
+          notes = `Gap ${Math.round(gap)} min`;
+        } else {
+          if(curr.kind === "PI"){
+            piBins = 1;
+            if(curr.selfCount === "Yes") selfCount = 1;
+          } else if(curr.kind === "WT"){
+            woId = curr.woId || "";
+            notes = woId ? `WO=${woId}` : "";
+          }
+        }
+
+        const res = classifyAndSplitInterval(prev.timestamp, curr.timestamp, baseCat, sh.start, sh.end);
+
+        // Add inside shift intervals
+        for(const p of res.inside){
+          addInterval(op, dayKey, {
+            start: p.start,
+            end: p.end,
+            startStr: fmtDateTime(p.start),
+            endStr: fmtDateTime(p.end),
+            minutes: p.minutes,
+            category: p.category,
+            notes,
+            piBins: (p.category.startsWith("PI") ? piBins : 0),
+            selfCount: (p.category.startsWith("PI") ? selfCount : 0),
+            woId: (p.category.startsWith("WT") || p.category==="P2P" || p.category==="Clean PICK" ? woId : "")
+          });
+        }
+
+        // Out-of-shift minutes tracked
+        if(res.outMinutes > 0) addOutOfShift(op, dayKey, res.outMinutes);
+      }
+    }
+  }
+
+  // Sort intervals and apply Indirect split (only on PAUSA inside shift)
+  for(const [op, dayMap] of derivedIntervalsByOpDay.entries()){
+    for(const [dayKey, list] of dayMap.entries()){
+      list.sort((a,b)=>a.start-b.start);
+      const updated = applyIndirectForOpDay(op, dayKey, list);
+      dayMap.set(dayKey, updated);
+    }
+  }
+
+  // Build PI counts for heatmaps (remapped to effective op, and filtered to shift hours in later views)
+  // remap raw PI counts (source) to effective using support windows
+  for(const rec of rawPiCountsGlobal){
+    const effOp = mapEffectiveOperator(rec.srcOp, rec.timestamp);
+    const dayKey = rec.dayKey;
+    piCounts.push({
+      op: effOp,
+      dayKey,
+      hour: rec.hour,
+      lane: rec.lane
+    });
+  }
+}
+
+/** =========================================
+ *  INDIRECT SPLIT (op/day)
+ * ========================================= */
+function applyIndirectForOpDay(op, dayKey, intervals){
+  const dayRulesMap = indirectRules.get(op);
+  const rules = dayRulesMap ? (dayRulesMap.get(dayKey) || []) : [];
+  const valid = rules
+    .filter(r => r && r.start instanceof Date && r.end instanceof Date && r.end > r.start)
+    .sort((a,b)=>a.start-b.start);
+
+  if(!valid.length) return intervals.slice();
+
+  const out = [];
+  for(const it of intervals){
+    if(it.category !== "PAUSA"){
+      out.push(it);
+      continue;
     }
 
-    const allDayKeys = computeAllDayKeys();
-    renderDatasetInfo(allDayKeys);
-    const dayKeys = getSelectionDayKeys(allDayKeys);
-    const rows = buildChartsRows(dayKeys);
-    const kpi = buildOverviewKpiRows(dayKeys);
-    renderSummary(rows, dayKeys);
-    renderKpi(kpi);
-    setStatus(`OK — snapshot ${snap.savedAt.replace('T',' ').slice(0,16)}`);
+    let remaining = [{ start: it.start, end: it.end, notes: it.notes }];
+
+    for(const rule of valid){
+      const nextRem = [];
+      for(const seg of remaining){
+        const a = Math.max(seg.start.getTime(), rule.start.getTime());
+        const b = Math.min(seg.end.getTime(), rule.end.getTime());
+        if(b <= a){
+          nextRem.push(seg);
+          continue;
+        }
+
+        if(seg.start.getTime() < a){
+          const s1 = seg.start, e1 = new Date(a);
+          out.push({
+            ...it,
+            start: s1, end: e1,
+            startStr: fmtDateTime(s1),
+            endStr: fmtDateTime(e1),
+            minutes: round1(minutesBetween(s1,e1)),
+            category: "PAUSA",
+            notes: seg.notes || "Pausa",
+            piBins: 0, selfCount: 0, woId: ""
+          });
+        }
+
+        const s2 = new Date(a), e2 = new Date(b);
+        out.push({
+          ...it,
+          start: s2, end: e2,
+          startStr: fmtDateTime(s2),
+          endStr: fmtDateTime(e2),
+          minutes: round1(minutesBetween(s2,e2)),
+          category: "INDIRETTA",
+          notes: rule.desc ? `Indiretta: ${rule.desc}` : "Indiretta",
+          piBins: 0, selfCount: 0, woId: ""
+        });
+
+        if(b < seg.end.getTime()){
+          nextRem.push({ start: new Date(b), end: seg.end, notes: seg.notes });
+        }
+      }
+      remaining = nextRem;
+      if(!remaining.length) break;
+    }
+
+    for(const seg of remaining){
+      out.push({
+        ...it,
+        start: seg.start, end: seg.end,
+        startStr: fmtDateTime(seg.start),
+        endStr: fmtDateTime(seg.end),
+        minutes: round1(minutesBetween(seg.start,seg.end)),
+        category: "PAUSA",
+        notes: seg.notes || "Pausa",
+        piBins: 0, selfCount: 0, woId: ""
+      });
+    }
   }
 
-  // Support modal wiring
-  $('supportToggle').addEventListener('change', (e)=>{
-    if(!e.target.checked) return;
-    e.target.checked = false;
-    renderSupportModal();
-    showMask('supportMask', true);
-  });
-  $('supportClose').addEventListener('click', ()=> showMask('supportMask', false));
-  $('supClear').addEventListener('click', async ()=>{
-    if(!confirm('Eliminare tutti i supporti?')) return;
-    clearSupports();
-    await saveSnapshot();
-    refreshSupportTable();
-    $('supMsg').textContent='Supporti resettati.';
-    // refresh UI
-    await run();
-    if(currentOp) renderDrill();
-  });
-  $('supAdd').addEventListener('click', async ()=>{
-    $('supMsg').textContent='';
-    try{
-      const srcOp = $('supSrc').value;
-      const realOp = ($('supReal').value||'').trim();
-      const s = $('supStart').value;
-      const e = $('supEnd').value;
-      if(!srcOp || !realOp || !s || !e) throw new Error('Compila account, supporto reale, inizio e fine.');
-      const start = new Date(s);
-      const end = new Date(e);
-      if(!(end>start)) throw new Error('Fine deve essere > inizio.');
-      addSupportRule(srcOp, realOp, start, end);
-      await saveSnapshot();
-      refreshSupportTable();
-      $('supMsg').textContent='Supporto aggiunto.';
-      await run();
-      if(currentOp) renderDrill();
-    }catch(err){
-      $('supMsg').textContent = err.message || String(err);
+  out.sort((a,b)=>a.start-b.start);
+  return out;
+}
+
+/** =========================================
+ *  FILTERS (global)
+ * ========================================= */
+function computeAllDayKeys(){
+  const keys = new Set();
+  for(const [, dayMap] of derivedIntervalsByOpDay.entries()){
+    for(const [dayKey] of dayMap.entries()) keys.add(dayKey);
+  }
+  // If no intervals, fallback on events map
+  if(keys.size === 0){
+    for(const [, dayMap] of eventsByOpDay.entries()){
+      for(const [dayKey] of dayMap.entries()) keys.add(dayKey);
     }
-  });
+  }
+  allDayKeys = Array.from(keys).sort(compareDayKey);
+}
 
-  // Indirect modal wiring
-  $('indClose').addEventListener('click', ()=> showMask('indMask', false));
-  $('indSave').addEventListener('click', async ()=>{
-    $('indMsg').textContent='';
-    try{
-      const op = $('indSave').dataset.op;
-      const dayKey = $('indSave').dataset.dayKey;
-      const s = $('indStart').value;
-      const e = $('indEnd').value;
-      const desc = $('indDesc').value || '';
-      if(!op || !dayKey || !s || !e) throw new Error('Campi mancanti.');
-      const start = new Date(s);
-      const end = new Date(e);
-      if(!(end>start)) throw new Error('Fine deve essere > inizio.');
-      addIndirectRule(op, dayKey, start, end, desc);
-      await saveSnapshot();
-      $('indMsg').textContent='Salvato.';
-      showMask('indMask', false);
-      await run();
-      if(currentOp) renderDrill();
-    }catch(err){
-      $('indMsg').textContent = err.message || String(err);
-    }
-  });
+function isoWeekStart(d){
+  // ISO week: Monday start
+  const dt = new Date(d.getTime());
+  const day = dt.getDay(); // 0..6 (Sun..Sat)
+  const diff = (day === 0 ? -6 : 1 - day);
+  dt.setDate(dt.getDate() + diff);
+  dt.setHours(0,0,0,0);
+  return dt;
+}
+function isoWeekEnd(d){
+  const s = isoWeekStart(d);
+  const e = new Date(s.getTime());
+  e.setDate(e.getDate() + 6);
+  return e;
+}
 
-  // Drill wiring
-  $('backBtn').addEventListener('click', closeDrill);
-  $('toggleBtn').addEventListener('click', ()=>{
-    detailMode = !detailMode;
-    $('toggleBtn').textContent = detailMode ? 'Sintesi' : 'Dettaglio';
-    $('ddSynth').style.display = detailMode ? 'none' : '';
-    $('ddDetail').style.display = detailMode ? '' : 'none';
-  });
-  $('ddApplyBtn').addEventListener('click', renderDrill);
-  $('ddAllBtn').addEventListener('click', ()=>{
-    Array.from($('ddDays').options).forEach(o=>o.selected=true);
-    renderDrill();
-  });
-  $('ddLast5Btn').addEventListener('click', ()=>{
-    const opts = Array.from($('ddDays').options);
-    opts.forEach(o=>o.selected=false);
-    opts.slice(-5).forEach(o=>o.selected=true);
-    renderDrill();
-  });
-  $('ddShiftApply').addEventListener('click', async ()=>{
-    if(!currentOp) return;
-    const value = $('ddShiftSel').value;
-    const dks = getDrillSelectedDays();
-    if(!dks.length) return;
-    setShiftOverrideForOpDays(currentOp, dks, value);
-    await saveSnapshot();
-    await run();
-    renderDrill();
-  });
-  $('exportBtn').addEventListener('click', ()=>{
-    if(!currentOp) return;
-    const dks = getDrillSelectedDays();
-    const intervals = concatIntervalsForOp(currentOp, dks);
-    const csv = exportIntervalsCSV(intervals);
-    downloadText(`intervals_${currentOp.replaceAll('.','_')}.csv`, csv);
-  });
+function resolveFilterDayKeys(){
+  if(!allDayKeys.length) return [];
 
-  function downloadText(filename, text){
-    const blob = new Blob([text], {type:'text/plain;charset=utf-8'});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = filename;
-    document.body.appendChild(a); a.click();
-    setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); }, 0);
+  const mode = filterState.mode;
+  if(mode === "all") return allDayKeys.slice();
+
+  if(mode === "single"){
+    const ref = filterState.refDate;
+    if(!ref) return [];
+    const dk = dayKeyFromDate(ref);
+    return allDayKeys.includes(dk) ? [dk] : [];
   }
 
-  $('reloadBtn').addEventListener('click', run);
-  run().catch(e=>{ console.error(e); setErr(e.message||String(e)); });
+  if(mode === "range"){
+    const from = filterState.from;
+    const to = filterState.to;
+    if(!from || !to) return [];
+    const fromKey = dayKeyFromDate(from);
+    const toKey = dayKeyFromDate(to);
+    return allDayKeys.filter(k => k >= fromKey && k <= toKey);
+  }
+
+  if(mode === "week"){
+    const ref = filterState.refDate;
+    if(!ref) return [];
+    const s = isoWeekStart(ref);
+    const e = isoWeekEnd(ref);
+    const sKey = dayKeyFromDate(s);
+    const eKey = dayKeyFromDate(e);
+    return allDayKeys.filter(k => k >= sKey && k <= eKey);
+  }
+
+  return allDayKeys.slice();
+}
+
+function updateFilterSummary(){
+  const el = document.getElementById("filterSummary");
+  if(!allDayKeys.length){
+    el.textContent = "Nessun dato caricato.";
+    return;
+  }
+  const keys = resolveFilterDayKeys();
+  if(!keys.length){
+    el.textContent = "Filtro attivo: nessun giorno matcha i criteri.";
+    return;
+  }
+  const first = keys[0], last = keys[keys.length-1];
+  el.textContent = `Filtro attivo: ${keys.length} giorni (${first} → ${last}).`;
+}
+
+/** =========================================
+ *  AGGREGATION (filtered)
+ * ========================================= */
+function computeSwitchMetrics(intervals){
+  // Switch count among operational categories only (exclude PAUSA/INDIRETTA)
+  let count = 0;
+  let min = 0;
+  for(let i=1;i<intervals.length;i++){
+    const a = intervals[i-1].category;
+    const b = intervals[i].category;
+    if(a===b) continue;
+    if(a==="PAUSA"||a==="INDIRETTA") continue;
+    if(b==="PAUSA"||b==="INDIRETTA") continue;
+    count += 1;
+    min += Number(intervals[i].minutes||0);
+  }
+  return { switchCount: count, switchMin: Math.round(min) };
+}
+
+function concatIntervalsForOp(op, dayKeys){
+  const dayMap = derivedIntervalsByOpDay.get(op);
+  if(!dayMap) return [];
+  const all = [];
+  for(const dk of dayKeys){
+    const list = dayMap.get(dk);
+    if(list && list.length) all.push(...list.map(x=>({ ...x, dayKey: dk })));
+  }
+  all.sort((a,b)=>a.start-b.start);
+  return all;
+}
+
+function aggregateForOp(op, dayKeys){
+  const intervals = concatIntervalsForOp(op, dayKeys);
+  if(!intervals.length) return null;
+
+  const agg = {
+    operator: op,
+    dayCount: new Set(intervals.map(i=>i.dayKey)).size,
+    shiftLabel: "", // computed later
+    minPiPick:0, minPiBulk:0, minP2P:0, minClean:0, minOther:0, minPause:0, minIndirect:0,
+    piPickBins:0, piBulkBins:0, selfCount:0,
+    woP2P:new Set(), woClean:new Set(), woOther:new Set(),
+    woTime: new Map(), // woId -> minutes (for Score / optional)
+    switchCount:0, switchMin:0
+  };
+
+  for(const it of intervals){
+    const m = Number(it.minutes||0);
+
+    if(it.category === "PAUSA"){ agg.minPause += m; continue; }
+    if(it.category === "INDIRETTA"){ agg.minIndirect += m; continue; }
+
+    if(it.category === "PI Pick"){
+      agg.minPiPick += m;
+      agg.piPickBins += Number(it.piBins||0);
+      agg.selfCount += Number(it.selfCount||0);
+    } else if(it.category === "PI Bulk"){
+      agg.minPiBulk += m;
+      agg.piBulkBins += Number(it.piBins||0);
+      agg.selfCount += Number(it.selfCount||0);
+    } else if(it.category === "P2P"){
+      agg.minP2P += m;
+      if(it.woId) agg.woP2P.add(it.woId);
+      if(it.woId) agg.woTime.set(it.woId, (agg.woTime.get(it.woId)||0)+m);
+    } else if(it.category === "Clean PICK"){
+      agg.minClean += m;
+      if(it.woId) agg.woClean.add(it.woId);
+      if(it.woId) agg.woTime.set(it.woId, (agg.woTime.get(it.woId)||0)+m);
+    } else {
+      agg.minOther += m;
+      if(it.woId) agg.woOther.add(it.woId);
+      if(it.woId) agg.woTime.set(it.woId, (agg.woTime.get(it.woId)||0)+m);
+    }
+  }
+
+  const sw = computeSwitchMetrics(intervals);
+  agg.switchCount = sw.switchCount;
+  agg.switchMin = sw.switchMin;
+
+  // finalize
+  for(const k of ["minPiPick","minPiBulk","minP2P","minClean","minOther","minPause","minIndirect"]){
+    agg[k] = Math.round(agg[k]);
+  }
+  agg.piPickBins = Math.round(agg.piPickBins);
+  agg.piBulkBins = Math.round(agg.piBulkBins);
+  agg.selfCount = Math.round(agg.selfCount);
+
+  agg.woP2P = agg.woP2P.size;
+  agg.woClean = agg.woClean.size;
+  agg.woOther = agg.woOther.size;
+
+  return agg;
+}
+
+function computeShiftLabelForOp(op, dayKeys){
+  // Determine predominant shift on selected days:
+  // if >=70% same -> that, else Mixed
+  const counts = {AM:0, C:0, PM:0, AUTO:0};
+  for(const dk of dayKeys){
+    const sh = mapGetNested(shiftByOpDay, op, dk, null);
+    if(sh && sh.code) counts[sh.code] = (counts[sh.code]||0)+1;
+  }
+  const total = dayKeys.length;
+  let best = "AM";
+  for(const code of ["C","PM"]){
+    if((counts[code]||0) > (counts[best]||0)) best = code;
+  }
+  if(total>0 && (counts[best]||0)/total >= 0.70) return best;
+  // if only one day, show that
+  if(total===1) return best;
+  return "Mixed";
+}
+
+/** =========================================
+ *  RENDER: Summary + Overview (filtered)
+ * ========================================= */
+function renderSummary(dayKeys){
+  const wrap = document.getElementById("summaryWrap");
+  wrap.innerHTML = "";
+
+  if(!dayKeys.length){
+    wrap.innerHTML = `<div class="hint">Nessun giorno selezionato dal filtro.</div>`;
+    return;
+  }
+
+  // Build list of operators in derived intervals
+  const ops = Array.from(derivedIntervalsByOpDay.keys()).sort((a,b)=>a.localeCompare(b));
+  const rows = [];
+  for(const op of ops){
+    const agg = aggregateForOp(op, dayKeys);
+    if(agg) rows.push(agg);
+  }
+  if(!rows.length){
+    wrap.innerHTML = `<div class="hint">Nessun dato nel periodo filtrato.</div>`;
+    return;
+  }
+
+  rows.forEach(r => r.shiftLabel = computeShiftLabelForOp(r.operator, dayKeys));
+
+  // Sort by work minutes desc
+  rows.sort((a,b)=>{
+    const aw = a.minPiPick+a.minPiBulk+a.minP2P+a.minClean+a.minOther+a.minIndirect;
+    const bw = b.minPiPick+b.minPiBulk+b.minP2P+b.minClean+b.minOther+b.minIndirect;
+    return bw-aw;
+  });
+
+  const table = document.createElement("table");
+  table.innerHTML = `
+    <thead><tr>
+      <th>Supporto?</th>
+      <th>Operatore</th>
+      <th>Giorni</th>
+      <th>Turno</th>
+      <th>Tot Lavoro</th>
+      <th>PI Pick</th><th>PI Bulk</th>
+      <th>P2P</th><th>Clean</th>
+      <th>Indiretta</th><th>Pausa</th>
+      <th>Cambi</th>
+    </tr></thead><tbody></tbody>
+  `;
+  const tb = table.querySelector("tbody");
+
+  for(const r of rows){
+    const workMin = r.minPiPick+r.minPiBulk+r.minP2P+r.minClean+r.minOther+r.minIndirect;
+
+    const tr = document.createElement("tr");
+    tr.className = "clickable";
+
+    // Support button targets SOURCE account; for effective ops introduced by support, we still allow support modal only if they are base ops.
+    const tdSupport = document.createElement("td");
+    const btn = document.createElement("button");
+    btn.className = "tertiary small";
+    const isBase = INTEREST_OPERATORS.has(r.operator);
+    btn.textContent = isBase ? (supportRules.get(r.operator)?.length ? "Modifica" : "Supporto") : "—";
+    btn.disabled = !isBase;
+    btn.addEventListener("click", (ev)=>{ ev.stopPropagation(); if(isBase) openSupportModal(r.operator); });
+    tdSupport.appendChild(btn);
+
+    // Turno formatting: bold if base operator, italic if derived/support-only
+    const shiftCell = isBase ? `<strong>${r.shiftLabel}</strong>` : `<em>${r.shiftLabel}</em>`;
+
+    tr.appendChild(tdSupport);
+    tr.innerHTML += `
+      <td>${r.operator}${isBase ? "" : ` <span class="badge">support</span>`}</td>
+      <td>${r.dayCount}</td>
+      <td>${shiftCell}</td>
+      <td class="mono">${minToHHMM(workMin)}</td>
+      <td class="mono">${minToHHMM(r.minPiPick)}</td>
+      <td class="mono">${minToHHMM(r.minPiBulk)}</td>
+      <td class="mono">${minToHHMM(r.minP2P)}</td>
+      <td class="mono">${minToHHMM(r.minClean)}</td>
+      <td class="mono">${minToHHMM(r.minIndirect)}</td>
+      <td class="mono">${minToHHMM(r.minPause)}</td>
+      <td>${r.switchCount}</td>
+    `;
+    tr.addEventListener("click", ()=> openDrilldown(r.operator, dayKeys));
+    tb.appendChild(tr);
+  }
+
+  wrap.appendChild(table);
+}
+
+function pct(n, d){
+  if(!d || d<=0) return "0%";
+  return `${Math.round((n/d)*100)}%`;
+}
+
+function renderOverview(dayKeys){
+  const wrap = document.getElementById("overviewWrap");
+  wrap.innerHTML = "";
+
+  if(!dayKeys.length){
+    wrap.innerHTML = `<div class="hint">Nessun giorno selezionato dal filtro.</div>`;
+    return;
+  }
+
+  const ops = Array.from(derivedIntervalsByOpDay.keys()).sort((a,b)=>a.localeCompare(b));
+  const rows = [];
+  for(const op of ops){
+    const agg = aggregateForOp(op, dayKeys);
+    if(agg) rows.push(agg);
+  }
+  if(!rows.length){
+    wrap.innerHTML = `<div class="hint">Nessun dato nel periodo filtrato.</div>`;
+    return;
+  }
+
+  rows.forEach(r => r.shiftLabel = computeShiftLabelForOp(r.operator, dayKeys));
+
+  const table = document.createElement("table");
+  table.innerHTML = `
+    <thead><tr>
+      <th>Operatore</th>
+      <th>Giorni</th>
+      <th>Turno</th>
+      <th>Media lavoro/giorno</th>
+      <th>% PI Pick</th><th>% PI Bulk</th>
+      <th>% P2P</th><th>% Clean</th><th>% WT Other</th><th>% Indiretta</th>
+      <th>Self Count</th>
+      <th>Cambi Task</th>
+      <th>Min Cambi</th>
+      <th>WO P2P</th><th>WO Clean</th><th>WO Other</th>
+    </tr></thead><tbody></tbody>
+  `;
+  const tb = table.querySelector("tbody");
+
+  for(const r of rows){
+    const workMin = r.minPiPick+r.minPiBulk+r.minP2P+r.minClean+r.minOther+r.minIndirect;
+    const avgWork = workMin / Math.max(1, r.dayCount);
+
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${r.operator}</td>
+      <td>${r.dayCount}</td>
+      <td>${r.shiftLabel}</td>
+      <td class="mono">${minToHHMM(avgWork)}</td>
+
+      <td>${pct(r.minPiPick, workMin)}</td>
+      <td>${pct(r.minPiBulk, workMin)}</td>
+      <td>${pct(r.minP2P, workMin)}</td>
+      <td>${pct(r.minClean, workMin)}</td>
+      <td>${pct(r.minOther, workMin)}</td>
+      <td>${pct(r.minIndirect, workMin)}</td>
+
+      <td>${r.selfCount}</td>
+      <td>${r.switchCount}</td>
+      <td class="mono">${minToHHMM(r.switchMin)}</td>
+
+      <td>${r.woP2P}</td>
+      <td>${r.woClean}</td>
+      <td>${r.woOther}</td>
+    `;
+    tb.appendChild(tr);
+  }
+
+  wrap.appendChild(table);
+}
+
+/** =========================================
+ *  DRILLDOWN (multi-day aware)
+ * ========================================= */
+function intervalsToBlocks(intervals){
+  // group consecutive same category within a day
+  const blocks = [];
+  let cur = null;
+
+  function pushCur(){
+    if(!cur) return;
+    cur.minutes = Math.round(cur.minutes);
+    blocks.push(cur);
+    cur = null;
+  }
+
+  for(const it of intervals){
+    if(!cur){
+      cur = {
+        dayKey: it.dayKey,
+        start: it.start, end: it.end,
+        startStr: it.startStr, endStr: it.endStr,
+        category: it.category,
+        minutes: Number(it.minutes||0),
+        notes: it.notes||""
+      };
+      continue;
+    }
+    if(cur.category === it.category && cur.dayKey === it.dayKey){
+      cur.end = it.end; cur.endStr = it.endStr;
+      cur.minutes += Number(it.minutes||0);
+      if(it.category === "INDIRETTA" && it.notes){
+        cur.notes = cur.notes ? (cur.notes + " | " + it.notes) : it.notes;
+      }
+    } else {
+      pushCur();
+      cur = {
+        dayKey: it.dayKey,
+        start: it.start, end: it.end,
+        startStr: it.startStr, endStr: it.endStr,
+        category: it.category,
+        minutes: Number(it.minutes||0),
+        notes: it.notes||""
+      };
+    }
+  }
+  pushCur();
+  return blocks;
+}
+
+function renderSequenceTableByDay(dayKeys, op){
+  const wrap = document.getElementById("sequenceWrap");
+  wrap.innerHTML = "";
+  const dayMap = derivedIntervalsByOpDay.get(op);
+  if(!dayMap){ wrap.innerHTML = `<div class="hint">Nessun dato.</div>`; return; }
+
+  const table = document.createElement("table");
+  table.innerHTML = `
+    <thead><tr>
+      <th>Giorno</th><th>Start</th><th>End</th><th>Categoria</th><th>Durata</th><th>Note</th>
+    </tr></thead><tbody></tbody>
+  `;
+  const tb = table.querySelector("tbody");
+
+  // Limit to 5 days for clarity (as requested)
+  const days = dayKeys.slice().sort(compareDayKey).slice(0, 5);
+
+  for(const dk of days){
+    const list = (dayMap.get(dk) || []).map(x=>({ ...x, dayKey: dk })).sort((a,b)=>a.start-b.start);
+    const blocks = intervalsToBlocks(list);
+
+    for(const b of blocks){
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${dk}</td>
+        <td class="mono">${b.startStr}</td>
+        <td class="mono">${b.endStr}</td>
+        <td>${b.category}</td>
+        <td class="mono">${minToHHMM(b.minutes)}</td>
+        <td>${b.notes||""}</td>
+      `;
+      tb.appendChild(tr);
+    }
+  }
+
+  wrap.appendChild(table);
+}
+
+function renderDayBars(dayKeys, op){
+  const host = document.getElementById("dayBarsHost");
+  host.innerHTML = "";
+
+  const dayMap = derivedIntervalsByOpDay.get(op);
+  if(!dayMap) { host.innerHTML = `<div class="hint">Nessun dato.</div>`; return; }
+
+  const days = dayKeys.slice().sort(compareDayKey).slice(0, 5);
+
+  for(const dk of days){
+    const list = (dayMap.get(dk) || []).map(x=>({ ...x, dayKey: dk })).sort((a,b)=>a.start-b.start);
+    const blocks = intervalsToBlocks(list);
+    if(!blocks.length) continue;
+
+    const totalMin = blocks.reduce((s,b)=>s+Number(b.minutes||0),0);
+
+    const row = document.createElement("div");
+    row.className = "barRow";
+    const label = document.createElement("div");
+    label.className = "barLabel";
+    const sh = mapGetNested(shiftByOpDay, op, dk, null);
+    label.innerHTML = `<span class="mono">${dk}</span> <span class="badge">${sh ? sh.code : "—"}</span>`;
+    row.appendChild(label);
+
+    const bar = document.createElement("div");
+    bar.className = "dayBar";
+
+    for(const b of blocks){
+      const w = totalMin>0 ? (Number(b.minutes||0)/totalMin)*100 : 0;
+      const seg = document.createElement("div");
+      seg.className = `seg ${catToClass(b.category)}`;
+      seg.style.width = `${w}%`;
+      seg.title = `${b.category} — ${b.startStr} → ${b.endStr} (${minToHHMM(b.minutes)})`;
+
+      if(b.category === "PAUSA"){
+        seg.addEventListener("click", ()=> openIndirectModal(op, dk, b.start, b.end, b.startStr, b.endStr));
+      }
+      bar.appendChild(seg);
+    }
+
+    row.appendChild(bar);
+    host.appendChild(row);
+  }
+}
+
+function computePieTimeForOpDays(op, dayKeys){
+  // average distribution across selected days: compute totals then divide by dayCount (only for display)
+  const dayMap = derivedIntervalsByOpDay.get(op);
+  if(!dayMap) return null;
+
+  const days = dayKeys.slice().sort(compareDayKey).slice(0, 5);
+  const totals = { "PI Pick":0, "PI Bulk":0, "P2P":0, "Clean PICK":0, "WT Other":0, "INDIRETTA":0, "PAUSA":0 };
+  let usedDays = 0;
+
+  for(const dk of days){
+    const list = dayMap.get(dk) || [];
+    if(!list.length) continue;
+    usedDays += 1;
+    for(const it of list){
+      if(totals[it.category] !== undefined) totals[it.category] += Number(it.minutes||0);
+    }
+  }
+  if(usedDays === 0) return null;
+
+  // Average minutes per day for the pie (so multi-day is a mean view)
+  for(const k of Object.keys(totals)){
+    totals[k] = totals[k] / usedDays;
+  }
+  return { totals, usedDays };
+}
+
+function renderDrillPie(op, dayKeys){
+  const res = computePieTimeForOpDays(op, dayKeys);
+  if(!res){
+    if(chartDdPie) chartDdPie.destroy();
+    return;
+  }
+  const labels = ["PI Pick","PI Bulk","P2P","Clean PICK","WT Other","INDIRETTA","PAUSA"];
+  const data = labels.map(l => Math.round(res.totals[l] || 0));
+
+  if(chartDdPie) chartDdPie.destroy();
+  chartDdPie = new Chart(document.getElementById("ddPieTime"), {
+    type:"doughnut",
+    data:{ labels, datasets:[{ data }] },
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:"bottom" } } }
+  });
+}
+
+function renderIntervalsDetail(op, dayKeys){
+  const wrap = document.getElementById("intervalsWrap");
+  wrap.innerHTML = "";
+  const list = concatIntervalsForOp(op, dayKeys);
+  if(!list.length){ wrap.innerHTML = `<div class="hint">Nessun intervallo.</div>`; return; }
+
+  const table = document.createElement("table");
+  table.innerHTML = `
+    <thead><tr>
+      <th>Giorno</th><th>Start</th><th>End</th><th>Categoria</th><th>Durata</th><th>Note</th>
+    </tr></thead><tbody></tbody>
+  `;
+  const tb = table.querySelector("tbody");
+  for(const it of list){
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${it.dayKey}</td>
+      <td class="mono">${it.startStr}</td>
+      <td class="mono">${it.endStr}</td>
+      <td>${it.category}</td>
+      <td class="mono">${minToHHMM(it.minutes)}</td>
+      <td>${it.notes||""}</td>
+    `;
+    tb.appendChild(tr);
+  }
+  wrap.appendChild(table);
+}
+
+function setDetailMode(on){
+  currentDetail = on;
+  document.getElementById("ddSummaryArea").classList.toggle("hidden", on);
+  document.getElementById("ddDetailArea").classList.toggle("hidden", !on);
+  document.getElementById("detailBtn").textContent = on ? "Sintesi" : "Dettaglio";
+}
+
+function openDrilldown(op, globalDayKeys){
+  currentDrillOp = op;
+
+  // populate day selector with days that exist for this op (within global filter)
+  const dayMap = derivedIntervalsByOpDay.get(op);
+  const available = [];
+  if(dayMap){
+    for(const dk of globalDayKeys){
+      if(dayMap.has(dk) && (dayMap.get(dk)||[]).length) available.push(dk);
+    }
+  }
+
+  // default selection: if global filter is single day -> that; else first up to 5
+  const defaults = available.slice(0, 5);
+  currentDrillDayKeys = defaults;
+
+  // render selector
+  const sel = document.getElementById("ddDaySelect");
+  sel.innerHTML = "";
+  for(const dk of available){
+    const opt = document.createElement("option");
+    opt.value = dk;
+    opt.textContent = dk;
+    opt.selected = defaults.includes(dk);
+    sel.appendChild(opt);
+  }
+
+  // update header fields
+  document.getElementById("drilldownCard").classList.remove("hidden");
+  document.getElementById("ddOp").textContent = op;
+  document.getElementById("ddDays").textContent = `${currentDrillDayKeys.length}`;
+  document.getElementById("ddShift").textContent = computeShiftLabelForOp(op, currentDrillDayKeys);
+
+  const intervals = concatIntervalsForOp(op, currentDrillDayKeys);
+  const sw = computeSwitchMetrics(intervals);
+  document.getElementById("ddSwitchCount").textContent = `${sw.switchCount}`;
+
+  // hint
+  let work=0, pause=0, indirect=0;
+  for(const it of intervals){
+    if(it.category==="PAUSA") pause += Number(it.minutes||0);
+    else if(it.category==="INDIRETTA") indirect += Number(it.minutes||0);
+    else work += Number(it.minutes||0);
+  }
+  document.getElementById("ddHint").textContent =
+    `Periodo: ${currentDrillDayKeys.length} giorni. Lavoro=${minToHHMM(work)} | Indiretta=${minToHHMM(indirect)} | Pausa=${minToHHMM(pause)} | Cambi=${sw.switchCount} (min stimati=${minToHHMM(sw.switchMin)}).`;
+
+  renderSequenceTableByDay(currentDrillDayKeys, op);
+  renderDayBars(currentDrillDayKeys, op);
+  renderDrillPie(op, currentDrillDayKeys);
+  renderIntervalsDetail(op, currentDrillDayKeys);
+
+  setDetailMode(false);
+
+  document.getElementById("exportBtn").disabled = (intervals.length===0);
+  document.getElementById("drilldownCard").scrollIntoView({behavior:"smooth", block:"start"});
+}
+
+function closeDrilldown(){
+  currentDrillOp = null;
+  currentDrillDayKeys = [];
+  document.getElementById("drilldownCard").classList.add("hidden");
+  document.getElementById("exportBtn").disabled = true;
+}
+
+/** =========================================
+ *  EXPORT CSV (drilldown)
+ * ========================================= */
+function toCSVIntervals(intervals){
+  const cols = ["dayKey","startStr","endStr","category","minutes","notes"];
+  const esc = v => {
+    const s = String(v ?? "");
+    if(s.includes('"') || s.includes(",") || s.includes("\n")) return `"${s.replaceAll('"','""')}"`;
+    return s;
+  };
+  const head = cols.join(",");
+  const lines = intervals.map(r => cols.map(c => esc(r[c])).join(","));
+  return [head, ...lines].join("\n");
+}
+
+/** =========================================
+ *  SUPPORT MODAL
+ * ========================================= */
+let modalSourceOp=null, modalRules=[];
+
+function showSupportModal(show){ document.getElementById("supportModalOverlay").style.display = show ? "flex" : "none"; }
+
+function openSupportModal(srcOp){
+  modalSourceOp = srcOp;
+  modalRules = (supportRules.get(srcOp) || []).map(r => ({ realOp:r.realOp, start:new Date(r.start), end:new Date(r.end) }));
+
+  document.getElementById("supportSourceLabel").textContent = srcOp;
+  document.getElementById("supportSourceHint").textContent = `Inserisci fasce Start–End per riallocare l’account a un operatore reale.`;
+
+  document.getElementById("supportRealInput").value = "";
+  document.getElementById("supportStartInput").value = "";
+  document.getElementById("supportEndInput").value = "";
+
+  renderSupportRulesTable();
+  showSupportModal(true);
+}
+
+function renderSupportRulesTable(){
+  const wrap = document.getElementById("supportAllocTableWrap");
+  wrap.innerHTML = "";
+
+  const table = document.createElement("table");
+  table.innerHTML = `
+    <thead><tr><th>Operatore reale</th><th>Start</th><th>End</th><th>Durata</th><th></th></tr></thead>
+    <tbody></tbody>
+  `;
+  const tb = table.querySelector("tbody");
+
+  let sum = 0;
+  for(let i=0;i<modalRules.length;i++){
+    const r = modalRules[i];
+    const dur = Math.max(0, minutesBetween(r.start, r.end));
+    sum += dur;
+
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${r.realOp}</td>
+      <td class="mono">${fmtDateTime(r.start)}</td>
+      <td class="mono">${fmtDateTime(r.end)}</td>
+      <td class="mono">${minToHHMM(dur)}</td>
+      <td></td>
+    `;
+    const del = document.createElement("button");
+    del.className="secondary small";
+    del.type="button";
+    del.textContent="Rimuovi";
+    del.addEventListener("click", ()=>{
+      modalRules.splice(i,1);
+      renderSupportRulesTable();
+    });
+    tr.children[4].appendChild(del);
+    tb.appendChild(tr);
+  }
+
+  const trSum = document.createElement("tr");
+  trSum.innerHTML = `<td><strong>Totale</strong></td><td></td><td></td><td class="mono"><strong>${minToHHMM(sum)}</strong></td><td></td>`;
+  tb.appendChild(trSum);
+
+  wrap.appendChild(table);
+}
+
+function addSupportRule(){
+  const realOp = normStr(document.getElementById("supportRealInput").value);
+  const sVal = document.getElementById("supportStartInput").value;
+  const eVal = document.getElementById("supportEndInput").value;
+
+  if(!realOp) return alert("Inserisci il nome operatore reale.");
+  if(!sVal || !eVal) return alert("Inserisci Start ed End.");
+  const s = new Date(sVal), e = new Date(eVal);
+  if(isNaN(s.getTime()) || isNaN(e.getTime()) || e<=s) return alert("Start/End non validi.");
+
+  modalRules.push({ realOp, start:s, end:e });
+  modalRules.sort((a,b)=>a.start-b.start);
+  renderSupportRulesTable();
+}
+
+function commitSupportRules(){
+  if(!modalSourceOp) return;
+  supportRules.set(modalSourceOp, modalRules);
+
+  document.getElementById("clearSupportBtn").disabled = (supportRules.size===0);
+
+  // Rebuild derived
+  rebuildAllDerivedAndRender();
+
+  // refresh drilldown if open
+  if(currentDrillOp){
+    openDrilldown(currentDrillOp, resolveFilterDayKeys());
+  }
+
+  showSupportModal(false);
+}
+
+/** =========================================
+ *  INDIRECT MODAL
+ * ========================================= */
+let selectedPause = null; // {op, dayKey, start, end}
+
+function showIndirectModal(show){ document.getElementById("indirectModalOverlay").style.display = show ? "flex" : "none"; }
+
+function totalIndirectCount(){
+  let n = 0;
+  for(const [, dayMap] of indirectRules.entries()){
+    for(const [, list] of dayMap.entries()) n += (list||[]).length;
+  }
+  return n;
+}
+
+function openIndirectModal(op, dayKey, start, end, startStr, endStr){
+  selectedPause = { op, dayKey, start, end };
+  document.getElementById("indirectOpLabel").textContent = `${op} (${dayKey})`;
+  document.getElementById("indirectHint").textContent = `Pausa: ${startStr} → ${endStr}. Inserisci sotto-fascia e descrizione.`;
+
+  document.getElementById("indirectStartInput").value = toDTLocalValue(start);
+  document.getElementById("indirectEndInput").value = toDTLocalValue(end);
+  document.getElementById("indirectDescInput").value = "";
+  document.getElementById("indirectShiftOverride").value = "NOCHANGE";
+
+  renderIndirectList(op, dayKey);
+  showIndirectModal(true);
+}
+
+function renderIndirectList(op, dayKey){
+  const wrap = document.getElementById("indirectListWrap");
+  wrap.innerHTML = "";
+
+  const dayMap = indirectRules.get(op);
+  const list = dayMap ? (dayMap.get(dayKey) || []) : [];
+  const sorted = list.slice().sort((a,b)=>a.start-b.start);
+
+  if(!sorted.length){
+    wrap.innerHTML = `<div class="hint">Nessuna indiretta inserita per questo giorno.</div>`;
+    return;
+  }
+
+  const table = document.createElement("table");
+  table.innerHTML = `
+    <thead><tr><th>Start</th><th>End</th><th>Durata</th><th>Descrizione</th><th></th></tr></thead>
+    <tbody></tbody>
+  `;
+  const tb = table.querySelector("tbody");
+
+  for(let i=0;i<sorted.length;i++){
+    const r = sorted[i];
+    const dur = Math.max(0, minutesBetween(r.start, r.end));
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td class="mono">${fmtDateTime(r.start)}</td>
+      <td class="mono">${fmtDateTime(r.end)}</td>
+      <td class="mono">${minToHHMM(dur)}</td>
+      <td>${r.desc||""}</td>
+      <td></td>
+    `;
+    const del = document.createElement("button");
+    del.className="secondary small";
+    del.type="button";
+    del.textContent="Rimuovi";
+    del.addEventListener("click", ()=>{
+      const dm = getOrInitMap(indirectRules, op);
+      const cur = dm.get(dayKey) || [];
+      // remove by identity match
+      const idx = cur.findIndex(x => x.start.getTime()===r.start.getTime() && x.end.getTime()===r.end.getTime() && (x.desc||"")===(r.desc||""));
+      if(idx>=0) cur.splice(idx,1);
+      dm.set(dayKey, cur);
+      rebuildAllDerivedAndRender();
+      if(currentDrillOp) openDrilldown(currentDrillOp, resolveFilterDayKeys());
+      renderIndirectList(op, dayKey);
+    });
+    tr.children[4].appendChild(del);
+    tb.appendChild(tr);
+  }
+
+  wrap.appendChild(table);
+}
+
+function saveIndirect(){
+  if(!selectedPause) return;
+
+  const op = selectedPause.op;
+  const dayKey = selectedPause.dayKey;
+
+  const sVal = document.getElementById("indirectStartInput").value;
+  const eVal = document.getElementById("indirectEndInput").value;
+  const desc = normStr(document.getElementById("indirectDescInput").value);
+  const shOverride = document.getElementById("indirectShiftOverride").value;
+
+  if(!sVal || !eVal) return alert("Inserisci Start ed End.");
+  const s = new Date(sVal), e = new Date(eVal);
+  if(isNaN(s.getTime()) || isNaN(e.getTime()) || e<=s) return alert("Start/End non validi.");
+  if(s < selectedPause.start || e > selectedPause.end) return alert("La fascia indiretta deve stare dentro la PAUSA selezionata.");
+
+  // Apply shift override if requested
+  if(shOverride && shOverride !== "NOCHANGE"){
+    const m = getOrInitMap(shiftOverride, op);
+    m.set(dayKey, shOverride);
+  }
+
+  const dm = getOrInitMap(indirectRules, op);
+  const cur = dm.get(dayKey) || [];
+  cur.push({ start:s, end:e, desc });
+  cur.sort((a,b)=>a.start-b.start);
+  dm.set(dayKey, cur);
+
+  document.getElementById("clearIndirectBtn").disabled = (totalIndirectCount()===0);
+
+  rebuildAllDerivedAndRender();
+  if(currentDrillOp) openDrilldown(currentDrillOp, resolveFilterDayKeys());
+
+  showIndirectModal(false);
+}
+
+function deleteAllIndirectForOp(op){
+  if(!confirm(`Eliminare tutte le indirette per ${op} (tutti i giorni)?`)) return;
+  indirectRules.delete(op);
+  document.getElementById("clearIndirectBtn").disabled = (totalIndirectCount()===0);
+  rebuildAllDerivedAndRender();
+  if(currentDrillOp) openDrilldown(currentDrillOp, resolveFilterDayKeys());
+}
+
+/** =========================================
+ *  HEATMAPS (filtered)
+ *  - Hour heatmap: X=op, Y=05..22, Z=count; hover shows lane breakdown (01..50)
+ *  - Lane heatmap: X=op, Y=01..50, Z=count; hover shows hour breakdown (05..22)
+ * ========================================= */
+function renderHeatmaps(dayKeys){
+  const divH = document.getElementById("heatmapHour");
+  const divL = document.getElementById("heatmapLane");
+  divH.innerHTML = ""; divL.innerHTML = "";
+
+  if(!piCounts.length || !dayKeys.length){
+    divH.innerHTML = `<div class="hint">Nessun dato PI per heatmap nel periodo.</div>`;
+    divL.innerHTML = `<div class="hint">Nessun dato PI per heatmap nel periodo.</div>`;
+    return;
+  }
+
+  const daySet = new Set(dayKeys);
+
+  // Filter to selected dayKeys and shift-window hours (05..22 as requested)
+  const filtered = piCounts.filter(r => daySet.has(r.dayKey) && r.hour>=5 && r.hour<=22 && r.lane>=1 && r.lane<=50);
+
+  if(!filtered.length){
+    divH.innerHTML = `<div class="hint">Nessun dato PI nel periodo filtrato.</div>`;
+    divL.innerHTML = `<div class="hint">Nessun dato PI nel periodo filtrato.</div>`;
+    return;
+  }
+
+  const ops = Array.from(new Set(filtered.map(r=>r.op))).sort((a,b)=>a.localeCompare(b));
+  const hours = [];
+  for(let h=5; h<=22; h++) hours.push(h);
+  const lanes = [];
+  for(let l=1; l<=50; l++) lanes.push(l);
+
+  // Hour heatmap matrices
+  const zH = hours.map(()=> ops.map(()=>0));
+  const textH = hours.map(()=> ops.map(()=> "Corsie: —"));
+
+  // Lane heatmap matrices
+  const zL = lanes.map(()=> ops.map(()=>0));
+  const textL = lanes.map(()=> ops.map(()=> "Ore: —"));
+
+  // Build breakdown maps
+  const cellHLane = new Map(); // key op|hour -> Map(lane->count)
+  const cellLHour = new Map(); // key op|lane -> Map(hour->count)
+
+  for(const r of filtered){
+    const xi = ops.indexOf(r.op);
+    if(xi<0) continue;
+
+    // hour heatmap
+    const yiH = hours.indexOf(r.hour);
+    if(yiH>=0) zH[yiH][xi] += 1;
+
+    const keyHL = `${r.op}|${r.hour}`;
+    if(!cellHLane.has(keyHL)) cellHLane.set(keyHL, new Map());
+    const m1 = cellHLane.get(keyHL);
+    m1.set(r.lane, (m1.get(r.lane)||0)+1);
+
+    // lane heatmap
+    const yiL = lanes.indexOf(r.lane);
+    if(yiL>=0) zL[yiL][xi] += 1;
+
+    const keyLH = `${r.op}|${r.lane}`;
+    if(!cellLHour.has(keyLH)) cellLHour.set(keyLH, new Map());
+    const m2 = cellLHour.get(keyLH);
+    m2.set(r.hour, (m2.get(r.hour)||0)+1);
+  }
+
+  // Fill hover texts
+  for(let y=0; y<hours.length; y++){
+    for(let x=0; x<ops.length; x++){
+      const key = `${ops[x]}|${hours[y]}`;
+      const m = cellHLane.get(key);
+      if(!m || m.size===0) continue;
+      const top = Array.from(m.entries()).sort((a,b)=>b[1]-a[1]).slice(0,8);
+      textH[y][x] = "Corsie (top): " + top.map(([lane,c])=>`${String(lane).padStart(2,"0")}=${c}`).join(", ");
+    }
+  }
+  for(let y=0; y<lanes.length; y++){
+    for(let x=0; x<ops.length; x++){
+      const key = `${ops[x]}|${lanes[y]}`;
+      const m = cellLHour.get(key);
+      if(!m || m.size===0) continue;
+      const top = Array.from(m.entries()).sort((a,b)=>b[1]-a[1]).slice(0,8);
+      textL[y][x] = "Ore (top): " + top.map(([h,c])=>`${String(h).padStart(2,"0")}:00=${c}`).join(", ");
+    }
+  }
+
+  const dataH = [{
+    z: zH,
+    x: ops,
+    y: hours.map(h=>String(h).padStart(2,"0")+":00"),
+    text: textH,
+    type:"heatmap",
+    hovertemplate:"Operatore=%{x}<br>Ora=%{y}<br>Conte=%{z}<br>%{text}<extra></extra>"
+  }];
+  const layoutH = {
+    paper_bgcolor:"rgba(0,0,0,0)",
+    plot_bgcolor:"rgba(0,0,0,0)",
+    margin:{l:70,r:20,t:10,b:80},
+    xaxis:{ title:"Counter + Supporti", tickangle:-30, color:"#a9b7d6" },
+    yaxis:{ title:"Ora (05–22)", color:"#a9b7d6" },
+    font:{ color:"#e8eefc" }
+  };
+  Plotly.newPlot(divH, dataH, layoutH, {displayModeBar:false, responsive:true});
+
+  const dataL = [{
+    z: zL,
+    x: ops,
+    y: lanes.map(l=>String(l).padStart(2,"0")),
+    text: textL,
+    type:"heatmap",
+    hovertemplate:"Operatore=%{x}<br>Corsia=%{y}<br>Conte=%{z}<br>%{text}<extra></extra>"
+  }];
+  const layoutL = {
+    paper_bgcolor:"rgba(0,0,0,0)",
+    plot_bgcolor:"rgba(0,0,0,0)",
+    margin:{l:70,r:20,t:10,b:80},
+    xaxis:{ title:"Counter + Supporti", tickangle:-30, color:"#a9b7d6" },
+    yaxis:{ title:"Corsia (01–50)", color:"#a9b7d6" },
+    font:{ color:"#e8eefc" }
+  };
+  Plotly.newPlot(divL, dataL, layoutL, {displayModeBar:false, responsive:true});
+}
+
+/** =========================================
+ *  CHARTS (filtered)
+ * ========================================= */
+function ensureChartsVisible(has){
+  document.getElementById("chartsEmpty").classList.toggle("hidden", has);
+  document.getElementById("chartsContent").classList.toggle("hidden", !has);
+  document.getElementById("scoreEmpty").classList.toggle("hidden", has);
+  document.getElementById("scoreContent").classList.toggle("hidden", !has);
+}
+
+function buildFilteredAgg(dayKeys){
+  const ops = Array.from(derivedIntervalsByOpDay.keys()).sort((a,b)=>a.localeCompare(b));
+  const rows = [];
+  for(const op of ops){
+    const agg = aggregateForOp(op, dayKeys);
+    if(agg){
+      agg.shiftLabel = computeShiftLabelForOp(op, dayKeys);
+      rows.push(agg);
+    }
+  }
+  return rows;
+}
+
+function renderChartsTable(dayKeys, rows){
+  const wrap = document.getElementById("chartsTableWrap");
+  wrap.innerHTML = "";
+
+  if(!rows.length){
+    wrap.innerHTML = `<div class="hint">Nessun dato nel periodo filtrato.</div>`;
+    return;
+  }
+
+  const table = document.createElement("table");
+  table.innerHTML = `
+    <thead><tr>
+      <th>Operatore</th><th>Giorni</th><th>Turno</th>
+      <th>Tot Lavoro</th>
+      <th>PI Pick</th><th>PI Bulk</th><th>P2P</th><th>Clean</th><th>WT Other</th>
+      <th>Indiretta</th><th>Pausa</th>
+      <th>BIN Pick</th><th>BIN Bulk</th>
+      <th>WO P2P</th><th>WO Clean</th><th>WO Other</th>
+      <th>Cambi</th><th>Min Cambi</th>
+    </tr></thead><tbody></tbody>
+  `;
+  const tb = table.querySelector("tbody");
+
+  for(const r of rows){
+    const workMin = r.minPiPick+r.minPiBulk+r.minP2P+r.minClean+r.minOther+r.minIndirect;
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${r.operator}</td>
+      <td>${r.dayCount}</td>
+      <td>${r.shiftLabel}</td>
+      <td class="mono">${minToHHMM(workMin)}</td>
+      <td class="mono">${minToHHMM(r.minPiPick)}</td>
+      <td class="mono">${minToHHMM(r.minPiBulk)}</td>
+      <td class="mono">${minToHHMM(r.minP2P)}</td>
+      <td class="mono">${minToHHMM(r.minClean)}</td>
+      <td class="mono">${minToHHMM(r.minOther)}</td>
+      <td class="mono">${minToHHMM(r.minIndirect)}</td>
+      <td class="mono">${minToHHMM(r.minPause)}</td>
+
+      <td>${r.piPickBins}</td>
+      <td>${r.piBulkBins}</td>
+      <td>${r.woP2P}</td>
+      <td>${r.woClean}</td>
+      <td>${r.woOther}</td>
+      <td>${r.switchCount}</td>
+      <td class="mono">${minToHHMM(r.switchMin)}</td>
+    `;
+    tb.appendChild(tr);
+  }
+
+  wrap.appendChild(table);
+}
+
+function renderPieCharts(rows){
+  const labels = rows.map(r=>r.operator);
+  const pick = rows.map(r=>r.piPickBins||0);
+  const bulk = rows.map(r=>r.piBulkBins||0);
+
+  if(chartPiePick) chartPiePick.destroy();
+  if(chartPieBulk) chartPieBulk.destroy();
+
+  chartPiePick = new Chart(document.getElementById("piePick"), {
+    type:"doughnut",
+    data:{ labels, datasets:[{ data: pick }] },
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:"bottom" } } }
+  });
+
+  chartPieBulk = new Chart(document.getElementById("pieBulk"), {
+    type:"doughnut",
+    data:{ labels, datasets:[{ data: bulk }] },
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:"bottom" } } }
+  });
+}
+
+function renderComboChart(rows){
+  const labels = rows.map(r=>r.operator);
+  const prod = rows.map(r=>{
+    // simple productivity proxy: (PI bins/hour PI) + 2*(WO/hour WT)
+    const piMin = r.minPiPick + r.minPiBulk;
+    const wtMin = r.minP2P + r.minClean + r.minOther;
+    const piBins = r.piPickBins + r.piBulkBins;
+    const wtWO = r.woP2P + r.woClean + r.woOther;
+
+    const piRate = piMin>0 ? (piBins/(piMin/60)) : 0;
+    const wtRate = wtMin>0 ? (wtWO/(wtMin/60)) : 0;
+    return Math.round((piRate + 2*wtRate)*10)/10;
+  });
+  const switches = rows.map(r=>r.switchCount||0);
+
+  if(chartCombo) chartCombo.destroy();
+  chartCombo = new Chart(document.getElementById("comboChart"), {
+    data:{
+      labels,
+      datasets:[
+        { type:"bar", label:"Produttività (PI tph + 2×WT tph)", data: prod, yAxisID:"y" },
+        { type:"line", label:"Cambi Task", data: switches, yAxisID:"y1" }
+      ]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      scales:{
+        y:{ beginAtZero:true, title:{ display:true, text:"Produttività" } },
+        y1:{ beginAtZero:true, position:"right", grid:{ drawOnChartArea:false }, title:{ display:true, text:"Cambi" } }
+      },
+      plugins:{ legend:{ position:"bottom" } }
+    }
+  });
+}
+
+/** =========================================
+ *  SCORE (filtered)
+ * ========================================= */
+function tphAndSecTask(timeMin, volume){
+  if(!volume || volume<=0 || !timeMin || timeMin<=0) return { tph:0, secPerTask:0 };
+  const tph = volume / (timeMin/60);
+  const sec = (timeMin*60) / volume;
+  return { tph: Math.round(tph*10)/10, secPerTask: Math.round(sec) };
+}
+
+function computeDayScore(op, dayKey){
+  const intervals = mapGetNested(derivedIntervalsByOpDay, op, dayKey, []);
+  if(!intervals || !intervals.length) return null;
+
+  const sh = mapGetNested(shiftByOpDay, op, dayKey, null);
+  if(!sh) return null;
+
+  // Actual: first->last interval boundary within shift (already inside shift by construction)
+  const first = intervals[0].start;
+  const last = intervals[intervals.length-1].end;
+  let actual = Math.max(0, minutesBetween(first, last));
+  actual = Math.min(actual, SHIFT_TARGET_MIN); // clip to target window
+
+  let pause=0, indirect=0, workPI=0, workWT=0, workOther=0;
+  let piBins=0, woP2P=new Set(), woClean=new Set(), woOther=new Set();
+
+  for(const it of intervals){
+    const m = Number(it.minutes||0);
+    if(it.category==="PAUSA"){ pause += m; continue; }
+    if(it.category==="INDIRETTA"){ indirect += m; continue; }
+
+    if(it.category==="PI Pick" || it.category==="PI Bulk"){
+      workPI += m;
+      piBins += Number(it.piBins||0);
+    } else if(it.category==="P2P"){
+      workWT += m;
+      if(it.woId) woP2P.add(it.woId);
+    } else if(it.category==="Clean PICK"){
+      workWT += m;
+      if(it.woId) woClean.add(it.woId);
+    } else {
+      workOther += m;
+      if(it.woId) woOther.add(it.woId);
+    }
+  }
+
+  const effectiveProd = workPI + workWT + workOther; // excludes indirect
+  const effectiveAll = effectiveProd + indirect;
+  const inactivity = Math.max(0, SHIFT_TARGET_MIN - actual);
+
+  return {
+    op, dayKey,
+    shift: sh.code,
+    targetMin: SHIFT_TARGET_MIN,
+    actualMin: Math.round(actual),
+    inactivityMin: Math.round(inactivity),
+    pauseMin: Math.round(pause),
+    indirectMin: Math.round(indirect),
+    effectiveProdMin: Math.round(effectiveProd),
+    effectiveAllMin: Math.round(effectiveAll),
+    piBins: Math.round(piBins),
+    woP2P: woP2P.size,
+    woClean: woClean.size,
+    woOther: woOther.size
+  };
+}
+
+function renderScoreTables(dayKeys, rowsAgg){
+  // Score per operatore (aggregato giorni)
+  const wrap = document.getElementById("scoreTableWrap");
+  wrap.innerHTML = "";
+
+  if(!rowsAgg.length){
+    wrap.innerHTML = `<div class="hint">Nessun dato nel periodo filtrato.</div>`;
+    return;
+  }
+
+  // Build daily details for completeness
+  const daily = [];
+  for(const r of rowsAgg){
+    for(const dk of dayKeys){
+      const d = computeDayScore(r.operator, dk);
+      if(d) daily.push(d);
+    }
+  }
+
+  // Aggregate score per operator across days (sum)
+  const byOp = new Map();
+  for(const d of daily){
+    if(!byOp.has(d.op)){
+      byOp.set(d.op, {
+        op: d.op,
+        dayCount: 0,
+        targetMin:0, actualMin:0, inactivityMin:0,
+        pauseMin:0, indirectMin:0, effectiveProdMin:0, effectiveAllMin:0,
+        piBins:0, woP2P:0, woClean:0, woOther:0
+      });
+    }
+    const a = byOp.get(d.op);
+    a.dayCount += 1;
+    a.targetMin += d.targetMin;
+    a.actualMin += d.actualMin;
+    a.inactivityMin += d.inactivityMin;
+    a.pauseMin += d.pauseMin;
+    a.indirectMin += d.indirectMin;
+    a.effectiveProdMin += d.effectiveProdMin;
+    a.effectiveAllMin += d.effectiveAllMin;
+    a.piBins += d.piBins;
+    a.woP2P += d.woP2P;
+    a.woClean += d.woClean;
+    a.woOther += d.woOther;
+  }
+
+  const scoreRows = Array.from(byOp.values()).sort((a,b)=>b.effectiveProdMin-a.effectiveProdMin);
+
+  const table = document.createElement("table");
+  table.innerHTML = `
+    <thead><tr>
+      <th>Operatore</th><th>Giorni</th>
+      <th>Target</th><th>Actual</th><th>Inattività</th>
+      <th>Effettivo (prod)</th><th>Indiretta</th><th>Pausa</th>
+      <th>% Prod su Target</th><th>% Actual su Target</th>
+      <th>PI bins (tot)</th><th>WO (tot)</th>
+    </tr></thead><tbody></tbody>
+  `;
+  const tb = table.querySelector("tbody");
+
+  for(const s of scoreRows){
+    const woTot = s.woP2P + s.woClean + s.woOther;
+    const pctProd = s.targetMin>0 ? Math.round((s.effectiveProdMin/s.targetMin)*100) : 0;
+    const pctActual = s.targetMin>0 ? Math.round((s.actualMin/s.targetMin)*100) : 0;
+
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${s.op}</td>
+      <td>${s.dayCount}</td>
+      <td class="mono">${minToHHMM(s.targetMin)}</td>
+      <td class="mono">${minToHHMM(s.actualMin)}</td>
+      <td class="mono">${minToHHMM(s.inactivityMin)}</td>
+      <td class="mono">${minToHHMM(s.effectiveProdMin)}</td>
+      <td class="mono">${minToHHMM(s.indirectMin)}</td>
+      <td class="mono">${minToHHMM(s.pauseMin)}</td>
+      <td>${pctProd}%</td>
+      <td>${pctActual}%</td>
+      <td>${s.piBins}</td>
+      <td>${woTot}</td>
+    `;
+    tb.appendChild(tr);
+  }
+
+  wrap.appendChild(table);
+
+  // TPH & sec/task (aggregato periodo)
+  renderTPH(dayKeys, rowsAgg);
+
+  // Daily detail table
+  renderScoreDaily(daily);
+}
+
+function renderTPH(dayKeys, rowsAgg){
+  const wrap = document.getElementById("tphTableWrap");
+  wrap.innerHTML = "";
+
+  const table = document.createElement("table");
+  table.innerHTML = `
+    <thead><tr>
+      <th>Operatore</th><th>Categoria</th><th>Tempo</th><th>Volume</th><th>TPH</th><th>sec/task</th>
+    </tr></thead><tbody></tbody>
+  `;
+  const tb = table.querySelector("tbody");
+
+  const cats = [
+    { key:"PI (tot)", timeFn:r=>r.minPiPick+r.minPiBulk, volFn:r=>r.piPickBins+r.piBulkBins, volLabel:"BIN" },
+    { key:"PI Pick", timeFn:r=>r.minPiPick, volFn:r=>r.piPickBins, volLabel:"BIN" },
+    { key:"PI Bulk", timeFn:r=>r.minPiBulk, volFn:r=>r.piBulkBins, volLabel:"BIN" },
+    { key:"P2P", timeFn:r=>r.minP2P, volFn:r=>r.woP2P, volLabel:"WO" },
+    { key:"Clean PICK", timeFn:r=>r.minClean, volFn:r=>r.woClean, volLabel:"WO" },
+    { key:"WT Other", timeFn:r=>r.minOther, volFn:r=>r.woOther, volLabel:"WO" }
+  ];
+
+  for(const r of rowsAgg){
+    for(const c of cats){
+      const timeMin = Number(c.timeFn(r) || 0);
+      const vol = Number(c.volFn(r) || 0);
+      const m = tphAndSecTask(timeMin, vol);
+
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${r.operator}</td>
+        <td>${c.key}</td>
+        <td class="mono">${minToHHMM(timeMin)}</td>
+        <td>${vol} ${c.volLabel}</td>
+        <td>${m.tph}</td>
+        <td>${m.secPerTask}</td>
+      `;
+      tb.appendChild(tr);
+    }
+  }
+
+  wrap.appendChild(table);
+}
+
+function renderScoreDaily(daily){
+  const wrap = document.getElementById("scoreDailyWrap");
+  wrap.innerHTML = "";
+
+  if(!daily.length){
+    wrap.innerHTML = `<div class="hint">Nessun dettaglio giornaliero disponibile.</div>`;
+    return;
+  }
+
+  daily.sort((a,b)=> (a.op.localeCompare(b.op) || a.dayKey.localeCompare(b.dayKey)));
+
+  const table = document.createElement("table");
+  table.innerHTML = `
+    <thead><tr>
+      <th>Operatore</th><th>Giorno</th><th>Turno</th>
+      <th>Target</th><th>Actual</th><th>Inattività</th>
+      <th>Effettivo (prod)</th><th>Indiretta</th><th>Pausa</th>
+      <th>PI bins</th><th>WO P2P</th><th>WO Clean</th><th>WO Other</th>
+    </tr></thead><tbody></tbody>
+  `;
+  const tb = table.querySelector("tbody");
+
+  for(const d of daily){
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${d.op}</td>
+      <td>${d.dayKey}</td>
+      <td>${d.shift}</td>
+      <td class="mono">${minToHHMM(d.targetMin)}</td>
+      <td class="mono">${minToHHMM(d.actualMin)}</td>
+      <td class="mono">${minToHHMM(d.inactivityMin)}</td>
+      <td class="mono">${minToHHMM(d.effectiveProdMin)}</td>
+      <td class="mono">${minToHHMM(d.indirectMin)}</td>
+      <td class="mono">${minToHHMM(d.pauseMin)}</td>
+      <td>${d.piBins}</td>
+      <td>${d.woP2P}</td>
+      <td>${d.woClean}</td>
+      <td>${d.woOther}</td>
+    `;
+    tb.appendChild(tr);
+  }
+
+  wrap.appendChild(table);
+}
+
+/** =========================================
+ *  APPLY FILTER -> RENDER ALL VIEWS
+ * ========================================= */
+function renderAllWithFilter(){
+  const dayKeys = resolveFilterDayKeys();
+  updateFilterSummary();
+
+  // Home tables
+  renderSummary(dayKeys);
+  renderOverview(dayKeys);
+
+  // Charts
+  const hasData = derivedIntervalsByOpDay.size>0 && dayKeys.length>0;
+  ensureChartsVisible(hasData);
+  if(hasData){
+    const rows = buildFilteredAgg(dayKeys);
+    renderChartsTable(dayKeys, rows);
+    renderPieCharts(rows);
+    renderHeatmaps(dayKeys);
+    renderComboChart(rows);
+    // Score
+    renderScoreTables(dayKeys, rows);
+  }
+}
+
+/** =========================================
+ *  REBUILD DERIVED + RENDER
+ * ========================================= */
+function rebuildAllDerivedAndRender(){
+  // rebuild derived intervals considering support + shift overrides + indirect
+  buildDerivedIntervals();
+  computeAllDayKeys();
+
+  // enable filter controls
+  document.getElementById("applyFilterBtn").disabled = false;
+
+  // initialize filter dates if empty
+  if(allDayKeys.length){
+    const first = allDayKeys[0], last = allDayKeys[allDayKeys.length-1];
+    const ref = document.getElementById("filterRefDate");
+    const from = document.getElementById("filterFrom");
+    const to = document.getElementById("filterTo");
+    if(!ref.value) ref.value = last;
+    if(!from.value) from.value = first;
+    if(!to.value) to.value = last;
+  }
+
+  renderAllWithFilter();
+}
+
+/** =========================================
+ *  ANALYZE (entry)
+ * ========================================= */
+let rawPiCountsGlobal = []; // stored after read for remap in buildDerivedIntervals
+
+async function analyze(piFiles, wtFiles){
+  setError("");
+  setStatus("lettura file Excel...");
+
+  const [piBatches, wtBatches] = await Promise.all([
+    readManyFiles(piFiles),
+    readManyFiles(wtFiles)
+  ]);
+
+  setStatus("costruzione eventi...");
+
+  const { eventsByOpDaySrc, rawPiCounts } = buildEvents(piBatches, wtBatches);
+  eventsByOpDay = eventsByOpDaySrc;
+  rawPiCountsGlobal = rawPiCounts;
+
+  // After analysis, rebuild derived and render
+  setStatus("calcolo intervalli + turni + supporti/indirette...");
+  rebuildAllDerivedAndRender();
+
+  document.getElementById("clearSupportBtn").disabled = (supportRules.size===0);
+  document.getElementById("clearIndirectBtn").disabled = (totalIndirectCount()===0);
+
+  setStatus("completata.");
+}
+
+/** =========================================
+ *  UI WIRING
+ * ========================================= */
+document.getElementById("runBtn").addEventListener("click", async ()=>{
+  const piFiles = Array.from(document.getElementById("piFile").files || []);
+  const wtFiles = Array.from(document.getElementById("wtFile").files || []);
+  if(!piFiles.length || !wtFiles.length){
+    setError("Carica almeno un file PI e un file WT prima di avviare l’analisi.");
+    return;
+  }
+  try{
+    await analyze(piFiles, wtFiles);
+  }catch(e){
+    console.error(e);
+    setError("Errore durante lettura/analisi. Verifica intestazioni colonne e formato file.");
+    setStatus("errore");
+  }
+});
+
+document.getElementById("toTopBtn").addEventListener("click", ()=> window.scrollTo({top:0, behavior:"smooth"}));
+
+document.getElementById("clearSupportBtn").addEventListener("click", ()=>{
+  if(!confirm("Vuoi eliminare tutti i supporti inseriti?")) return;
+  supportRules = new Map();
+  rebuildAllDerivedAndRender();
+  document.getElementById("clearSupportBtn").disabled = true;
+  if(currentDrillOp) openDrilldown(currentDrillOp, resolveFilterDayKeys());
+});
+document.getElementById("clearIndirectBtn").addEventListener("click", ()=>{
+  if(!confirm("Vuoi eliminare tutte le attività indirette inserite?")) return;
+  indirectRules = new Map();
+  rebuildAllDerivedAndRender();
+  document.getElementById("clearIndirectBtn").disabled = true;
+  if(currentDrillOp) openDrilldown(currentDrillOp, resolveFilterDayKeys());
+});
+
+document.getElementById("backBtn").addEventListener("click", closeDrilldown);
+document.getElementById("detailBtn").addEventListener("click", ()=> setDetailMode(!currentDetail));
+document.getElementById("exportBtn").addEventListener("click", ()=>{
+  const dayKeys = currentDrillDayKeys.length ? currentDrillDayKeys : resolveFilterDayKeys();
+  const intervals = concatIntervalsForOp(currentDrillOp, dayKeys);
+  const csv = toCSVIntervals(intervals);
+  downloadText(`intervals_${String(currentDrillOp||"operatore").replaceAll(".","_")}.csv`, csv);
+});
+
+// Drilldown day filter apply
+document.getElementById("ddApplyDaysBtn").addEventListener("click", ()=>{
+  if(!currentDrillOp) return;
+  const sel = document.getElementById("ddDaySelect");
+  const picked = Array.from(sel.selectedOptions).map(o=>o.value).sort(compareDayKey);
+  currentDrillDayKeys = picked.slice(0,5);
+
+  document.getElementById("ddDays").textContent = `${currentDrillDayKeys.length}`;
+  document.getElementById("ddShift").textContent = computeShiftLabelForOp(currentDrillOp, currentDrillDayKeys);
+
+  const intervals = concatIntervalsForOp(currentDrillOp, currentDrillDayKeys);
+  const sw = computeSwitchMetrics(intervals);
+  document.getElementById("ddSwitchCount").textContent = `${sw.switchCount}`;
+
+  // hint refresh
+  let work=0, pause=0, indirect=0;
+  for(const it of intervals){
+    if(it.category==="PAUSA") pause += Number(it.minutes||0);
+    else if(it.category==="INDIRETTA") indirect += Number(it.minutes||0);
+    else work += Number(it.minutes||0);
+  }
+  document.getElementById("ddHint").textContent =
+    `Periodo: ${currentDrillDayKeys.length} giorni. Lavoro=${minToHHMM(work)} | Indiretta=${minToHHMM(indirect)} | Pausa=${minToHHMM(pause)} | Cambi=${sw.switchCount} (min stimati=${minToHHMM(sw.switchMin)}).`;
+
+  renderSequenceTableByDay(currentDrillDayKeys, currentDrillOp);
+  renderDayBars(currentDrillDayKeys, currentDrillOp);
+  renderDrillPie(currentDrillOp, currentDrillDayKeys);
+  renderIntervalsDetail(currentDrillOp, currentDrillDayKeys);
+
+  document.getElementById("exportBtn").disabled = (intervals.length===0);
+});
+
+// Drilldown shift override
+document.getElementById("ddSetShiftBtn").addEventListener("click", ()=>{
+  if(!currentDrillOp) return;
+  const sel = document.getElementById("ddDaySelect");
+  const pickedDays = Array.from(sel.selectedOptions).map(o=>o.value);
+  if(pickedDays.length !== 1){
+    alert("Per impostare il turno, seleziona un solo giorno nella lista.");
+    return;
+  }
+  const dayKey = pickedDays[0];
+  const val = document.getElementById("ddShiftOverride").value;
+
+  const m = getOrInitMap(shiftOverride, currentDrillOp);
+  m.set(dayKey, val);
+
+  rebuildAllDerivedAndRender();
+  openDrilldown(currentDrillOp, resolveFilterDayKeys());
+});
+
+// Global filter apply
+document.getElementById("applyFilterBtn").addEventListener("click", ()=>{
+  const mode = document.getElementById("filterMode").value;
+  filterState.mode = mode;
+  filterState.refDate = parseISODate(document.getElementById("filterRefDate").value);
+  filterState.from = parseISODate(document.getElementById("filterFrom").value);
+  filterState.to = parseISODate(document.getElementById("filterTo").value);
+  renderAllWithFilter();
+
+  // if drilldown open, refresh it with new global dayKeys
+  if(currentDrillOp){
+    openDrilldown(currentDrillOp, resolveFilterDayKeys());
+  }
+});
+
+// Support modal wiring
+document.getElementById("supportCloseX").addEventListener("click", ()=> showSupportModal(false));
+document.getElementById("supportAddBtn").addEventListener("click", (e)=>{ e.preventDefault(); addSupportRule(); });
+document.getElementById("supportClearBtn").addEventListener("click", (e)=>{ e.preventDefault(); modalRules=[]; renderSupportRulesTable(); });
+document.getElementById("supportOkBtn").addEventListener("click", (e)=>{ e.preventDefault(); commitSupportRules(); });
+document.querySelector("#supportModalOverlay .modal").addEventListener("click", (e)=> e.stopPropagation());
+document.getElementById("supportModalOverlay").addEventListener("click", ()=> showSupportModal(false));
+
+// Indirect modal wiring
+document.getElementById("indirectCloseX").addEventListener("click", ()=> showIndirectModal(false));
+document.getElementById("indirectSaveBtn").addEventListener("click", (e)=>{ e.preventDefault(); saveIndirect(); });
+document.getElementById("indirectDeleteAllBtn").addEventListener("click", ()=>{
+  if(!selectedPause) return;
+  deleteAllIndirectForOp(selectedPause.op);
+});
+document.querySelector("#indirectModalOverlay .modal").addEventListener("click", (e)=> e.stopPropagation());
+document.getElementById("indirectModalOverlay").addEventListener("click", ()=> showIndirectModal(false));
+
+/** =========================================
+ *  INIT FILTER UI behavior hints
+ * ========================================= */
+document.getElementById("filterMode").addEventListener("change", ()=>{
+  const mode = document.getElementById("filterMode").value;
+  // show/hide inputs by mode for clarity (keep them enabled but user guided)
+  const ref = document.getElementById("filterRefDate");
+  const from = document.getElementById("filterFrom");
+  const to = document.getElementById("filterTo");
+
+  if(mode==="all"){
+    ref.disabled = true; from.disabled = true; to.disabled = true;
+  } else if(mode==="single" || mode==="week"){
+    ref.disabled = false; from.disabled = true; to.disabled = true;
+  } else {
+    ref.disabled = true; from.disabled = false; to.disabled = false;
+  }
+});
+document.getElementById("filterMode").dispatchEvent(new Event("change"));
+
+/** =========================================
+ *  BOOT
+ * ========================================= */
+route();
+updateFilterSummary();
 </script>
 </body>
 </html>
