@@ -4,8 +4,10 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Charts — Produttività</title>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js"></script>
+	
+	<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js"></script>
+
   <style>
     body{font-family:system-ui,Segoe UI,Roboto,Arial;margin:0;background:#0b1220;color:#e8eefc;}
     header{padding:14px 18px;border-bottom:1px solid rgba(255,255,255,.12);}
@@ -15,7 +17,11 @@
     .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
     @media(max-width:980px){.grid2{grid-template-columns:1fr;}}
     .hint{color:#a9b7d6;font-size:12px;}
-    .plot{height:380px;}
+    .plot{height:420px;}
+    input,button{border-radius:10px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:#e8eefc;padding:10px;}
+    button{background:#6ea8fe;color:#0b1220;border:0;font-weight:900;cursor:pointer;}
+    button.secondary{background:rgba(255,255,255,.10);color:#e8eefc;border:1px solid rgba(255,255,255,.12);}
+    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;}
   </style>
 </head>
 <body>
@@ -24,81 +30,130 @@
     <a href="home.html">Home</a>
     <a href="charts.html">Charts</a>
     <a href="score.html">Score</a>
-    <a href="quality.html">Quality</a>
   </nav>
 </header>
 
 <div class="wrap">
   <div class="card">
-    <div style="font-weight:900;">Charts</div>
-    <div class="hint" id="status">Caricamento dataset…</div>
+    <div class="row">
+      <div style="font-weight:900;">Charts</div>
+      <button class="secondary" id="useDsBtn" type="button">Usa dataset da Home</button>
+    </div>
+    <div class="hint" id="status">—</div>
+    <div class="hint" id="err" style="color:#ff6b6b;"></div>
   </div>
 
   <div class="grid2">
     <div class="card">
-      <div style="font-weight:900;">Heatmap PI per Ora (placeholder)</div>
+      <div style="font-weight:900;">Heatmap conte PI per ora (X=operatore, Y=05–22)</div>
       <div id="heatHour" class="plot"></div>
     </div>
     <div class="card">
-      <div style="font-weight:900;">Heatmap PI per Corsia (placeholder)</div>
+      <div style="font-weight:900;">Heatmap conte PI per corsia (X=operatore, Y=01–50)</div>
       <div id="heatLane" class="plot"></div>
     </div>
   </div>
 </div>
 
-<script type="module">
-  import { state, loadSnapshot } from "./app-core.js";
+<script>
 
-  function renderHeatmapsSimple(){
-    // Esempio minimo: X=operatori, Y=ore, Z=#conte (filtri li aggiungiamo qui quando vuoi)
-    const rows = state.piCounts;
-    if(!rows.length){
-      document.getElementById("status").textContent = "Nessun dato PI.";
-      return;
-    }
-    const ops = Array.from(new Set(rows.map(r=>r.op))).sort();
-    const hours = [];
-    for(let h=5; h<=22; h++) hours.push(h);
+const SUPABASE_URL = "https://jslonbsvrtltfnrpneqw.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_OZZhrdcM8Zh3eXcqTdcljw_ZY4faGvl";
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-    const zH = hours.map(()=> ops.map(()=>0));
-    for(const r of rows){
-      if(r.hour<5 || r.hour>22) continue;
-      const xi = ops.indexOf(r.op);
-      const yi = hours.indexOf(r.hour);
-      if(xi>=0 && yi>=0) zH[yi][xi] += 1;
-    }
-    Plotly.newPlot("heatHour", [{
-      z:zH, x:ops, y:hours.map(h=>String(h).padStart(2,"0")+":00"),
-      type:"heatmap",
-      hovertemplate:"%{x}<br>%{y}<br>Conte=%{z}<extra></extra>"
-    }], {paper_bgcolor:"rgba(0,0,0,0)",plot_bgcolor:"rgba(0,0,0,0)",margin:{l:70,r:20,t:10,b:80},font:{color:"#e8eefc"}}, {displayModeBar:false, responsive:true});
+console.log("Supabase client charts OK?", sb);
 
-    // lane heatmap
-    const lanes = [];
-    for(let l=1;l<=50;l++) lanes.push(l);
-    const zL = lanes.map(()=> ops.map(()=>0));
-    for(const r of rows){
-      const xi = ops.indexOf(r.op);
-      const yi = lanes.indexOf(r.lane);
-      if(xi>=0 && yi>=0) zL[yi][xi] += 1;
-    }
-    Plotly.newPlot("heatLane", [{
-      z:zL, x:ops, y:lanes.map(l=>String(l).padStart(2,"0")),
-      type:"heatmap",
-      hovertemplate:"%{x}<br>Corsia=%{y}<br>Conte=%{z}<extra></extra>"
-    }], {paper_bgcolor:"rgba(0,0,0,0)",plot_bgcolor:"rgba(0,0,0,0)",margin:{l:70,r:20,t:10,b:80},font:{color:"#e8eefc"}}, {displayModeBar:false, responsive:true});
 
-    document.getElementById("status").textContent = "Dataset caricato (da cache).";
+const $ = (id)=>document.getElementById(id);
+function setStatus(t){ $("status").textContent=t; }
+function setErr(t){ $("err").textContent=t||""; }
+
+function buildHeatmap(ops, yLabels, rows, rowToKeyFn){
+  const z = yLabels.map(()=> ops.map(()=>0));
+  const yIndex = new Map(yLabels.map((v,i)=>[String(v), i]));
+  const xIndex = new Map(ops.map((v,i)=>[v, i]));
+
+  for(const r of rows){
+    const x = r.operator;
+    const yk = rowToKeyFn(r);
+    const xi = xIndex.get(x);
+    const yi = yIndex.get(String(yk));
+    if(xi===undefined || yi===undefined) continue;
+    z[yi][xi] += 1;
+  }
+  return z;
+}
+
+async function loadPiRows(datasetId){
+  // Carichiamo solo PI con lane valorizzata
+  const { data, error } = await sb
+    .from("events")
+    .select("operator, ts, lane")
+    .eq("dataset_id", datasetId)
+    .eq("kind", "PI")
+    .not("lane", "is", null);
+
+  if(error) throw new Error(error.message);
+  return data || [];
+}
+
+function renderHeatmaps(piRows){
+  const ops = Array.from(new Set(piRows.map(r=>r.operator))).sort();
+  if(!ops.length){
+    Plotly.purge("heatHour"); Plotly.purge("heatLane");
+    setStatus("Nessun dato PI con corsia (lane) nel dataset.");
+    return;
   }
 
-  (async ()=>{
-    const r = await loadSnapshot();
-    if(!r.ok){
-      document.getElementById("status").textContent = "Nessun dataset salvato. Vai in Home e importa.";
-      return;
-    }
-    renderHeatmapsSimple();
-  })();
+  // hours 05-22
+  const hours = [];
+  for(let h=5; h<=22; h++) hours.push(String(h).padStart(2,"0")+":00");
+  const hourKey = (r)=> {
+    const dt = new Date(r.ts);
+    const h = dt.getHours();
+    if(h<5 || h>22) return null;
+    return String(h).padStart(2,"0")+":00";
+  };
+  const zH = buildHeatmap(ops, hours, piRows, hourKey);
+
+  Plotly.newPlot("heatHour", [{
+    z:zH, x:ops, y:hours, type:"heatmap",
+    hovertemplate:"%{x}<br>%{y}<br>Conte=%{z}<extra></extra>"
+  }], {
+    paper_bgcolor:"rgba(0,0,0,0)", plot_bgcolor:"rgba(0,0,0,0)",
+    margin:{l:70,r:20,t:10,b:80}, font:{color:"#e8eefc"}
+  }, {displayModeBar:false, responsive:true});
+
+  // lanes 01-50
+  const lanes = [];
+  for(let l=1;l<=50;l++) lanes.push(String(l).padStart(2,"0"));
+  const laneKey = (r)=> String(r.lane).padStart(2,"0");
+  const zL = buildHeatmap(ops, lanes, piRows, laneKey);
+
+  Plotly.newPlot("heatLane", [{
+    z:zL, x:ops, y:lanes, type:"heatmap",
+    hovertemplate:"%{x}<br>Corsia=%{y}<br>Conte=%{z}<extra></extra>"
+  }], {
+    paper_bgcolor:"rgba(0,0,0,0)", plot_bgcolor:"rgba(0,0,0,0)",
+    margin:{l:70,r:20,t:10,b:80}, font:{color:"#e8eefc"}
+  }, {displayModeBar:false, responsive:true});
+}
+
+async function run(){
+  setErr("");
+  const datasetId = localStorage.getItem("activeDataset");
+  if(!datasetId){
+    setStatus("Nessun dataset selezionato. Vai in Home e premi 'Usa' su un dataset.");
+    return;
+  }
+  setStatus("Caricamento dati PI dal dataset…");
+  const piRows = await loadPiRows(datasetId);
+  renderHeatmaps(piRows);
+  setStatus("OK.");
+}
+
+$("useDsBtn").addEventListener("click", run);
+run().catch(e=>{ console.error(e); setErr(e.message); setStatus("Errore"); });
 </script>
 </body>
 </html>

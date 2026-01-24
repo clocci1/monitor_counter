@@ -4,6 +4,11 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Score — Produttività</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script type="module" src="app-core.js"></script>
+
+
   <style>
     body{font-family:system-ui,Segoe UI,Roboto,Arial;margin:0;background:#0b1220;color:#e8eefc;}
     header{padding:14px 18px;border-bottom:1px solid rgba(255,255,255,.12);}
@@ -15,6 +20,7 @@
     th{color:#a9b7d6;text-align:left;}
     .hint{color:#a9b7d6;font-size:12px;}
     .mono{font-variant-numeric:tabular-nums;}
+    button{border-radius:10px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.10);color:#e8eefc;padding:10px;cursor:pointer;font-weight:900;}
   </style>
 </head>
 <body>
@@ -23,83 +29,132 @@
     <a href="home.html">Home</a>
     <a href="charts.html">Charts</a>
     <a href="score.html">Score</a>
-    <a href="quality.html">Quality</a>
   </nav>
 </header>
 
 <div class="wrap">
   <div class="card">
-    <div style="font-weight:900;">Score</div>
-    <div class="hint" id="status">Caricamento dataset…</div>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+      <div style="font-weight:900;">Score</div>
+      <button id="reloadBtn" type="button">Ricarica dataset selezionato</button>
+    </div>
+    <div class="hint" id="status">—</div>
+    <div class="hint" id="err" style="color:#ff6b6b;"></div>
   </div>
 
   <div class="card">
-    <div style="font-weight:900;">Score per operatore (placeholder)</div>
-    <div id="scoreWrap"></div>
+    <div style="font-weight:900;">KPI base per operatore (conteggi)</div>
+    <div id="wrap"></div>
   </div>
 </div>
 
-<script type="module">
-  import { state, loadSnapshot, computeAllDayKeys, minToHHMM, SHIFT_TARGET_MIN } from "./app-core.js";
+<script>
+const SUPABASE_URL = "https://jslonbsvrtltfnrpneqw.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_OZZhrdcM8Zh3eXcqTdcljw_ZY4faGvl";
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-  function renderScore(){
-    const wrap = document.getElementById("scoreWrap");
-    wrap.innerHTML = "";
-    const ops = Array.from(state.derivedIntervalsByOpDay.keys()).sort();
-    const days = computeAllDayKeys();
+console.log("Supabase client score OK?", sb);
 
-    if(!ops.length || !days.length){
-      wrap.innerHTML = `<div class="hint">Nessun dato.</div>`;
-      return;
-    }
 
-    // Placeholder: somma minuti produttivi e confronta con target teorico giorni*8h
-    const table=document.createElement("table");
-    table.innerHTML = `<thead><tr>
-      <th>Operatore</th><th>Giorni</th><th>Target</th><th>Prod (PI+WT)</th><th>Pausa</th><th>Indiretta</th><th>% Prod su Target</th>
-    </tr></thead><tbody></tbody>`;
-    const tb=table.querySelector("tbody");
+const $ = (id)=>document.getElementById(id);
+function setStatus(t){ $("status").textContent=t; }
+function setErr(t){ $("err").textContent=t||""; }
 
-    for(const op of ops){
-      const dm = state.derivedIntervalsByOpDay.get(op);
-      let dayCount=0, prod=0, pause=0, indirect=0;
-      for(const [dk, list] of dm.entries()){
-        dayCount++;
-        for(const it of list){
-          const m=Number(it.minutes||0);
-          if(it.category==="PAUSA") pause+=m;
-          else if(it.category==="INDIRETTA") indirect+=m;
-          else prod+=m;
-        }
-      }
-      const target = dayCount*SHIFT_TARGET_MIN;
-      const pct = target>0 ? Math.round((prod/target)*100) : 0;
+async function loadAllEvents(datasetId){
+  // Nota: se dataset grandi, si può paginare. Per ora semplice.
+  const { data, error } = await sb
+    .from("events")
+    .select("operator, kind, category, self_count, wo_id")
+    .eq("dataset_id", datasetId);
 
-      const tr=document.createElement("tr");
-      tr.innerHTML = `
-        <td>${op}</td>
-        <td>${dayCount}</td>
-        <td class="mono">${minToHHMM(target)}</td>
-        <td class="mono">${minToHHMM(prod)}</td>
-        <td class="mono">${minToHHMM(pause)}</td>
-        <td class="mono">${minToHHMM(indirect)}</td>
-        <td>${pct}%</td>
-      `;
-      tb.appendChild(tr);
-    }
+  if(error) throw new Error(error.message);
+  return data || [];
+}
 
-    wrap.appendChild(table);
+function render(events){
+  const wrap = $("wrap");
+  wrap.innerHTML = "";
+  if(!events.length){
+    wrap.innerHTML = `<div class="hint">Nessun evento nel dataset.</div>`;
+    return;
   }
 
-  (async ()=>{
-    const r=await loadSnapshot();
-    if(!r.ok){
-      document.getElementById("status").textContent="Nessun dataset salvato. Vai in Home e importa.";
-      return;
+  const ops = Array.from(new Set(events.map(e=>e.operator))).sort();
+  const agg = new Map();
+  for(const op of ops){
+    agg.set(op, {
+      piPick:0, piBulk:0, selfCount:0,
+      p2p:0, clean:0, wtOther:0,
+      woSet:new Set()
+    });
+  }
+
+  for(const e of events){
+    const a = agg.get(e.operator);
+    if(!a) continue;
+    if(e.kind==="PI"){
+      if(e.category==="PI Pick") a.piPick++;
+      else if(e.category==="PI Bulk") a.piBulk++;
+      if(e.self_count) a.selfCount++;
+    }else if(e.kind==="WT"){
+      if(e.category==="P2P") a.p2p++;
+      else if(e.category==="Clean PICK") a.clean++;
+      else a.wtOther++;
+      if(e.wo_id) a.woSet.add(e.wo_id);
     }
-    document.getElementById("status").textContent="Dataset caricato (da cache).";
-    renderScore();
-  })();
+  }
+
+  const table = document.createElement("table");
+  table.innerHTML = `
+    <thead>
+      <tr>
+        <th>Operatore</th>
+        <th>PI Pick</th>
+        <th>PI Bulk</th>
+        <th>Self Count</th>
+        <th>P2P (WT)</th>
+        <th>Clean PICK (WT)</th>
+        <th>WT Other</th>
+        <th>#WO (uniche)</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  `;
+  const tb = table.querySelector("tbody");
+
+  for(const [op, a] of agg.entries()){
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${op}</td>
+      <td class="mono">${a.piPick}</td>
+      <td class="mono">${a.piBulk}</td>
+      <td class="mono">${a.selfCount}</td>
+      <td class="mono">${a.p2p}</td>
+      <td class="mono">${a.clean}</td>
+      <td class="mono">${a.wtOther}</td>
+      <td class="mono">${a.woSet.size}</td>
+    `;
+    tb.appendChild(tr);
+  }
+
+  wrap.appendChild(table);
+}
+
+async function run(){
+  setErr("");
+  const datasetId = localStorage.getItem("activeDataset");
+  if(!datasetId){
+    setStatus("Nessun dataset selezionato. Vai in Home e seleziona un dataset.");
+    return;
+  }
+  setStatus("Caricamento eventi…");
+  const events = await loadAllEvents(datasetId);
+  render(events);
+  setStatus("OK.");
+}
+
+$("reloadBtn").addEventListener("click", ()=>run().catch(e=>{console.error(e); setErr(e.message); setStatus("Errore");}));
+run().catch(e=>{console.error(e); setErr(e.message); setStatus("Errore");});
 </script>
 </body>
 </html>
