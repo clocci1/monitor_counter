@@ -1,257 +1,247 @@
 <!doctype html>
 <html lang="it">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Score — Produttività</title>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Score</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="./app-core.js"></script>
 
   <style>
-    :root{
-      --bg:#0b1220;
-      --card:#111a2e;
-      --border:rgba(255,255,255,.12);
-      --muted:#a9b7d6;
-      --text:#e8eefc;
-      --btn:#6ea8fe;
-      --bad:#ff6b6b;
-      --ok:#76ff7a;
-    }
-    *{box-sizing:border-box;}
+    :root{--bg:#0b1220;--card:#111a2e;--border:rgba(255,255,255,.12);--muted:#a9b7d6;--text:#e8eefc;--btn:#6ea8fe;--bad:#ff6b6b;}
     body{font-family:system-ui,Segoe UI,Roboto,Arial;margin:0;background:var(--bg);color:var(--text);}
-    header{padding:14px 18px;border-bottom:1px solid var(--border);}
-    nav a{color:var(--text);text-decoration:none;margin-right:12px;font-weight:800;}
-    .wrap{max-width:1600px;margin:0 auto;padding:16px 18px;}
-    .layout{display:grid;grid-template-columns:1fr 380px;gap:12px;align-items:start;}
-    @media(max-width:1200px){.layout{grid-template-columns:1fr;}}
+    header{padding:14px 18px;border-bottom:1px solid var(--border);position:sticky;top:0;background:rgba(11,18,32,.92);backdrop-filter:blur(8px);z-index:5}
+    nav a{color:var(--text);text-decoration:none;margin-right:12px;font-weight:900;}
+    nav a.active{color:var(--btn);}
+    .wrap{max-width:1400px;margin:0 auto;padding:16px 18px;}
     .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;}
     .hint{color:var(--muted);font-size:12px;}
-    .bad{color:var(--bad);} .ok{color:var(--ok);}
-    .mono{font-variant-numeric:tabular-nums;}
+    .bad{color:var(--bad);}
     table{width:100%;border-collapse:collapse;margin-top:10px;font-size:12px;}
     th,td{padding:8px;border-bottom:1px solid var(--border);vertical-align:top;}
-    th{color:var(--muted);text-align:left;font-weight:800;}
-    button,input,select{border-radius:10px;border:1px solid var(--border);background:rgba(255,255,255,.06);color:var(--text);padding:10px;}
-    button{background:var(--btn);color:var(--bg);border:0;font-weight:900;cursor:pointer;}
-    button.secondary{background:rgba(255,255,255,.10);color:var(--text);border:1px solid var(--border);}
-    button.small{padding:6px 8px;font-size:12px;border-radius:8px;}
-    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between;}
-    .chip{display:inline-flex;gap:6px;align-items:center;border:1px solid var(--border);border-radius:999px;padding:6px 10px;background:rgba(255,255,255,.06);}
-    .chip strong{font-weight:900;}
-    .dsControls{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
-    .dsControls button{padding:8px 10px;font-size:12px;}
-    .checkbox{transform:scale(1.05);}
+    th{color:var(--muted);text-align:left;font-weight:900;}
+    .mono{font-variant-numeric:tabular-nums;}
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+    @media(max-width:1100px){.grid2{grid-template-columns:1fr;}}
+    .kpi{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:10px;}
+    @media(max-width:900px){.kpi{grid-template-columns:repeat(2,1fr);}}
+    .kpi .box{border:1px solid var(--border);border-radius:12px;padding:10px;background:rgba(255,255,255,.06);}
+    .kpi .v{font-weight:900;font-size:18px;}
+    button{border-radius:10px;border:1px solid var(--border);background:rgba(255,255,255,.10);color:var(--text);padding:9px 10px;cursor:pointer;font-weight:900;}
   </style>
 </head>
-
 <body>
 <header>
   <nav>
     <a href="index.html">Home</a>
     <a href="overview.html">Overview</a>
     <a href="charts.html">Charts</a>
-    <a href="score.html">Score</a>
+    <a class="active" href="score.html">Score</a>
   </nav>
 </header>
 
 <div class="wrap">
-  <div class="layout">
-    <!-- MAIN -->
-    <div>
+  <div class="card">
+    <div style="font-weight:900;">Score (TPH per task + gap vs Target)</div>
+    <div class="hint" id="selHint" style="margin-top:6px;"></div>
+    <div style="margin-top:10px;">
+      <button id="reloadBtn" type="button">Ricarica</button>
+    </div>
+
+    <div id="topKpi" class="kpi"></div>
+
+    <div class="grid2" style="margin-top:12px;">
       <div class="card">
-        <div class="row">
-          <div>
-            <div style="font-weight:900;">Score</div>
-            <div class="hint" id="status">—</div>
-            <div class="hint bad" id="err"></div>
-          </div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;">
-            <button class="secondary" id="reloadBtn" type="button">Ricalcola</button>
-          </div>
-        </div>
+        <div style="font-weight:900;">Score per operatore</div>
+        <div id="opWrap"></div>
       </div>
-
-      <div class="card" style="margin-top:12px;">
-        <div style="font-weight:900;">Score per operatore (filtrato)</div>
-        <div class="hint">
-          Target = durata nominale turno (8h). Actual = presenza osservata nel turno (prima→ultima attività nel turno).
-          Effettivo = tempo operativo (PI/WT) + Indiretta (separata). Inattività = Target − Actual.
-        </div>
-        <div id="scoreWrap"></div>
-      </div>
-
-      <div class="card" style="margin-top:12px;">
-        <div style="font-weight:900;">TPH & sec/task (filtrato)</div>
-        <div class="hint">Target = mediana globale (stesso filtro) per task.</div>
-        <div id="tphWrap"></div>
-      </div>
-
-      <div class="card" style="margin-top:12px;">
-        <div style="font-weight:900;">Dettaglio giornaliero (filtrato)</div>
-        <div class="hint">Utile per verificare turni, inattività e giornate miste (account usato in AM e PM).</div>
-        <div id="dailyWrap"></div>
+      <div class="card">
+        <div style="font-weight:900;">Dettaglio giornaliero</div>
+        <div class="hint">Le durate sono stimate dai gap tra eventi (timeline); le pause vengono identificate con gap ≥ 30 min, al netto delle attività indirette inserite manualmente.</div>
+        <div id="dayWrap"></div>
       </div>
     </div>
 
-    <!-- SIDEBAR -->
-    <aside>
-      <div class="card">
-        <div style="font-weight:900;">Filtri</div>
-        <div class="hint" style="margin-top:4px;">Sono gli stessi usati in Overview/Charts.</div>
-
-        <div class="dsControls">
-          <button class="secondary" id="selAllBtn" type="button">Tutti</button>
-          <button class="secondary" id="sel7Btn" type="button">Ultimi 7</button>
-          <button class="secondary" id="clearSelBtn" type="button">Reset</button>
-        </div>
-
-        <div class="hint" id="selSummary" style="margin-top:8px;"></div>
-        <div id="dsWrap"></div>
-      </div>
-    </aside>
+    <div id="err" class="hint bad" style="margin-top:12px;"></div>
   </div>
 </div>
 
-<script type="module">
-  import {
-    loadSnapshot,
-    computeAllDayKeys,
-    buildSelectionModel,
-    setSelection,
-    getSelection,
-    selectionToDayKeys,
-    formatSelectionSummary,
-    buildScoreForOperators,
-    buildTPHTable,
-    buildDailyScoreRows,
-    minToHHMM
-  } from './app-core.js';
-
+<script>
+  const Core = window.AppCore;
   const $ = (id)=>document.getElementById(id);
-  const setStatus = (t)=>$("status").textContent = t;
-  const setErr = (t)=>$("err").textContent = t||"";
 
-  function renderSelSidebar(model){
-    const sel = getSelection();
-    $("selSummary").textContent = formatSelectionSummary(model, sel);
-    $("dsWrap").innerHTML = model.renderHTML(sel);
-    model.bind($("dsWrap"));
+  function setErr(t){ $("err").textContent = t||""; }
+  function setSelHint(dayKeys){
+    if(!dayKeys.length){ $("selHint").textContent = "Nessun periodo selezionato. Vai su Home e seleziona almeno un giorno/settimana/mese."; return; }
+    $("selHint").textContent = `Giorni inclusi: ${dayKeys.length} (${Core.fmtDDMMYYYY(dayKeys[0])} → ${Core.fmtDDMMYYYY(dayKeys[dayKeys.length-1])})`;
   }
 
-  function renderTable(wrapId, cols, rows){
-    const wrap = $(wrapId);
-    if(!rows.length){ wrap.innerHTML = `<div class="hint">Nessun dato nel filtro selezionato.</div>`; return; }
-    const thead = `<thead><tr>${cols.map(c=>`<th>${c}</th>`).join('')}</tr></thead>`;
-    const tbody = `<tbody>${rows.map(r=>`<tr>${r.map(v=>`<td>${v}</td>`).join('')}</tr>`).join('')}</tbody>`;
-    wrap.innerHTML = `<table>${thead}${tbody}</table>`;
+  function safeRate(qty, min){ return (min>0) ? (qty/(min/60)) : 0; }
+
+  function renderTopKpi(rows){
+    const tot = rows.reduce((a,r)=>a + (r.actualMin||0),0);
+    const totTarget = rows.reduce((a,r)=>a + (r.targetMin||0),0);
+    const totPause = rows.reduce((a,r)=>a + (r.minPause||0),0);
+    const totIndirect = rows.reduce((a,r)=>a + (r.minIndirect||0),0);
+
+    $("topKpi").innerHTML = `
+      <div class="box"><div class="hint">Totale lavoro</div><div class="v mono">${Core.minToHHMM(tot)}</div></div>
+      <div class="box"><div class="hint">Totale target</div><div class="v mono">${Core.minToHHMM(totTarget)}</div></div>
+      <div class="box"><div class="hint">Pausa stimata</div><div class="v mono">${Core.minToHHMM(totPause)}</div></div>
+      <div class="box"><div class="hint">Indiretto</div><div class="v mono">${Core.minToHHMM(totIndirect)}</div></div>
+    `;
+  }
+
+  function renderOpScore(rows){
+    const wrap=$("opWrap");
+    wrap.innerHTML="";
+    if(!rows.length){ wrap.innerHTML=`<div class="hint">Nessun dato.</div>`; return; }
+
+    const table=document.createElement("table");
+    table.innerHTML=`
+      <thead>
+        <tr>
+          <th>Operatore</th>
+          <th class="mono">T Lavoro</th>
+          <th class="mono">PI tph</th>
+          <th class="mono">P2P tph</th>
+          <th class="mono">Clean tph</th>
+          <th class="mono">WT Other tph</th>
+          <th class="mono">Self Count</th>
+          <th class="mono">Score</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    `;
+    const tb=table.querySelector("tbody");
+
+    // score: pesi semplici (modificabili)
+    // - PI: bins/h / 90 target? (40 sec/bin ~ 90 bins/h)
+    // - P2P: WO/h target 18
+    // - Clean: WO/h target 14
+    // - Other: WO/h target 10
+    const TARGET = { PI:90, P2P:18, CLEAN:14, OTHER:10 };
+
+    for(const r of rows){
+      const piMin = r.minPiPick + r.minPiBulk;
+      const piBins = r.piPickBins + r.piBulkBins;
+      const piTph = safeRate(piBins, piMin);
+
+      const p2pTph = safeRate(r.woP2P, r.minP2P);
+      const clpTph = safeRate(r.woClean, r.minClean);
+      const othTph = safeRate(r.woOther, r.minOther);
+
+      // normalize vs target (cap at 1.5 to avoid explosion)
+      const nPI = Math.min(1.5, TARGET.PI>0 ? piTph/TARGET.PI : 0);
+      const nP2P = Math.min(1.5, TARGET.P2P>0 ? p2pTph/TARGET.P2P : 0);
+      const nCL  = Math.min(1.5, TARGET.CLEAN>0 ? clpTph/TARGET.CLEAN : 0);
+      const nOT  = Math.min(1.5, TARGET.OTHER>0 ? othTph/TARGET.OTHER : 0);
+
+      // weights: PI 35%, P2P 30%, Clean 25%, Other 10%
+      const score = Math.round((0.35*nPI + 0.30*nP2P + 0.25*nCL + 0.10*nOT)*100);
+
+      const tr=document.createElement("tr");
+      tr.innerHTML=`
+        <td>${r.operator}</td>
+        <td class="mono">${Core.minToHHMM(r.actualMin)}</td>
+        <td class="mono">${piTph.toFixed(1)}</td>
+        <td class="mono">${p2pTph.toFixed(1)}</td>
+        <td class="mono">${clpTph.toFixed(1)}</td>
+        <td class="mono">${othTph.toFixed(1)}</td>
+        <td class="mono">${r.selfCount}</td>
+        <td class="mono"><strong>${score}</strong></td>
+      `;
+      tb.appendChild(tr);
+    }
+    wrap.appendChild(table);
+
+    const hint=document.createElement("div");
+    hint.className="hint";
+    hint.style.marginTop="8px";
+    hint.textContent="Nota: lo Score è un indice sintetico basato su TPH normalizzati vs target. I target sono configurati in pagina e vanno calibrati sui vostri standard reali.";
+    wrap.appendChild(hint);
+  }
+
+  function renderDaily(perOpDay, dayKeys){
+    const wrap=$("dayWrap");
+    wrap.innerHTML="";
+    if(!dayKeys.length){ wrap.innerHTML=`<div class="hint">Nessun giorno.</div>`; return; }
+
+    const rows=[];
+    for(const [op, dm] of perOpDay.entries()){
+      for(const dk of dayKeys){
+        const d = dm.get(dk);
+        if(!d) continue;
+        const s=d.sum;
+        rows.push({
+          dk, op,
+          shift: d.shift.code,
+          workMin: (s.first&&s.last) ? (s.last-s.first)/60000 : 0,
+          piMin: s.minPiPick+s.minPiBulk,
+          wtMin: s.minP2P+s.minClean+s.minOther,
+          pauseMin: s.minPause,
+          indMin: s.minIndirect,
+          self: s.selfCount
+        });
+      }
+    }
+    rows.sort((a,b)=> (a.dk.localeCompare(b.dk) || a.op.localeCompare(b.op)));
+
+    const table=document.createElement("table");
+    table.innerHTML=`
+      <thead>
+        <tr>
+          <th>Giorno</th>
+          <th>Operatore</th>
+          <th>Turno</th>
+          <th class="mono">T Lavoro</th>
+          <th class="mono">T PI</th>
+          <th class="mono">T WT</th>
+          <th class="mono">Pausa</th>
+          <th class="mono">Indiretto</th>
+          <th class="mono">Self Count</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    `;
+    const tb=table.querySelector("tbody");
+    for(const r of rows){
+      const tr=document.createElement("tr");
+      tr.innerHTML=`
+        <td class="mono">${Core.fmtDDMMYYYY(r.dk)}</td>
+        <td>${r.op}</td>
+        <td class="mono">${r.shift}</td>
+        <td class="mono">${Core.minToHHMM(r.workMin)}</td>
+        <td class="mono">${Core.minToHHMM(r.piMin)}</td>
+        <td class="mono">${Core.minToHHMM(r.wtMin)}</td>
+        <td class="mono">${Core.minToHHMM(r.pauseMin)}</td>
+        <td class="mono">${Core.minToHHMM(r.indMin)}</td>
+        <td class="mono">${r.self}</td>
+      `;
+      tb.appendChild(tr);
+    }
+    wrap.appendChild(table);
   }
 
   async function run(){
-    setErr('');
-    const snap = await loadSnapshot();
-    if(!snap.ok){
-      setStatus('Nessun dataset salvato. Vai in Home e carica PI+WT.');
-      $("scoreWrap").innerHTML = `<div class="hint">—</div>`;
-      $("tphWrap").innerHTML = `<div class="hint">—</div>`;
-      $("dailyWrap").innerHTML = `<div class="hint">—</div>`;
-      $("dsWrap").innerHTML = `<div class="hint">—</div>`;
-      $("selSummary").textContent = '';
-      return;
+    try{
+      setErr("");
+      const sel=Core.getSelection();
+      const res=await Core.computeAggregatesForSelection(sel);
+      setSelHint(res.dayKeys);
+
+      renderTopKpi(res.rows);
+      renderOpScore(res.rows);
+      renderDaily(res.perOpDay, res.dayKeys);
+
+    }catch(e){
+      console.error(e);
+      setErr(e.message||String(e));
     }
-
-    const allDays = computeAllDayKeys();
-    const model = buildSelectionModel(allDays);
-    renderSelSidebar(model);
-
-    const sel = getSelection();
-    const dayKeys = selectionToDayKeys(model, sel);
-    if(!dayKeys.length){
-      setStatus('Seleziona almeno un giorno nel pannello a destra (oppure “Tutti”).');
-      $("scoreWrap").innerHTML = `<div class="hint">—</div>`;
-      $("tphWrap").innerHTML = `<div class="hint">—</div>`;
-      $("dailyWrap").innerHTML = `<div class="hint">—</div>`;
-      return;
-    }
-
-    setStatus(`Dataset caricato (salvato: ${new Date(snap.savedAt).toLocaleString()}). Filtri: ${dayKeys.length} giorni.`);
-
-    const scoreRows = buildScoreForOperators(dayKeys);
-    renderTable('scoreWrap',
-      [
-        'Operatore','Giorni','Turno','Target','Actual','Inattività','Produttivo','Indiretta','Pausa',
-        'PI BIN','WO P2P','WO Clean','WO Other','Cambio task','T cambio'
-      ],
-      scoreRows.map(r=>[
-        r.operator,
-        String(r.dayCount),
-        r.shiftLabel,
-        minToHHMM(r.targetMin),
-        minToHHMM(r.actualMin),
-        minToHHMM(r.inactivityMin),
-        minToHHMM(r.productiveMin),
-        minToHHMM(r.indirectMin),
-        minToHHMM(r.pauseMin),
-        String(r.piBins),
-        String(r.woP2P),
-        String(r.woClean),
-        String(r.woOther),
-        String(r.switchCount),
-        minToHHMM(r.switchMin)
-      ])
-    );
-
-    const tph = buildTPHTable(dayKeys);
-    renderTable('tphWrap',
-      ['Operatore','PI tph','PI sec/bin','P2P tph','P2P sec/WO','Clean tph','Clean sec/WO','WT Other tph','WT Other sec/WO'],
-      tph.map(x=>[
-        x.operator,
-        x.pi.tph.toFixed(1), String(x.pi.secPerTask),
-        x.p2p.tph.toFixed(1), String(x.p2p.secPerTask),
-        x.clean.tph.toFixed(1), String(x.clean.secPerTask),
-        x.other.tph.toFixed(1), String(x.other.secPerTask)
-      ])
-    );
-
-    const daily = buildDailyScoreRows(dayKeys);
-    renderTable('dailyWrap',
-      ['Data','Operatore','Turno','Target','Actual','Inattività','Produttivo','Indiretta','Pausa','PI BIN','WO tot','Cambio','T cambio'],
-      daily.map(r=>[
-        r.dayKey,
-        r.operator,
-        r.shift,
-        minToHHMM(r.targetMin),
-        minToHHMM(r.actualMin),
-        minToHHMM(r.inactivityMin),
-        minToHHMM(r.productiveMin),
-        minToHHMM(r.indirectMin),
-        minToHHMM(r.pauseMin),
-        String(r.piBins),
-        String(r.woTotal),
-        String(r.switchCount),
-        minToHHMM(r.switchMin)
-      ])
-    );
   }
 
-  $("reloadBtn").addEventListener('click', run);
-  $("clearSelBtn").addEventListener('click', async ()=>{
-    const allDays = computeAllDayKeys();
-    const model = buildSelectionModel(allDays);
-    setSelection(model.emptySelection());
-    await run();
-  });
-  $("selAllBtn").addEventListener('click', async ()=>{
-    const allDays = computeAllDayKeys();
-    const model = buildSelectionModel(allDays);
-    setSelection(model.allSelection());
-    await run();
-  });
-  $("sel7Btn").addEventListener('click', async ()=>{
-    const allDays = computeAllDayKeys();
-    const model = buildSelectionModel(allDays);
-    setSelection(model.lastNDaysSelection(7));
-    await run();
-  });
-
+  $("reloadBtn").addEventListener("click", run);
   run();
 </script>
 </body>

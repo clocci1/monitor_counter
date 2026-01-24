@@ -1,1086 +1,523 @@
-/* app-core.js
- * Core condiviso (offline):
- * - parsing PI/WT da XLSX (cdn xlsx)
- * - modello eventi + intervalli + KPI
- * - supporti (account→operatore reale) e indirette
- * - persistenza IndexedDB (così le pagine condividono i dati)
+/* app-core.js (global)
+ * Libreria condivisa per dashboard Produttività (Supabase + GitHub Pages)
+ * - Selezione periodo (giorni/settimane/mesi) in localStorage
+ * - Caricamento datasets + eventi da Supabase
+ * - Helper KPI (categorie, corsie, hh:mm)
  *
- * Nota: è un modulo ES. Le pagine lo importano via <script type="module">.
+ * Dipendenze richieste in pagina:
+ *  - <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
  */
+(function(){
+  'use strict';
 
-/** =========================
- *  CONFIG
- * ========================= */
-export const INTEREST_OPERATORS = new Set([
-  "A.BEJAN",
-  "M.HAYAT",
-  "L.VUONO",
-  "S.ANASS",
-  "S.RODRIGUE."
-]);
+  // =============== CONFIG ===============
+  const SUPABASE_URL = "https://jslonbsvrtltfnrpneqw.supabase.co";
+  const SUPABASE_ANON_KEY = "sb_publishable_OZZhrdcM8Zh3eXcqTdcljw_ZY4faGvl";
+  const EVENTS_OPERATOR_COL = "operator"; // se hai spazi usa la stessa stringa della colonna su Supabase
 
-export const SHIFT_DEFS = {
-  AM: { start: "05:00", end: "13:00" },
-  C:  { start: "08:00", end: "16:00" },
-  PM: { start: "14:00", end: "22:00" }
-};
+  const INTEREST_OPERATORS = new Set(["A.BEJAN","M.HAYAT","L.VUONO","S.ANASS","S.RODRIGUE."]);
 
-export const SHIFT_TARGET_MIN = 480;            // 8h
-export const PAUSE_THRESHOLD_MIN = 30;          // gap >= 30 => pausa
-export const MAX_WORK_GAP_MIN = 240;            // gap enorme => pausa (hard stop)
+  const SHIFT_DEFS = {
+    AM: { start: "05:00", end: "13:00" },
+    C:  { start: "08:00", end: "16:00" },
+    PM: { start: "14:00", end: "22:00" }
+  };
+  const SHIFT_TARGET_MIN = 480;
+  const PAUSE_THRESHOLD_MIN = 30;
 
-/** =========================
- *  STATE (in-memory)
- * ========================= */
-export const state = {
-  // RAW (per account)
-  eventsByOpDay: new Map(), // srcOp -> Map(dayKey -> events[])
-  rawPiCounts: [],          // [{srcOp,timestamp,dayKey,hour,lane,isPick,isBulk,selfCount}]
-  rawWtTouches: [],         // [{srcOp,timestamp,dayKey,hour,lane}]
+  const SEL_KEY = "selectedDaysV2"; // {mode, days:{dk:{pi,wt}}, groups:[gk], dayKinds:{...}}
+  const SUPPORT_KEY = "supportRules"; // { srcOp:[{realOp,start,end}] }
+  const INDIRECT_KEY = "indirectRules"; // { op:{ dayKey:[{start,end,desc}] } }
+  const SHIFT_OV_KEY = "shiftOverride"; // { op:{ dayKey: "AUTO"|AM|C|PM } }
 
-  // USER RULES
-  supportRules: new Map(),  // srcOp -> [{realOp,start,end}]
-  shiftOverride: new Map(), // effOp -> Map(dayKey -> "AUTO"|AM|C|PM)
-  indirectRules: new Map(), // effOp -> Map(dayKey -> [{start,end,desc}])
+  const sb = (window.supabase && window.supabase.createClient)
+    ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+    : null;
 
-  // DERIVED (per operatore effettivo)
-  derivedIntervalsByOpDay: new Map(), // effOp -> Map(dayKey -> intervals[])
-  shiftByOpDay: new Map(),           // effOp -> Map(dayKey -> {code,start,end,inferred})
-  piCounts: [],                      // [{op,dayKey,hour,lane,isPick,isBulk,selfCount}]
-  wtTouches: []                      // [{op,dayKey,hour,lane}]
-};
-
-/** =========================
- *  HELPERS
- * ========================= */
-export function normStr(v){ return (v===null||v===undefined) ? "" : String(v).trim(); }
-export function round1(x){ return Math.round(x*10)/10; }
-export function minutesBetween(a,b){ return (b-a)/60000; }
-
-export function minToHHMM(min){
-  const total = Math.max(0, Math.round(Number(min||0)));
-  const h = Math.floor(total/60);
-  const m = total%60;
-  return `${h}:${String(m).padStart(2,"0")}`;
-}
-
-export function fmtDateTime(dt){
-  if(!(dt instanceof Date) || isNaN(dt.getTime())) return "";
-  const p=n=>String(n).padStart(2,"0");
-  return `${dt.getFullYear()}-${p(dt.getMonth()+1)}-${p(dt.getDate())} ${p(dt.getHours())}:${p(dt.getMinutes())}:${p(dt.getSeconds())}`;
-}
-
-export function dayKeyFromDate(dt){
-  const p=n=>String(n).padStart(2,"0");
-  return `${dt.getFullYear()}-${p(dt.getMonth()+1)}-${p(dt.getDate())}`;
-}
-
-export function dayKeyToDate(dayKey){
-  const d = new Date(dayKey + "T00:00:00");
-  return isNaN(d.getTime()) ? null : d;
-}
-
-function excelDateToYMD(d){
-  if(!d) return null;
-  if(d instanceof Date && !isNaN(d.getTime())) return { y:d.getFullYear(), m:d.getMonth()+1, day:d.getDate() };
-  const dt = new Date(d);
-  if(!isNaN(dt.getTime())) return { y:dt.getFullYear(), m:dt.getMonth()+1, day:dt.getDate() };
-  return null;
-}
-
-function parseTimeToHMS(t){
-  if(t===null||t===undefined||t==="") return { h:0, min:0, s:0 };
-  if(t instanceof Date && !isNaN(t.getTime())) return { h:t.getHours(), min:t.getMinutes(), s:t.getSeconds() };
-  if(typeof t==="number" && isFinite(t)){
-    const totalSeconds = Math.round(t*24*3600);
-    return { h:Math.floor(totalSeconds/3600)%24, min:Math.floor((totalSeconds%3600)/60), s:totalSeconds%60 };
+  // =============== UTIL ===============
+  function normStr(v){ return (v===null||v===undefined) ? "" : String(v).trim(); }
+  function p2(n){ return String(n).padStart(2,'0'); }
+  function dayKeyToDate(dayKey){ const d=new Date(dayKey+"T00:00:00"); return isNaN(d.getTime())?null:d; }
+  function fmtDDMMYYYY(dayKey){
+    const d=dayKeyToDate(dayKey); if(!d) return dayKey;
+    return `${p2(d.getDate())}-${p2(d.getMonth()+1)}-${d.getFullYear()}`;
   }
-  const s = String(t).trim();
-  const m = s.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
-  if(m) return { h:+m[1], min:+m[2], s:m[3]?+m[3]:0 };
-  const dt = new Date(s);
-  if(!isNaN(dt.getTime())) return { h:dt.getHours(), min:dt.getMinutes(), s:dt.getSeconds() };
-  return { h:0, min:0, s:0 };
-}
+  function minToHHMM(min){
+    const total = Math.max(0, Math.round(Number(min||0)));
+    const h = Math.floor(total/60);
+    const m = total%60;
+    return `${h}:${String(m).padStart(2,"0")}`;
+  }
+  function minutesBetween(a,b){ return (b-a)/60000; }
 
-export function combineDateTime(dateVal, timeVal){
-  const ymd = excelDateToYMD(dateVal);
-  if(!ymd) return null;
-  const hms = parseTimeToHMS(timeVal);
-  const dt = new Date(ymd.y, ymd.m-1, ymd.day, hms.h, hms.min, hms.s);
-  return isNaN(dt.getTime()) ? null : dt;
-}
+  function isNonEmptyBin(v){ const s=normStr(v); return s!=="" && s!=="0"; }
+  function isPickBin(bin){
+    const s=normStr(bin); if(!s) return false;
+    const parts=s.split("-");
+    return parts[parts.length-1]==="1";
+  }
+  function laneFromStorageBin(bin){
+    const s=normStr(bin); if(!s) return null;
+    const m=s.match(/(\d{2})/); if(!m) return null;
+    const n=parseInt(m[1],10);
+    if(!isFinite(n)||n<1||n>50) return null;
+    return n;
+  }
+  function wtCategory(procType){
+    const n=parseInt(procType,10);
+    if(n===9994||n===9995) return "P2P";
+    if(n===3060||n===3062||n===3040||n===3041||n===3042) return "Clean PICK";
+    return "WT Other";
+  }
+  function piCategory(storageBin){ return isPickBin(storageBin) ? "PI Pick" : "PI Bulk"; }
 
-export function isNonEmptyBin(v){ const s = normStr(v); return s!=="" && s!=="0"; }
-
-export function isPickBin(bin){
-  const s = normStr(bin);
-  if(!s) return false;
-  const parts = s.split("-");
-  return parts[parts.length-1] === "1";
-}
-
-export function laneFromStorageBin(bin){
-  const s = normStr(bin);
-  if(!s) return null;
-  const m = s.match(/(\d{2})/);
-  if(!m) return null;
-  const n = parseInt(m[1],10);
-  if(!isFinite(n) || n<1 || n>50) return null;
-  return n;
-}
-
-/** =========================
- *  CATEGORIE
- * ========================= */
-export function wtCategory(procType){
-  const n = parseInt(procType, 10);
-  if(n===9994 || n===9995) return "P2P";
-  if(n===3060 || n===3062 || n===3040 || n===3041 || n===3042) return "Clean PICK";
-  return "WT Other";
-}
-
-export function piCategory(storageBin){
-  return isPickBin(storageBin) ? "PI Pick" : "PI Bulk";
-}
-
-/** =========================
- *  SHIFT
- * ========================= */
-export function shiftWindow(dayKey, code){
-  const base = dayKeyToDate(dayKey);
-  if(!base) return null;
-  const def = SHIFT_DEFS[code];
-  if(!def) return null;
-  const [sh, sm] = def.start.split(":").map(Number);
-  const [eh, em] = def.end.split(":").map(Number);
-  const start = new Date(base.getFullYear(), base.getMonth(), base.getDate(), sh, sm, 0);
-  const end   = new Date(base.getFullYear(), base.getMonth(), base.getDate(), eh, em, 0);
-  return { start, end };
-}
-
-export function inferShiftForOpDay(op, dayKey, events){
-  const ovMap = state.shiftOverride.get(op);
-  const ov = ovMap ? ovMap.get(dayKey) : null;
-  if(ov && ov !== "AUTO"){
-    const w = shiftWindow(dayKey, ov);
-    return { code:ov, start:w.start, end:w.end, inferred:false };
+  function shiftWindow(dayKey, code){
+    const base=dayKeyToDate(dayKey); if(!base) return null;
+    const def=SHIFT_DEFS[code]; if(!def) return null;
+    const [sh,sm]=def.start.split(":").map(Number);
+    const [eh,em]=def.end.split(":").map(Number);
+    const start=new Date(base.getFullYear(),base.getMonth(),base.getDate(),sh,sm,0);
+    const end  =new Date(base.getFullYear(),base.getMonth(),base.getDate(),eh,em,0);
+    return {start,end};
   }
 
-  const counts = { AM:0, C:0, PM:0 };
-  for(const e of events){
-    for(const code of ["AM","C","PM"]){
-      const w = shiftWindow(dayKey, code);
-      if(e.timestamp >= w.start && e.timestamp <= w.end) counts[code] += 1;
+  function inferShift(op, dayKey, events, shiftOverride){
+    const ov = shiftOverride?.[op]?.[dayKey];
+    if(ov && ov!=="AUTO"){
+      const w=shiftWindow(dayKey, ov);
+      return {code:ov, start:w.start, end:w.end, inferred:false};
     }
-  }
-  let best="AM";
-  for(const code of ["C","PM"]){
-    if(counts[code] > counts[best]) best=code;
-  }
-
-  // tie-break: usa l'ora del primo evento
-  const first = events[0]?.timestamp;
-  if(first && counts.AM===counts.C && counts.C===counts.PM){
-    const hm = first.getHours()*60 + first.getMinutes();
-    if(hm < 7*60) best="AM";
-    else if(hm < 12*60) best="C";
-    else best="PM";
-  }
-  const w = shiftWindow(dayKey, best);
-  return { code:best, start:w.start, end:w.end, inferred:true };
-}
-
-/** =========================
- *  SUPPORTI + INDIRETTE
- * ========================= */
-export function mapEffectiveOperator(srcOp, ts){
-  const rules = (state.supportRules.get(srcOp) || []).slice().sort((a,b)=>a.start-b.start);
-  for(const r of rules){
-    if(ts >= r.start && ts < r.end) return r.realOp;
-  }
-  return srcOp;
-}
-
-export function addSupportRule(srcOp, realOp, start, end){
-  if(!srcOp || !realOp) throw new Error("Supporto: srcOp/realOp mancanti.");
-  if(!(start instanceof Date) || !(end instanceof Date) || !(end>start)) throw new Error("Supporto: intervallo non valido.");
-  const cur = (state.supportRules.get(srcOp) || []).slice();
-  cur.push({ realOp, start, end });
-  cur.sort((a,b)=>a.start-b.start);
-  state.supportRules.set(srcOp, cur);
-}
-
-export function removeSupportRule(srcOp, idx){
-  const cur = (state.supportRules.get(srcOp) || []).slice();
-  if(idx<0 || idx>=cur.length) return;
-  cur.splice(idx,1);
-  if(cur.length) state.supportRules.set(srcOp, cur); else state.supportRules.delete(srcOp);
-}
-
-export function addIndirectRule(op, dayKey, start, end, desc){
-  if(!op || !dayKey) throw new Error("Indiretta: op/dayKey mancanti.");
-  if(!(start instanceof Date) || !(end instanceof Date) || !(end>start)) throw new Error("Indiretta: intervallo non valido.");
-  const dm = state.indirectRules.get(op) || new Map();
-  const cur = (dm.get(dayKey) || []).slice();
-  cur.push({ start, end, desc: desc||"" });
-  cur.sort((a,b)=>a.start-b.start);
-  dm.set(dayKey, cur);
-  state.indirectRules.set(op, dm);
-}
-
-export function removeIndirectRule(op, dayKey, idx){
-  const dm = state.indirectRules.get(op);
-  if(!dm) return;
-  const cur = (dm.get(dayKey) || []).slice();
-  if(idx<0 || idx>=cur.length) return;
-  cur.splice(idx,1);
-  if(cur.length) dm.set(dayKey, cur); else dm.delete(dayKey);
-  if(dm.size) state.indirectRules.set(op, dm); else state.indirectRules.delete(op);
-}
-
-export function setShiftOverride(op, dayKey, code){
-  if(!op || !dayKey) return;
-  const dm = state.shiftOverride.get(op) || new Map();
-  dm.set(dayKey, code || "AUTO");
-  state.shiftOverride.set(op, dm);
-}
-
-/** =========================
- *  BUILD EVENTS
- * ========================= */
-function getOrInitMap(map, key){
-  if(!map.has(key)) map.set(key, new Map());
-  return map.get(key);
-}
-
-function pushEvent(mapOpDay, op, dayKey, ev){
-  const m = getOrInitMap(mapOpDay, op);
-  if(!m.has(dayKey)) m.set(dayKey, []);
-  m.get(dayKey).push(ev);
-}
-
-export function buildEventsFromRows(piRows, wtRows){
-  const out = new Map();
-  const rawPiCounts = [];
-  const rawWtTouches = [];
-
-  // PI
-  for(const r of (piRows||[])){
-    const counter = normStr(r["Counter"]);
-    if(!INTEREST_OPERATORS.has(counter)) continue;
-    const ts = combineDateTime(r["Count Date"], r["Count Time"]);
-    if(!ts) continue;
-
-    const createdBy = normStr(r["Created By"]);
-    const storageBin = normStr(r["Storage Bin"]);
-    const dayKey = dayKeyFromDate(ts);
-    const cat = piCategory(storageBin);
-    const self = (counter && counter===createdBy) ? "Yes" : "No";
-
-    pushEvent(out, counter, dayKey, {
-      timestamp: ts,
-      timestampStr: fmtDateTime(ts),
-      operator: counter,
-      kind: "PI",
-      category: cat,
-      selfCount: self,
-      storageBin
-    });
-
-    const lane = laneFromStorageBin(storageBin);
-    if(lane!==null){
-      rawPiCounts.push({
-        srcOp: counter,
-        timestamp: ts,
-        dayKey,
-        hour: ts.getHours(),
-        lane,
-        isPick: cat==="PI Pick",
-        isBulk: cat==="PI Bulk",
-        selfCount: self==="Yes"
-      });
-    }
-  }
-
-  // WT
-  for(const r of (wtRows||[])){
-    // Ci interessano solo WT con Source Storage Bin valorizzato
-    const srcBin = normStr(r["Source Storage Bin"]);
-    if(!isNonEmptyBin(srcBin)) continue;
-
-    const createdBy = normStr(r["Created By"]);
-    const confirmedBy = normStr(r["Confirmed by"]);
-    const srcOp = confirmedBy || createdBy;
-    if(!INTEREST_OPERATORS.has(srcOp)) continue;
-
-    const ts = combineDateTime(r["Created On"], r["Created At"]);
-    if(!ts) continue;
-
-    const dayKey = dayKeyFromDate(ts);
-    const procType = normStr(r["Whse Proc. Type"]);
-    const cat = wtCategory(procType);
-    const wo = normStr(r["Warehouse Order"]);
-    const dstBin = normStr(r["Destination Storage Bin"]);
-
-    pushEvent(out, srcOp, dayKey, {
-      timestamp: ts,
-      timestampStr: fmtDateTime(ts),
-      operator: srcOp,
-      kind: "WT",
-      category: cat,
-      woId: wo,
-      srcBin,
-      dstBin
-    });
-
-    // Heatmap "Task": conteggio corsie per ora su Source, e per P2P anche Destination
-    const laneS = laneFromStorageBin(srcBin);
-    if(laneS!==null) rawWtTouches.push({ srcOp, timestamp: ts, dayKey, hour: ts.getHours(), lane: laneS });
-    if(cat==="P2P"){
-      const laneD = laneFromStorageBin(dstBin);
-      if(laneD!==null) rawWtTouches.push({ srcOp, timestamp: ts, dayKey, hour: ts.getHours(), lane: laneD });
-    }
-  }
-
-  // Sort
-  for(const [, m] of out.entries()){
-    for(const [, list] of m.entries()) list.sort((a,b)=>a.timestamp-b.timestamp);
-  }
-
-  return { eventsByOpDay: out, rawPiCounts, rawWtTouches };
-}
-
-/** =========================
- *  INTERVAL BUILD
- * ========================= */
-function classifyAndSplitInterval(start, end, baseCategory, shiftStart, shiftEnd){
-  const a = start.getTime(), b=end.getTime();
-  if(b<=a) return { inside:[], outMinutes:0 };
-
-  const inStart = Math.max(a, shiftStart.getTime());
-  const inEnd   = Math.min(b, shiftEnd.getTime());
-
-  const inside=[];
-  if(inEnd > inStart){
-    inside.push({
-      start: new Date(inStart),
-      end: new Date(inEnd),
-      minutes: round1((inEnd-inStart)/60000),
-      category: baseCategory
-    });
-  }
-  const outMin = ((b-a)/60000) - (inEnd>inStart ? (inEnd-inStart)/60000 : 0);
-  return { inside, outMinutes: Math.max(0, outMin) };
-}
-
-function applyIndirectForOpDay(op, dayKey, intervals){
-  const dayRulesMap = state.indirectRules.get(op);
-  const rules = dayRulesMap ? (dayRulesMap.get(dayKey) || []) : [];
-  const valid = rules
-    .filter(r=>r && r.start instanceof Date && r.end instanceof Date && r.end>r.start)
-    .sort((a,b)=>a.start-b.start);
-  if(!valid.length) return intervals.slice();
-
-  const out=[];
-  for(const it of intervals){
-    if(it.category!=="PAUSA"){ out.push(it); continue; }
-
-    let remaining=[{ start:it.start, end:it.end }];
-    for(const rule of valid){
-      const next=[];
-      for(const seg of remaining){
-        const a = Math.max(seg.start.getTime(), rule.start.getTime());
-        const b = Math.min(seg.end.getTime(), rule.end.getTime());
-        if(b<=a){ next.push(seg); continue; }
-
-        // pausa prima
-        if(seg.start.getTime() < a){
-          const s1=seg.start, e1=new Date(a);
-          out.push({
-            ...it,
-            start:s1,end:e1,startStr:fmtDateTime(s1),endStr:fmtDateTime(e1),
-            minutes: round1(minutesBetween(s1,e1)),
-            category:"PAUSA",
-            notes:"Pausa",
-            piBins:0,selfCount:0,woId:""
-          });
-        }
-        // indiretta
-        const s2=new Date(a), e2=new Date(b);
-        out.push({
-          ...it,
-          start:s2,end:e2,startStr:fmtDateTime(s2),endStr:fmtDateTime(e2),
-          minutes: round1(minutesBetween(s2,e2)),
-          category:"INDIRETTA",
-          notes: rule.desc ? `Indiretta: ${rule.desc}` : "Indiretta",
-          piBins:0,selfCount:0,woId:""
-        });
-        if(b < seg.end.getTime()) next.push({ start:new Date(b), end:seg.end });
+    const counts={AM:0,C:0,PM:0};
+    for(const e of events){
+      for(const code of ["AM","C","PM"]){
+        const w=shiftWindow(dayKey, code);
+        if(e.ts>=w.start && e.ts<=w.end) counts[code]+=1;
       }
-      remaining=next;
-      if(!remaining.length) break;
     }
-    for(const seg of remaining){
+    let best="AM";
+    for(const code of ["C","PM"]) if(counts[code]>counts[best]) best=code;
+    const first=events[0]?.ts;
+    if(first && counts.AM===counts.C && counts.C===counts.PM){
+      const hm=first.getHours()*60+first.getMinutes();
+      best = hm<7*60 ? "AM" : (hm<12*60 ? "C" : "PM");
+    }
+    const w=shiftWindow(dayKey, best);
+    return {code:best, start:w.start, end:w.end, inferred:true};
+  }
+
+  // =============== SELECTION (days/weeks/months) ===============
+  function getSelection(){
+    try{
+      const raw=localStorage.getItem(SEL_KEY);
+      const obj=raw?JSON.parse(raw):null;
+      if(obj && typeof obj==='object') return obj;
+    }catch{}
+    return { mode:"day", days:{}, groups:[] };
+  }
+  function setSelection(sel){
+    localStorage.setItem(SEL_KEY, JSON.stringify(sel||{mode:"day",days:{},groups:[]}));
+  }
+
+  function isoWeek(d){
+    const date=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));
+    const dayNum=date.getUTCDay()||7;
+    date.setUTCDate(date.getUTCDate()+4-dayNum);
+    const yearStart=new Date(Date.UTC(date.getUTCFullYear(),0,1));
+    const weekNo=Math.ceil((((date-yearStart)/86400000)+1)/7);
+    return {year:date.getUTCFullYear(), week:weekNo};
+  }
+  function groupKey(dayKey, mode){
+    const d=dayKeyToDate(dayKey); if(!d) return dayKey;
+    if(mode==="month") return dayKey.slice(0,7); // YYYY-MM
+    if(mode==="week"){
+      const w=isoWeek(d);
+      return `${w.year}-W${String(w.week).padStart(2,'0')}`;
+    }
+    return dayKey;
+  }
+  function expandSelectionToDayKeys(sel, allDayKeys){
+    const mode=sel?.mode||"day";
+    if(mode==="day"){
+      return Object.keys(sel.days||{}).sort();
+    }
+    const groups=new Set(sel.groups||[]);
+    const out=[];
+    for(const dk of (allDayKeys||[])){
+      if(groups.has(groupKey(dk, mode))) out.push(dk);
+    }
+    return out.sort();
+  }
+
+  // =============== LOCAL RULES ===============
+  function getSupportRules(){
+    try{ return JSON.parse(localStorage.getItem(SUPPORT_KEY)||"{}") || {}; }catch{ return {}; }
+  }
+  function setSupportRules(obj){ localStorage.setItem(SUPPORT_KEY, JSON.stringify(obj||{})); }
+
+  function getIndirectRules(){
+    try{ return JSON.parse(localStorage.getItem(INDIRECT_KEY)||"{}") || {}; }catch{ return {}; }
+  }
+  function setIndirectRules(obj){ localStorage.setItem(INDIRECT_KEY, JSON.stringify(obj||{})); }
+
+  function getShiftOverride(){
+    try{ return JSON.parse(localStorage.getItem(SHIFT_OV_KEY)||"{}") || {}; }catch{ return {}; }
+  }
+  function setShiftOverride(obj){ localStorage.setItem(SHIFT_OV_KEY, JSON.stringify(obj||{})); }
+
+  function mapEffectiveOperator(srcOp, ts, supportRules){
+    const arr=(supportRules?.[srcOp]||[]).slice().map(r=>({
+      realOp: r.realOp,
+      start: new Date(r.start),
+      end: new Date(r.end)
+    })).filter(r=>r.realOp && !isNaN(r.start) && !isNaN(r.end) && r.end>r.start)
+      .sort((a,b)=>a.start-b.start);
+    for(const r of arr){
+      if(ts>=r.start && ts<r.end) return r.realOp;
+    }
+    return srcOp;
+  }
+
+  // =============== SUPABASE LOADERS ===============
+  function requireSupabase(){
+    if(!sb) throw new Error("Supabase non inizializzato: manca <script supabase.min.js> nella pagina.");
+  }
+  async function fetchDatasets(){
+    requireSupabase();
+    const { data, error } = await sb
+      .from("datasets")
+      .select("id, day_key, label, created_at, pi_rows, wt_rows")
+      .order("day_key",{ascending:false});
+    if(error) throw new Error(error.message);
+    return data||[];
+  }
+
+  async function fetchEvents(dayKeys){
+    requireSupabase();
+    if(!dayKeys.length) return [];
+    // chiediamo i campi minimi necessari alle analisi
+    const opSel = EVENTS_OPERATOR_COL.includes(' ') ? `"${EVENTS_OPERATOR_COL}"` : EVENTS_OPERATOR_COL;
+    const { data, error } = await sb
+      .from("events")
+      .select(`day_key, ts, ${opSel}, kind, category, self_count, storage_bin, lane, wo_id`)
+      .in("day_key", dayKeys);
+    if(error) throw new Error(error.message);
+    return (data||[]).map(r=>({
+      day_key: r.day_key,
+      ts: new Date(r.ts),
+      operator: r[EVENTS_OPERATOR_COL],
+      kind: r.kind,
+      category: r.category,
+      self_count: !!r.self_count,
+      storage_bin: r.storage_bin,
+      lane: (r.lane===null||r.lane===undefined) ? null : Number(r.lane),
+      wo_id: r.wo_id
+    })).filter(r=>r.operator && !isNaN(r.ts.getTime()));
+  }
+
+  function filterEventsBySelection(events, sel){
+    const days=sel?.days||{};
+    return (events||[]).filter(e=>{
+      const d=days[e.day_key];
+      if(!d) return false;
+      if(e.kind==="PI") return !!d.pi;
+      if(e.kind==="WT") return !!d.wt;
+      return false;
+    });
+  }
+
+  // =============== ANALYSIS CORE ===============
+  function buildPerOpDayEvents(events, supportRules){
+    // ritorna Map effOp -> Map dayKey -> eventsSorted[]
+    const by = new Map();
+    for(const e of events){
+      const effOp = mapEffectiveOperator(e.operator, e.ts, supportRules);
+      if(!INTEREST_OPERATORS.has(effOp) && !INTEREST_OPERATORS.has(e.operator)){
+        // se supporto reale è fuori lista, lo includiamo comunque (serve per split)
+      }
+      if(!by.has(effOp)) by.set(effOp, new Map());
+      const dm=by.get(effOp);
+      if(!dm.has(e.day_key)) dm.set(e.day_key, []);
+      dm.get(e.day_key).push({...e, effOp});
+    }
+    for(const [,dm] of by){
+      for(const [dk,list] of dm){
+        list.sort((a,b)=>a.ts-b.ts);
+        dm.set(dk,list);
+      }
+    }
+    return by;
+  }
+
+  function computeIntervalsForOpDay(events, shiftInfo, indirectRulesForDay){
+    // events sorted
+    const out=[];
+    if(!events.length) return out;
+
+    const shiftStart = shiftInfo?.start || null;
+    const shiftEnd   = shiftInfo?.end || null;
+
+    // clip helper
+    const clip = (a,b)=>{
+      let s=new Date(a), e=new Date(b);
+      if(shiftStart && s<shiftStart) s=new Date(shiftStart);
+      if(shiftEnd && e>shiftEnd) e=new Date(shiftEnd);
+      if(e<=s) return null;
+      return {s,e};
+    };
+
+    // base intervals from event gaps
+    for(let i=0;i<events.length;i++){
+      const cur=events[i];
+      const next=events[i+1];
+      const start=cur.ts;
+      const end=next ? next.ts : (shiftEnd ? new Date(shiftEnd) : new Date(cur.ts.getTime()+5*60000));
+      const gapMin=minutesBetween(start,end);
+      let cat = cur.kind==="PI" ? cur.category : (cur.kind==="WT" ? cur.category : "Other");
+      let note = "";
+      if(cur.kind==="PI" && cur.self_count) note="Self Count";
+      if(gapMin>=PAUSE_THRESHOLD_MIN) cat="PAUSA";
+      const clipped=clip(start,end);
+      if(!clipped) continue;
       out.push({
-        ...it,
-        start:seg.start,end:seg.end,startStr:fmtDateTime(seg.start),endStr:fmtDateTime(seg.end),
-        minutes: round1(minutesBetween(seg.start,seg.end)),
-        category:"PAUSA",
-        notes:"Pausa",
-        piBins:0,selfCount:0,woId:""
+        start: clipped.s,
+        end: clipped.e,
+        minutes: minutesBetween(clipped.s, clipped.e),
+        category: cat,
+        kind: cur.kind,
+        self_count: cur.self_count,
+        lane: cur.lane,
+        wo_id: cur.wo_id,
+        note
       });
     }
-  }
-  out.sort((a,b)=>a.start-b.start);
-  return out;
-}
 
-/** =========================
- *  REBUILD DERIVED
- * ========================= */
-export function rebuildDerived(){
-  state.derivedIntervalsByOpDay = new Map();
-  state.shiftByOpDay = new Map();
-  state.piCounts = [];
-  state.wtTouches = [];
+    // add indirect intervals (override PAUSA portions)
+    const indirect = (indirectRulesForDay||[]).map(r=>({
+      start:new Date(r.start), end:new Date(r.end), desc:r.desc||""
+    })).filter(r=>!isNaN(r.start)&&!isNaN(r.end)&&r.end>r.start);
 
-  // Remap events -> effective operator
-  const effEventsByOpDay = new Map();
-  for(const [srcOp, dayMap] of state.eventsByOpDay.entries()){
-    for(const [dayKey, events] of dayMap.entries()){
-      for(const e of events){
-        const effOp = mapEffectiveOperator(srcOp, e.timestamp);
-        const m = getOrInitMap(effEventsByOpDay, effOp);
-        if(!m.has(dayKey)) m.set(dayKey, []);
-        m.get(dayKey).push({ ...e, operator: effOp, _srcOp: srcOp });
-      }
+    if(!indirect.length) return out;
+
+    // For simplicity: append indirect as standalone blocks; in KPI we'll subtract from PAUSA by overlap.
+    for(const r of indirect){
+      const clipped=clip(r.start,r.end);
+      if(!clipped) continue;
+      out.push({
+        start: clipped.s, end: clipped.e,
+        minutes: minutesBetween(clipped.s, clipped.e),
+        category:"INDIRETTA", kind:"IND",
+        note: r.desc||"Indiretta"
+      });
     }
-  }
-  for(const [, m] of effEventsByOpDay.entries()){
-    for(const [, list] of m.entries()) list.sort((a,b)=>a.timestamp-b.timestamp);
-  }
-
-  // intervals per op/day inside shift
-  for(const [op, dayMap] of effEventsByOpDay.entries()){
-    for(const [dayKey, events] of dayMap.entries()){
-      if(events.length<2) continue;
-      const sh = inferShiftForOpDay(op, dayKey, events);
-      getOrInitMap(state.shiftByOpDay, op).set(dayKey, sh);
-
-      const outIntervals=[];
-      for(let i=1;i<events.length;i++){
-        const prev = events[i-1];
-        const curr = events[i];
-        const gap = minutesBetween(prev.timestamp, curr.timestamp);
-        if(!(gap>0)) continue;
-
-        let baseCat = curr.category;
-        let notes = "";
-        let piBins=0, selfCount=0, woId="";
-        const isPause = (gap >= PAUSE_THRESHOLD_MIN) || (gap > MAX_WORK_GAP_MIN);
-        if(isPause){
-          baseCat="PAUSA";
-          notes=`Gap ${Math.round(gap)} min`;
-        }else{
-          if(curr.kind==="PI"){
-            piBins=1;
-            if(curr.selfCount==="Yes") selfCount=1;
-            if(selfCount) notes = `Self Count`;
-          }else{
-            woId = curr.woId || "";
-            notes = woId ? `WO=${woId}` : "";
-          }
-        }
-
-        const split = classifyAndSplitInterval(prev.timestamp, curr.timestamp, baseCat, sh.start, sh.end);
-        for(const p of split.inside){
-          outIntervals.push({
-            start:p.start,end:p.end,
-            startStr:fmtDateTime(p.start), endStr:fmtDateTime(p.end),
-            minutes:p.minutes,
-            category:p.category,
-            notes,
-            piBins: (p.category.startsWith("PI") ? piBins : 0),
-            selfCount: (p.category.startsWith("PI") ? selfCount : 0),
-            woId: (p.category==="P2P"||p.category==="Clean PICK"||p.category==="WT Other") ? woId : ""
-          });
-        }
-      }
-      outIntervals.sort((a,b)=>a.start-b.start);
-      const finalIntervals = applyIndirectForOpDay(op, dayKey, outIntervals);
-
-      const m = getOrInitMap(state.derivedIntervalsByOpDay, op);
-      m.set(dayKey, finalIntervals);
-    }
+    out.sort((a,b)=>a.start-b.start);
+    return out;
   }
 
-  // PI counts remap
-  for(const r of state.rawPiCounts){
-    const effOp = mapEffectiveOperator(r.srcOp, r.timestamp);
-    state.piCounts.push({ op:effOp, dayKey:r.dayKey, hour:r.hour, lane:r.lane, isPick:r.isPick, isBulk:r.isBulk, selfCount:r.selfCount });
+  function overlapMinutes(aStart,aEnd,bStart,bEnd){
+    const s = Math.max(aStart.getTime(), bStart.getTime());
+    const e = Math.min(aEnd.getTime(), bEnd.getTime());
+    if(e<=s) return 0;
+    return (e-s)/60000;
   }
 
-  // WT touches remap
-  for(const r of state.rawWtTouches){
-    const effOp = mapEffectiveOperator(r.srcOp, r.timestamp);
-    state.wtTouches.push({ op:effOp, dayKey:r.dayKey, hour:r.hour, lane:r.lane });
-  }
-}
-
-/** =========================
- *  XLSX READ + ANALYZE ENTRY
- * ========================= */
-async function readFirstSheetAsObjects(file){
-  // XLSX è atteso su window (da CDN)
-  const XLSX = window.XLSX;
-  if(!XLSX) throw new Error("XLSX non disponibile. Carica xlsx.full.min.js.");
-  const arrayBuffer = await file.arrayBuffer();
-  const wb = XLSX.read(arrayBuffer, { type:"array", cellDates:true });
-  const ws = wb.Sheets[wb.SheetNames[0]];
-  return XLSX.utils.sheet_to_json(ws, { defval:"" });
-}
-
-export async function analyzeFromFiles(piFiles, wtFiles){
-  // reset dataset ma NON le regole utente (support/indirect) – quelle vengono tenute e riapplicate
-  state.eventsByOpDay = new Map();
-  state.rawPiCounts = [];
-  state.rawWtTouches = [];
-
-  const piRowsAll=[];
-  const wtRowsAll=[];
-
-  for(const f of (piFiles||[])){
-    const rows = await readFirstSheetAsObjects(f);
-    piRowsAll.push(...rows);
-  }
-  for(const f of (wtFiles||[])){
-    const rows = await readFirstSheetAsObjects(f);
-    wtRowsAll.push(...rows);
-  }
-
-  const { eventsByOpDay, rawPiCounts, rawWtTouches } = buildEventsFromRows(piRowsAll, wtRowsAll);
-  state.eventsByOpDay = eventsByOpDay;
-  state.rawPiCounts = rawPiCounts;
-  state.rawWtTouches = rawWtTouches;
-
-  rebuildDerived();
-  await saveSnapshot();
-}
-
-/** =========================
- *  AGGREGATION (KPI)
- * ========================= */
-export function listOperators(){
-  return Array.from(state.derivedIntervalsByOpDay.keys()).sort((a,b)=>a.localeCompare(b));
-}
-
-export function computeAllDayKeys(){
-  const keys=new Set();
-  for(const [, dayMap] of state.derivedIntervalsByOpDay.entries()){
-    for(const [dk] of dayMap.entries()) keys.add(dk);
-  }
-  return Array.from(keys).sort((a,b)=>a.localeCompare(b));
-}
-
-export function concatIntervalsForOp(op, dayKeys){
-  const dayMap = state.derivedIntervalsByOpDay.get(op);
-  if(!dayMap) return [];
-  const all=[];
-  for(const dk of dayKeys){
-    const list = dayMap.get(dk);
-    if(list && list.length) all.push(...list.map(x=>({ ...x, dayKey: dk })));
-  }
-  all.sort((a,b)=>a.start-b.start);
-  return all;
-}
-
-export function computeShiftLabelForOp(op, dayKeys){
-  const dm = state.shiftByOpDay.get(op);
-  if(!dm) return "—";
-  const counts={AM:0,C:0,PM:0};
-  for(const dk of dayKeys){
-    const sh = dm.get(dk);
-    if(sh?.code) counts[sh.code] += 1;
-  }
-  const best = Object.entries(counts).sort((a,b)=>b[1]-a[1])[0]?.[0];
-  if(!best) return "—";
-  const inferredSome = dayKeys.some(dk => dm.get(dk)?.inferred);
-  return inferredSome ? `${best} (AUTO)` : best;
-}
-
-export function aggregateForOp(op, dayKeys){
-  const intervals = concatIntervalsForOp(op, dayKeys);
-  if(!intervals.length) return null;
-
-  const byDay = new Set(dayKeys.filter(dk => (state.derivedIntervalsByOpDay.get(op)?.get(dk)||[]).length));
-  const dayCount = byDay.size;
-
-  let minPiPick=0, minPiBulk=0, minP2P=0, minClean=0, minOther=0, minIndirect=0, minPause=0;
-  let piPickBins=0, piBulkBins=0, selfCountBins=0;
-  const woP2P=new Set(), woClean=new Set(), woOther=new Set();
-
-  // cambi task: conta transizioni tra categorie "operative" (PI Pick/Bulk/P2P/Clean/WT Other)
-  let switchCount=0;
-  let switchMin=0;
-  let prevWorkCat=null;
-  let prevEnd=null;
-
-  for(const it of intervals){
-    const m = Number(it.minutes||0);
-    const cat = it.category;
-    if(cat==="PAUSA") { minPause+=m; continue; }
-    if(cat==="INDIRETTA") { minIndirect+=m; continue; }
-
-    if(cat==="PI Pick") { minPiPick+=m; piPickBins += Number(it.piBins||0); selfCountBins += Number(it.selfCount||0); }
-    else if(cat==="PI Bulk") { minPiBulk+=m; piBulkBins += Number(it.piBins||0); selfCountBins += Number(it.selfCount||0); }
-    else if(cat==="P2P") { minP2P+=m; if(it.woId) woP2P.add(it.woId); }
-    else if(cat==="Clean PICK") { minClean+=m; if(it.woId) woClean.add(it.woId); }
-    else { minOther+=m; if(it.woId) woOther.add(it.woId); }
-
-    // switch logic
-    const isWork = ["PI Pick","PI Bulk","P2P","Clean PICK","WT Other"].includes(cat);
-    if(isWork){
-      if(prevWorkCat!==null && cat!==prevWorkCat){
-        switchCount += 1;
-        if(prevEnd) switchMin += Math.max(0, minutesBetween(prevEnd, it.start));
-      }
-      prevWorkCat = cat;
-      prevEnd = it.end;
-    }
-  }
-
-  return {
-    operator: op,
-    dayCount,
-    shiftLabel: computeShiftLabelForOp(op, Array.from(byDay)),
-    minPiPick: round1(minPiPick),
-    minPiBulk: round1(minPiBulk),
-    minP2P: round1(minP2P),
-    minClean: round1(minClean),
-    minOther: round1(minOther),
-    minIndirect: round1(minIndirect),
-    minPause: round1(minPause),
-    piPickBins: Math.round(piPickBins),
-    piBulkBins: Math.round(piBulkBins),
-    selfCountBins: Math.round(selfCountBins),
-    woP2P: woP2P.size,
-    woClean: woClean.size,
-    woOther: woOther.size,
-    switchCount,
-    switchMin: round1(switchMin)
-  };
-}
-
-export function buildAggRows(dayKeys){
-  const ops = listOperators();
-  const rows=[];
-  for(const op of ops){
-    const r = aggregateForOp(op, dayKeys);
-    if(r) rows.push(r);
-  }
-  return rows;
-}
-
-/** =========================
- *  SCORE
- * ========================= */
-function tphAndSecTask(timeMin, volume){
-  if(!volume || volume<=0 || !timeMin || timeMin<=0) return { tph:0, secPerTask:0 };
-  const tph = volume / (timeMin/60);
-  const sec = (timeMin*60) / volume;
-  return { tph: round1(tph), secPerTask: Math.round(sec) };
-}
-
-export function computeDayScore(op, dayKey){
-  const dm = state.derivedIntervalsByOpDay.get(op);
-  const intervals = dm ? (dm.get(dayKey) || []) : [];
-  if(!intervals.length) return null;
-
-  const sh = state.shiftByOpDay.get(op)?.get(dayKey);
-  if(!sh) return null;
-
-  const first = intervals[0].start;
-  const last = intervals[intervals.length-1].end;
-  let actualMin = Math.max(0, minutesBetween(first, last));
-  actualMin = Math.min(actualMin, SHIFT_TARGET_MIN);
-
-  let pause=0, indirect=0;
-  let piPick=0, piBulk=0, p2p=0, clean=0, other=0;
-  let binPick=0, binBulk=0, selfCount=0;
-  const woP2P=new Set(), woClean=new Set(), woOther=new Set();
-  let switchCount=0, switchMin=0;
-
-  let prevWorkCat=null;
-  let prevEnd=null;
-
-  for(const it of intervals){
-    const m = Number(it.minutes||0);
-    const cat = it.category;
-    if(cat==="PAUSA"){ pause+=m; continue; }
-    if(cat==="INDIRETTA"){ indirect+=m; continue; }
-
-    if(cat==="PI Pick"){ piPick+=m; binPick+=Number(it.piBins||0); selfCount+=Number(it.selfCount||0); }
-    else if(cat==="PI Bulk"){ piBulk+=m; binBulk+=Number(it.piBins||0); selfCount+=Number(it.selfCount||0); }
-    else if(cat==="P2P"){ p2p+=m; if(it.woId) woP2P.add(it.woId); }
-    else if(cat==="Clean PICK"){ clean+=m; if(it.woId) woClean.add(it.woId); }
-    else { other+=m; if(it.woId) woOther.add(it.woId); }
-
-    const isWork = ["PI Pick","PI Bulk","P2P","Clean PICK","WT Other"].includes(cat);
-    if(isWork){
-      if(prevWorkCat!==null && cat!==prevWorkCat){
-        switchCount += 1;
-        if(prevEnd) switchMin += Math.max(0, minutesBetween(prevEnd, it.start));
-      }
-      prevWorkCat=cat;
-      prevEnd=it.end;
-    }
-  }
-
-  const effProd = piPick+piBulk+p2p+clean+other;
-  const effAll = effProd+indirect;
-  const inactivity = Math.max(0, SHIFT_TARGET_MIN - actualMin);
-
-  // KPI task speed
-  const pi = tphAndSecTask(piPick+piBulk, binPick+binBulk);
-  const p2pK = tphAndSecTask(p2p, woP2P.size);
-  const cleanK = tphAndSecTask(clean, woClean.size);
-  const otherK = tphAndSecTask(other, woOther.size);
-
-  return {
-    op, dayKey,
-    shift: sh.code,
-    targetMin: SHIFT_TARGET_MIN,
-    actualMin: Math.round(actualMin),
-    inactivityMin: Math.round(inactivity),
-    pauseMin: Math.round(pause),
-    indirectMin: Math.round(indirect),
-    effProdMin: Math.round(effProd),
-    effAllMin: Math.round(effAll),
-
-    piPickMin: round1(piPick),
-    piBulkMin: round1(piBulk),
-    p2pMin: round1(p2p),
-    cleanMin: round1(clean),
-    otherMin: round1(other),
-
-    binPick: Math.round(binPick),
-    binBulk: Math.round(binBulk),
-    selfCount: Math.round(selfCount),
-    woP2P: woP2P.size,
-    woClean: woClean.size,
-    woOther: woOther.size,
-    switchCount,
-    switchMin: round1(switchMin),
-
-    tphPI: pi.tph,
-    secPI: pi.secPerTask,
-    tphP2P: p2pK.tph,
-    secP2P: p2pK.secPerTask,
-    tphClean: cleanK.tph,
-    secClean: cleanK.secPerTask,
-    tphOther: otherK.tph,
-    secOther: otherK.secPerTask
-  };
-}
-
-export function buildScore(dayKeys){
-  const ops = listOperators();
-  const daySet = new Set(dayKeys);
-  const daily=[];
-  for(const op of ops){
-    const dm = state.derivedIntervalsByOpDay.get(op);
-    if(!dm) continue;
-    for(const dk of Array.from(dm.keys()).sort()){
-      if(!daySet.has(dk)) continue;
-      const r = computeDayScore(op, dk);
-      if(r) daily.push(r);
-    }
-  }
-
-  // Aggregato per operatore
-  const byOp=new Map();
-  for(const r of daily){
-    const a = byOp.get(r.op) || {
-      op:r.op,
-      dayCount:0,
-      shifts:new Map(),
-      targetMin:0, actualMin:0, inactivityMin:0, pauseMin:0, indirectMin:0, effProdMin:0, effAllMin:0,
-      piPickMin:0, piBulkMin:0, p2pMin:0, cleanMin:0, otherMin:0,
-      binPick:0, binBulk:0, selfCount:0,
-      woP2P:0, woClean:0, woOther:0,
-      switchCount:0, switchMin:0
+  function summarizeOpDay(intervals){
+    const sum = {
+      minPiPick:0,minPiBulk:0,minP2P:0,minClean:0,minOther:0,
+      minIndirect:0,minPause:0,
+      piPickBins:0,piBulkBins:0,selfCount:0,
+      woP2P:new Set(), woClean:new Set(), woOther:new Set(),
+      switchCount:0, switchMin:0,
+      first:null,last:null
     };
-    a.dayCount += 1;
-    a.shifts.set(r.shift, (a.shifts.get(r.shift)||0)+1);
-    for(const k of ["targetMin","actualMin","inactivityMin","pauseMin","indirectMin","effProdMin","effAllMin",
-      "piPickMin","piBulkMin","p2pMin","cleanMin","otherMin","binPick","binBulk","selfCount","woP2P","woClean","woOther","switchCount","switchMin"]){
-      a[k] += Number(r[k]||0);
+    if(!intervals.length) return sum;
+
+    // order already
+    sum.first = intervals[0].start;
+    sum.last = intervals[intervals.length-1].end;
+
+    // switches: change between high-level buckets (PI vs WT vs PAUSA vs INDIRETTA) and between PI Pick/Bulk
+    let prevTask=null;
+    for(const it of intervals){
+      const m = it.minutes;
+      if(it.category==="PI Pick"){ sum.minPiPick+=m; sum.piPickBins+=1; if(it.note==="Self Count") sum.selfCount+=1; }
+      else if(it.category==="PI Bulk"){ sum.minPiBulk+=m; sum.piBulkBins+=1; if(it.note==="Self Count") sum.selfCount+=1; }
+      else if(it.category==="P2P"){ sum.minP2P+=m; if(it.wo_id) sum.woP2P.add(it.wo_id); }
+      else if(it.category==="Clean PICK"){ sum.minClean+=m; if(it.wo_id) sum.woClean.add(it.wo_id); }
+      else if(it.category==="WT Other"){ sum.minOther+=m; if(it.wo_id) sum.woOther.add(it.wo_id); }
+      else if(it.category==="INDIRETTA"){ sum.minIndirect+=m; }
+      else if(it.category==="PAUSA"){ sum.minPause+=m; }
+      else { sum.minOther+=m; }
+
+      // task label for switches
+      const taskLabel = it.category; // enough for now
+      if(prevTask!==null && taskLabel!==prevTask){
+        sum.switchCount += 1;
+        // time lost: first 10 minutes of new block? Here: we count 0; better: count the gap that caused PAUSA? We'll approximate by 0.
+      }
+      prevTask = taskLabel;
     }
-    byOp.set(r.op, a);
+
+    // subtract overlaps of indirect from pause (do not double count)
+    if(sum.minIndirect>0 && sum.minPause>0){
+      let overlap=0;
+      const ind = intervals.filter(x=>x.category==="INDIRETTA");
+      const pau = intervals.filter(x=>x.category==="PAUSA");
+      for(const i of ind){
+        for(const p of pau){
+          overlap += overlapMinutes(i.start,i.end,p.start,p.end);
+        }
+      }
+      sum.minPause = Math.max(0, sum.minPause - overlap);
+    }
+
+    return sum;
   }
 
-  const agg=[];
-  for(const a of byOp.values()){
-    const bestShift = Array.from(a.shifts.entries()).sort((x,y)=>y[1]-x[1])[0]?.[0] || "—";
-    agg.push({
-      operator:a.op,
-      dayCount:a.dayCount,
-      shiftLabel: bestShift,
-      targetMin: Math.round(a.targetMin),
-      actualMin: Math.round(a.actualMin),
-      inactivityMin: Math.round(a.inactivityMin),
-      pauseMin: round1(a.pauseMin),
-      indirectMin: round1(a.indirectMin),
-      effProdMin: round1(a.effProdMin),
-      effAllMin: round1(a.effAllMin),
-      piPickMin: round1(a.piPickMin),
-      piBulkMin: round1(a.piBulkMin),
-      p2pMin: round1(a.p2pMin),
-      cleanMin: round1(a.cleanMin),
-      otherMin: round1(a.otherMin),
-      binPick: Math.round(a.binPick),
-      binBulk: Math.round(a.binBulk),
-      selfCount: Math.round(a.selfCount),
-      woP2P: Math.round(a.woP2P),
-      woClean: Math.round(a.woClean),
-      woOther: Math.round(a.woOther),
-      switchCount: Math.round(a.switchCount),
-      switchMin: round1(a.switchMin)
+  async function computeAggregatesForSelection(sel){
+    // returns {dayKeys, allDayKeys, perOpAggRows, perOpDayDetail}
+    requireSupabase();
+    const datasets = await fetchDatasets();
+    const allDayKeys = datasets.map(d=>d.day_key).filter(Boolean).sort();
+    const dayKeys = expandSelectionToDayKeys(sel, allDayKeys);
+
+    const supportRules = getSupportRules();
+    const indirectRules = getIndirectRules();
+    const shiftOv = getShiftOverride();
+
+    const eventsRaw = await fetchEvents(dayKeys);
+    const events = filterEventsBySelection(eventsRaw, sel);
+
+    const byOpDay = buildPerOpDayEvents(events, supportRules);
+
+    // compute per op/day intervals & summary
+    const perOpDay = new Map(); // op -> Map dayKey -> {shift, intervals, sum}
+    for(const [op, dm] of byOpDay.entries()){
+      const opDayMap = new Map();
+      for(const [dk, list] of dm.entries()){
+        const shift = inferShift(op, dk, list, shiftOv);
+        const indList = (indirectRules?.[op]?.[dk] || []);
+        const intervals = computeIntervalsForOpDay(list, shift, indList);
+        const sum = summarizeOpDay(intervals);
+        opDayMap.set(dk, { shift, intervals, sum });
+      }
+      perOpDay.set(op, opDayMap);
+    }
+
+    // aggregate across selected days
+    const rows=[];
+    for(const [op, dm] of perOpDay.entries()){
+      const agg={
+        operator: op,
+        dayCount: 0,
+        shiftHint: "",
+        targetMin:0,
+        actualMin:0,
+        minPiPick:0,minPiBulk:0,minP2P:0,minClean:0,minOther:0,minIndirect:0,minPause:0,
+        piPickBins:0,piBulkBins:0,selfCount:0,
+        woP2P:0,woClean:0,woOther:0,
+        switchCount:0, switchMin:0
+      };
+      const woSets={P2P:new Set(), Clean:new Set(), Other:new Set()};
+      for(const dk of dayKeys){
+        const d = dm.get(dk);
+        if(!d) continue;
+        agg.dayCount += 1;
+        agg.targetMin += SHIFT_TARGET_MIN;
+        const s=d.sum;
+        if(s.first && s.last) agg.actualMin += minutesBetween(s.first,s.last);
+        agg.minPiPick += s.minPiPick;
+        agg.minPiBulk += s.minPiBulk;
+        agg.minP2P += s.minP2P;
+        agg.minClean += s.minClean;
+        agg.minOther += s.minOther;
+        agg.minIndirect += s.minIndirect;
+        agg.minPause += s.minPause;
+        agg.piPickBins += s.piPickBins;
+        agg.piBulkBins += s.piBulkBins;
+        agg.selfCount += s.selfCount;
+        for(const x of s.woP2P) woSets.P2P.add(x);
+        for(const x of s.woClean) woSets.Clean.add(x);
+        for(const x of s.woOther) woSets.Other.add(x);
+        agg.switchCount += s.switchCount;
+      }
+      agg.woP2P = woSets.P2P.size;
+      agg.woClean = woSets.Clean.size;
+      agg.woOther = woSets.Other.size;
+      rows.push(agg);
+    }
+    rows.sort((a,b)=> (b.actualMin - a.actualMin));
+
+    return { datasets, allDayKeys, dayKeys, perOpDay, rows };
+  }
+
+  // =============== CHART HELPERS ===============
+  function buildPieData(rows){
+    const labels = rows.map(r=>r.operator);
+    const pick = rows.map(r=>r.piPickBins||0);
+    const bulk = rows.map(r=>r.piBulkBins||0);
+    return { labels, pick, bulk };
+  }
+
+  function buildProdVsSwitch(rows){
+    const labels = rows.map(r=>r.operator);
+    const prod = rows.map(r=>{
+      const piMin = r.minPiPick + r.minPiBulk;
+      const wtMin = r.minP2P + r.minClean + r.minOther;
+      const piBins = r.piPickBins + r.piBulkBins;
+      const wtWO = r.woP2P + r.woClean + r.woOther;
+      const piRate = piMin>0 ? (piBins/(piMin/60)) : 0;
+      const wtRate = wtMin>0 ? (wtWO/(wtMin/60)) : 0;
+      return Math.round((piRate + 2*wtRate)*10)/10;
     });
+    const switches = rows.map(r=>r.switchCount||0);
+    return { labels, prod, switches };
   }
-  agg.sort((x,y)=>x.operator.localeCompare(y.operator));
 
-  return { daily, agg };
-}
+  function buildHeatAisleHour(events, kindFilter){
+    // Y=hours 05..22 (18 values), X=aisle 01..50
+    const hours=[];
+    for(let h=5; h<=22; h++) hours.push(h);
+    const aisles=[];
+    for(let a=1; a<=50; a++) aisles.push(a);
 
-/** =========================
- *  HEATMAP MATRICES (Charts)
- *  - PI: conteggi per (ora, corsia)
- *  - WT: conteggi per (ora, corsia) su source + (per P2P anche dest)
- * ========================= */
-export function buildHeatmapHourLane(kind, dayKeys){
-  const daySet = new Set(dayKeys);
-  const hours=[]; for(let h=5; h<=22; h++) hours.push(h);
-  const lanes=[]; for(let l=1; l<=50; l++) lanes.push(l);
-  const z = hours.map(()=>lanes.map(()=>0)); // y=hours, x=lanes
-
-  const rows = kind==="PI" ? state.piCounts : state.wtTouches;
-  for(const r of rows){
-    if(!daySet.has(r.dayKey)) continue;
-    if(r.hour<5 || r.hour>22) continue;
-    if(!r.lane || r.lane<1 || r.lane>50) continue;
-    const yi = r.hour-5;
-    const xi = r.lane-1;
-    z[yi][xi] += 1;
-  }
-  return { hours, lanes, z };
-}
-
-export function buildPieBins(dayKeys){
-  const daySet=new Set(dayKeys);
-  const out = new Map(); // op -> {pick, bulk}
-  for(const r of state.piCounts){
-    if(!daySet.has(r.dayKey)) continue;
-    const cur = out.get(r.op) || { pick:0, bulk:0 };
-    if(r.isPick) cur.pick += 1;
-    if(r.isBulk) cur.bulk += 1;
-    out.set(r.op, cur);
-  }
-  return out;
-}
-
-/** =========================
- *  SELECTION UTILITIES (Days/Weeks/Months)
- * ========================= */
-function isoWeek(d){
-  // ISO week number
-  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
-  const dayNum = date.getUTCDay() || 7;
-  date.setUTCDate(date.getUTCDate() + 4 - dayNum);
-  const yearStart = new Date(Date.UTC(date.getUTCFullYear(),0,1));
-  const weekNo = Math.ceil((((date - yearStart) / 86400000) + 1)/7);
-  return { year: date.getUTCFullYear(), week: weekNo };
-}
-
-export function groupDayKeys(dayKeys){
-  const days = (dayKeys||[]).slice().sort();
-  const byMonth=new Map();
-  const byWeek=new Map();
-  for(const dk of days){
-    const d = dayKeyToDate(dk);
-    if(!d) continue;
-    const ym = dk.slice(0,7); // YYYY-MM
-    byMonth.set(ym, (byMonth.get(ym)||[]).concat([dk]));
-    const w = isoWeek(d);
-    const wk = `${w.year}-W${String(w.week).padStart(2,"0")}`;
-    byWeek.set(wk, (byWeek.get(wk)||[]).concat([dk]));
-  }
-  return { byMonth, byWeek, days };
-}
-
-/** =========================
- *  PERSISTENZA IndexedDB
- * ========================= */
-const DB_NAME="produttivitaDB";
-const DB_VER=1;
-const STORE="snapshots";
-const SNAP_ID="latest";
-
-function idbOpen(){
-  return new Promise((resolve,reject)=>{
-    const req=indexedDB.open(DB_NAME, DB_VER);
-    req.onupgradeneeded=()=>{
-      const db=req.result;
-      if(!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE,{ keyPath:"id" });
-    };
-    req.onsuccess=()=>resolve(req.result);
-    req.onerror=()=>reject(req.error);
-  });
-}
-
-function idbPut(doc){
-  return idbOpen().then(db=>new Promise((resolve,reject)=>{
-    const tx=db.transaction(STORE,"readwrite");
-    tx.objectStore(STORE).put(doc);
-    tx.oncomplete=()=>resolve();
-    tx.onerror=()=>reject(tx.error);
-  }));
-}
-
-function idbGet(id){
-  return idbOpen().then(db=>new Promise((resolve,reject)=>{
-    const tx=db.transaction(STORE,"readonly");
-    const req=tx.objectStore(STORE).get(id);
-    req.onsuccess=()=>resolve(req.result||null);
-    req.onerror=()=>reject(req.error);
-  }));
-}
-
-function idbDel(id){
-  return idbOpen().then(db=>new Promise((resolve,reject)=>{
-    const tx=db.transaction(STORE,"readwrite");
-    tx.objectStore(STORE).delete(id);
-    tx.oncomplete=()=>resolve();
-    tx.onerror=()=>reject(tx.error);
-  }));
-}
-
-function serMapOfMaps(map, serLeafFn){
-  const obj={};
-  for(const [k1, dm] of map.entries()){
-    obj[k1]={};
-    for(const [k2, v] of dm.entries()) obj[k1][k2]=serLeafFn(v);
-  }
-  return obj;
-}
-
-function deMapOfMaps(obj, deLeafFn){
-  const map=new Map();
-  if(!obj) return map;
-  for(const k1 of Object.keys(obj)){
-    const dm=new Map();
-    for(const k2 of Object.keys(obj[k1]||{})) dm.set(k2, deLeafFn(obj[k1][k2]));
-    map.set(k1, dm);
-  }
-  return map;
-}
-
-function serSupport(){
-  const obj={};
-  for(const [src, arr] of state.supportRules.entries()){
-    obj[src]=(arr||[]).map(r=>({ realOp:r.realOp, start:r.start.toISOString(), end:r.end.toISOString() }));
-  }
-  return obj;
-}
-
-function deSupport(obj){
-  const m=new Map();
-  if(!obj) return m;
-  for(const k of Object.keys(obj)){
-    m.set(k,(obj[k]||[]).map(r=>({ realOp:r.realOp, start:new Date(r.start), end:new Date(r.end) })));
-  }
-  return m;
-}
-
-function serShiftOv(){
-  return serMapOfMaps(state.shiftOverride, (v)=>v);
-}
-function deShiftOv(obj){
-  return deMapOfMaps(obj, (v)=>v);
-}
-
-function serIndirect(){
-  return serMapOfMaps(state.indirectRules, (list)=>(list||[]).map(r=>({ start:r.start.toISOString(), end:r.end.toISOString(), desc:r.desc||"" })));
-}
-function deIndirect(obj){
-  return deMapOfMaps(obj, (list)=>(list||[]).map(r=>({ start:new Date(r.start), end:new Date(r.end), desc:r.desc||"" })));
-}
-
-function serEvents(){
-  const obj={};
-  for(const [op, dm] of state.eventsByOpDay.entries()){
-    obj[op]={};
-    for(const [dk, list] of dm.entries()){
-      obj[op][dk]=(list||[]).map(e=>({ ...e, timestamp:e.timestamp.toISOString() }));
+    const z = hours.map(()=>aisles.map(()=>0));
+    for(const e of events){
+      if(kindFilter && e.kind!==kindFilter) continue;
+      if(e.lane===null||e.lane===undefined) continue;
+      const h=e.ts.getHours();
+      if(h<5||h>22) continue;
+      const hi=hours.indexOf(h);
+      const ai=aisles.indexOf(Number(e.lane));
+      if(hi>=0 && ai>=0) z[hi][ai] += 1;
     }
+    return { x: aisles.map(a=>String(a).padStart(2,'0')), y: hours.map(h=>String(h).padStart(2,'0')+":00"), z };
   }
-  return obj;
-}
 
-function deEvents(obj){
-  const m=new Map();
-  if(!obj) return m;
-  for(const op of Object.keys(obj)){
-    const dm=new Map();
-    for(const dk of Object.keys(obj[op]||{})){
-      dm.set(dk,(obj[op][dk]||[]).map(e=>({
-        ...e,
-        timestamp:new Date(e.timestamp),
-        timestampStr: e.timestampStr || fmtDateTime(new Date(e.timestamp))
-      })));
-    }
-    m.set(op, dm);
-  }
-  return m;
-}
+  // =============== EXPORT ===============
+  window.AppCore = {
+    // config
+    SUPABASE_URL, SUPABASE_ANON_KEY, EVENTS_OPERATOR_COL,
+    INTEREST_OPERATORS,
+    SHIFT_DEFS, SHIFT_TARGET_MIN, PAUSE_THRESHOLD_MIN,
 
-function serRowsWithTS(arr){
-  return (arr||[]).map(r=>({ ...r, timestamp:r.timestamp.toISOString() }));
-}
-function deRowsWithTS(arr){
-  return (arr||[]).map(r=>({ ...r, timestamp:new Date(r.timestamp) }));
-}
+    // selection
+    SEL_KEY, getSelection, setSelection, groupKey, expandSelectionToDayKeys,
+    fmtDDMMYYYY,
 
-export async function saveSnapshot(){
-  const doc={
-    id: SNAP_ID,
-    savedAt: new Date().toISOString(),
-    eventsByOpDay: serEvents(),
-    rawPiCounts: serRowsWithTS(state.rawPiCounts),
-    rawWtTouches: serRowsWithTS(state.rawWtTouches),
-    supportRules: serSupport(),
-    shiftOverride: serShiftOv(),
-    indirectRules: serIndirect()
+    // rules
+    getSupportRules, setSupportRules,
+    getIndirectRules, setIndirectRules,
+    getShiftOverride, setShiftOverride,
+
+    // categories/utils
+    normStr, isNonEmptyBin, isPickBin, laneFromStorageBin, wtCategory, piCategory,
+    minToHHMM,
+
+    // supabase
+    sb, fetchDatasets, fetchEvents, filterEventsBySelection,
+
+    // analysis
+    computeAggregatesForSelection,
+    buildPieData, buildProdVsSwitch, buildHeatAisleHour
   };
-  await idbPut(doc);
-}
-
-export async function loadSnapshot(){
-  const doc = await idbGet(SNAP_ID);
-  if(!doc) return { ok:false, msg:"Nessun dataset salvato." };
-
-  state.eventsByOpDay = deEvents(doc.eventsByOpDay);
-  state.rawPiCounts = deRowsWithTS(doc.rawPiCounts);
-  state.rawWtTouches = deRowsWithTS(doc.rawWtTouches);
-  state.supportRules = deSupport(doc.supportRules);
-  state.shiftOverride = deShiftOv(doc.shiftOverride);
-  state.indirectRules = deIndirect(doc.indirectRules);
-
-  rebuildDerived();
-  return { ok:true, savedAt: doc.savedAt };
-}
-
-export async function clearSnapshot(){
-  await idbDel(SNAP_ID);
-}
+})();

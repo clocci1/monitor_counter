@@ -1,464 +1,266 @@
 <!doctype html>
 <html lang="it">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Charts — Produttività</title>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Charts</title>
 
-  <script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="./app-core.js"></script>
+
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.27.0/plotly.min.js"></script>
 
   <style>
-    :root{
-      --bg:#0b1220;
-      --card:#111a2e;
-      --border:rgba(255,255,255,.12);
-      --muted:#a9b7d6;
-      --text:#e8eefc;
-      --btn:#6ea8fe;
-      --bad:#ff6b6b;
-    }
+    :root{--bg:#0b1220;--card:#111a2e;--border:rgba(255,255,255,.12);--muted:#a9b7d6;--text:#e8eefc;--btn:#6ea8fe;}
     body{font-family:system-ui,Segoe UI,Roboto,Arial;margin:0;background:var(--bg);color:var(--text);}
-    header{padding:14px 18px;border-bottom:1px solid var(--border);}
-    nav a{color:var(--text);text-decoration:none;margin-right:12px;font-weight:800;}
-
-    .wrap{max-width:1600px;margin:0 auto;padding:16px 18px;}
-    .layout{display:grid;grid-template-columns:1fr 380px;gap:12px;align-items:start;}
-    @media(max-width:1150px){.layout{grid-template-columns:1fr;}}
-
+    header{padding:14px 18px;border-bottom:1px solid var(--border);position:sticky;top:0;background:rgba(11,18,32,.92);backdrop-filter:blur(8px);z-index:5}
+    nav a{color:var(--text);text-decoration:none;margin-right:12px;font-weight:900;}
+    nav a.active{color:var(--btn);}
+    .wrap{max-width:1500px;margin:0 auto;padding:16px 18px;}
     .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;}
     .hint{color:var(--muted);font-size:12px;}
-    .bad{color:var(--bad);}
-    .mono{font-variant-numeric:tabular-nums;}
-
+    .row{display:grid;grid-template-columns:1fr;gap:12px;}
     table{width:100%;border-collapse:collapse;margin-top:10px;font-size:12px;}
     th,td{padding:8px;border-bottom:1px solid var(--border);vertical-align:top;}
-    th{color:var(--muted);text-align:left;font-weight:800;}
-
-    button,input,select{border-radius:10px;border:1px solid var(--border);background:rgba(255,255,255,.06);color:var(--text);padding:10px;}
-    button{background:var(--btn);color:var(--bg);border:0;font-weight:900;cursor:pointer;}
+    th{color:var(--muted);text-align:left;font-weight:900;}
+    .mono{font-variant-numeric:tabular-nums;}
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:stretch;}
+    @media(max-width:1100px){.grid2{grid-template-columns:1fr;}}
+    .chartBox{height:360px;}
+    .heatBox{height:520px;}
+    .actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+    select,button{border-radius:10px;border:1px solid var(--border);background:rgba(255,255,255,.06);color:var(--text);padding:9px 10px;}
+    button{background:var(--btn);border:0;color:var(--bg);font-weight:900;cursor:pointer;}
     button.secondary{background:rgba(255,255,255,.10);color:var(--text);border:1px solid var(--border);}
-    button.small{padding:6px 8px;font-size:12px;border-radius:8px;}
-
-    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between;}
-    .chip{display:inline-flex;gap:6px;align-items:center;border:1px solid var(--border);border-radius:999px;padding:6px 10px;background:rgba(255,255,255,.06);}
-    .chip strong{font-weight:900;}
-
-    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
-    @media(max-width:900px){.grid2{grid-template-columns:1fr;}}
-
-    .plotWide{height:420px;}
-    .plotHeat{height:520px;}
-    .chartBox{height:340px;}
-    .chartBoxTall{height:360px;}
-
-    .dsControls{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
-    .dsControls button{padding:8px 10px;font-size:12px;}
-    .checkbox{transform:scale(1.05);}
   </style>
 </head>
-
 <body>
 <header>
   <nav>
     <a href="index.html">Home</a>
     <a href="overview.html">Overview</a>
-    <a href="charts.html">Charts</a>
+    <a class="active" href="charts.html">Charts</a>
     <a href="score.html">Score</a>
   </nav>
 </header>
 
 <div class="wrap">
-  <div class="layout">
-    <!-- MAIN -->
-    <div>
-      <div class="card">
-        <div class="row">
-          <div>
-            <div style="font-weight:900;">Charts</div>
-            <div class="hint" id="status">—</div>
-            <div class="hint bad" id="err"></div>
-          </div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;">
-            <button class="secondary" id="reloadBtn" type="button">Ricarica</button>
-          </div>
-        </div>
-      </div>
-
-      <div class="card" style="margin-top:12px;">
-        <div class="row">
-          <div class="chip"><span class="hint">Giorni selezionati</span> <strong id="selDays">0</strong></div>
-          <div class="chip"><span class="hint">Range</span> <strong id="selRange">—</strong></div>
-        </div>
-      </div>
-
-      <div class="card" style="margin-top:12px;">
-        <div style="font-weight:900;">Tabella esplicativa (filtrata)</div>
-        <div class="hint">Tempi sempre in <span class="mono">hh:mm</span>. Clean PICK include 3060/3062 + 3040/3041/3042.</div>
-        <div id="tableWrap"></div>
-      </div>
-
-      <div class="grid2" style="margin-top:12px;">
-        <div class="card">
-          <div style="font-weight:900;">Distribuzione BIN — Pick</div>
-          <div class="chartBox"><canvas id="piePick"></canvas></div>
-        </div>
-        <div class="card">
-          <div style="font-weight:900;">Distribuzione BIN — Bulk</div>
-          <div class="chartBox"><canvas id="pieBulk"></canvas></div>
-        </div>
-      </div>
-
-      <div class="card" style="margin-top:12px;">
-        <div style="font-weight:900;">Produttività vs Cambi Task</div>
-        <div class="hint">Produttività proxy: <span class="mono">PI TPH + 2×WT TPH</span>.</div>
-        <div class="chartBoxTall"><canvas id="combo"></canvas></div>
-      </div>
-
-      <div class="card" style="margin-top:12px;">
-        <div style="font-weight:900;">Heatmap PI (Y=Ora 05–22, X=Corsia 01–50)</div>
-        <div id="heatPi" class="plotHeat"></div>
-      </div>
-
-      <div class="card" style="margin-top:12px;">
-        <div style="font-weight:900;">Heatmap Task (Y=Ora 05–22, X=Corsia 01–50)</div>
-        <div class="hint">Conteggio basato su corsia del <span class="mono">Source Bin</span> (per P2P conteggia anche Destination se presente).</div>
-        <div id="heatWt" class="plotHeat"></div>
-      </div>
+  <div class="card">
+    <div style="font-weight:900;">Charts & KPI (periodo selezionato)</div>
+    <div class="hint" id="selHint" style="margin-top:6px;"></div>
+    <div class="actions" style="margin-top:10px;">
+      <button id="reloadBtn" class="secondary" type="button">Ricarica</button>
+      <span class="hint">La selezione periodo è definita in Home (giorni/settimane/mesi).</span>
     </div>
 
-    <!-- SIDEBAR -->
-    <aside>
-      <div class="card">
-        <div style="font-weight:900;">Dataset presenti</div>
-        <div class="hint">Seleziona i giorni (e filtri PI/WT) nella sidebar. Se non vedi nulla, importa in Home.</div>
-
-        <div class="dsControls">
-          <button class="secondary" id="selAllBtn" type="button">Tutti</button>
-          <button class="secondary" id="sel7Btn" type="button">Ultimi 7</button>
-          <button class="secondary" id="clearSelBtn" type="button">Reset</button>
-        </div>
-
-        <div style="margin-top:10px;">
-          <label class="hint">Vista selezione</label>
-          <select id="selMode" style="width:100%;">
-            <option value="day" selected>Giorni</option>
-            <option value="week">Settimane</option>
-            <option value="month">Mesi</option>
-          </select>
-          <div class="hint" style="margin-top:6px;" id="selHelp">—</div>
-        </div>
-
-        <div id="dsWrap" style="margin-top:10px;"></div>
-      </div>
-    </aside>
+    <div id="kpiWrap"></div>
   </div>
+
+  <div class="grid2" style="margin-top:12px;">
+    <div class="card">
+      <div style="font-weight:900;">Bin contati — Pick</div>
+      <div class="chartBox"><canvas id="piePick"></canvas></div>
+    </div>
+    <div class="card">
+      <div style="font-weight:900;">Bin contati — Bulk</div>
+      <div class="chartBox"><canvas id="pieBulk"></canvas></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:12px;">
+    <div style="font-weight:900;">Produttività vs Cambi Task</div>
+    <div class="hint">Produttività proxy: (PI bins/h in PI) + 2×(WO/h in WT)</div>
+    <div class="chartBox"><canvas id="comboChart"></canvas></div>
+  </div>
+
+  <div class="card" style="margin-top:12px;">
+    <div style="font-weight:900;">Heatmap — PI (conte per corsia e ora)</div>
+    <div class="hint">Asse X: corsie 01–50 (primi due numeri dello Storage Bin). Asse Y: ore 05–22.</div>
+    <div id="heatPI" class="heatBox"></div>
+  </div>
+
+  <div class="card" style="margin-top:12px;">
+    <div style="font-weight:900;">Heatmap — Task (WT per corsia e ora)</div>
+    <div class="hint">Derivata da Source Bin (e per P2P anche Dest Bin se presente).</div>
+    <div id="heatWT" class="heatBox"></div>
+  </div>
+
+  <div class="hint" id="err" style="margin-top:12px;color:#ff6b6b;"></div>
 </div>
 
-<script type="module">
-  import {
-    loadSnapshot, computeAllDayKeys, listOperators, minToHHMM,
-    getSelection, setSelection, expandSelectionToDayKeys,
-    buildAggRows, buildChartsTableHTML,
-    buildAisleHourHeatmap, buildAisleHourHeatmapWT,
-    buildPieBins, buildComboSeries
-  } from './app-core.js';
-
+<script>
+  const Core = window.AppCore;
   const $ = (id)=>document.getElementById(id);
-  const setStatus = (t)=>{ $('status').textContent = t; };
-  const setErr = (t)=>{ $('err').textContent = t||''; };
+  let chartPiePick=null, chartPieBulk=null, chartCombo=null;
 
-  let chartPick=null, chartBulk=null, chartCombo=null;
-
-  function fmtDDMMYYYY(dayKey){
-    const d = new Date(dayKey+'T00:00:00');
-    const p=n=>String(n).padStart(2,'0');
-    return `${p(d.getDate())}-${p(d.getMonth()+1)}-${d.getFullYear()}`;
-  }
-  function updateSelSummary(dayKeys){
-    $('selDays').textContent = String(dayKeys.length);
-    if(!dayKeys.length){ $('selRange').textContent = '—'; return; }
-    $('selRange').textContent = `${fmtDDMMYYYY(dayKeys[0])} → ${fmtDDMMYYYY(dayKeys[dayKeys.length-1])}`;
+  function setErr(t){ $("err").textContent = t||""; }
+  function setSelHint(dayKeys){
+    if(!dayKeys.length){ $("selHint").textContent = "Nessun periodo selezionato. Vai su Home e seleziona almeno un giorno/settimana/mese."; return; }
+    $("selHint").textContent = `Giorni inclusi: ${dayKeys.length} (${Core.fmtDDMMYYYY(dayKeys[0])} → ${Core.fmtDDMMYYYY(dayKeys[dayKeys.length-1])})`;
   }
 
-  function groupKey(dayKey, mode){
-    const d = new Date(dayKey+'T00:00:00');
-    if(isNaN(d.getTime())) return dayKey;
-    if(mode==='month'){
-      const p=n=>String(n).padStart(2,'0');
-      return `${d.getFullYear()}-${p(d.getMonth()+1)}`;
-    }
-    if(mode==='week'){
-      // ISO week
-      const tmp = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
-      const dayNum = tmp.getUTCDay() || 7;
-      tmp.setUTCDate(tmp.getUTCDate() + 4 - dayNum);
-      const yearStart = new Date(Date.UTC(tmp.getUTCFullYear(),0,1));
-      const weekNo = Math.ceil((((tmp - yearStart) / 86400000) + 1)/7);
-      return `${tmp.getUTCFullYear()}-W${String(weekNo).padStart(2,'0')}`;
-    }
-    return dayKey;
-  }
-
-  function renderSidebar(allDays){
-    const sel = getSelection();
-    const mode = sel.mode || 'day';
-    $('selMode').value = mode;
-
-    const groups = new Map();
-    for(const dk of allDays){
-      const gk = groupKey(dk, mode);
-      if(!groups.has(gk)) groups.set(gk, []);
-      groups.get(gk).push(dk);
-    }
-    const gKeys = Array.from(groups.keys()).sort().reverse();
-
-    $('selHelp').textContent = mode==='day'
-      ? 'Spunta PI/WT per includere il giorno.'
-      : mode==='week'
-        ? 'Spunta una settimana: include tutti i giorni in quella settimana.'
-        : 'Spunta un mese: include tutti i giorni in quel mese.';
-
-    if(!allDays.length){
-      $('dsWrap').innerHTML = `<div class="hint">Nessun dataset salvato. Vai in Home e importa.</div>`;
+  function renderKpiTable(rows, dayKeys, perOpDay){
+    const wrap = $("kpiWrap");
+    wrap.innerHTML = "";
+    if(!rows.length){
+      wrap.innerHTML = `<div class="hint">Nessun dato per il periodo selezionato.</div>`;
       return;
     }
 
-    const selectedGroups = new Set(sel.groups || []);
-    const selectedDays = sel.days || {};
-
-    let html = `<table><thead><tr>`;
-    html += mode==='day'
-      ? `<th>Giorno</th><th style="text-align:center;">PI</th><th style="text-align:center;">WT</th>`
-      : `<th>${mode==='week'?'Settimana':'Mese'}</th><th style="text-align:center;">Includi</th><th class="hint">Dettaglio</th>`;
-    html += `</tr></thead><tbody>`;
-
-    if(mode==='day'){
-      const dayKeys = allDays.slice().sort().reverse();
+    // Turno: se su più giorni -> se tutti uguali mostra quello, altrimenti "MIX"
+    function shiftLabel(op){
+      const dm = perOpDay.get(op);
+      if(!dm) return "";
+      const codes = [];
       for(const dk of dayKeys){
-        const s = selectedDays[dk] || { pi:false, wt:false };
-        html += `
-          <tr>
-            <td class="mono">${fmtDDMMYYYY(dk)}</td>
-            <td style="text-align:center;"><input class="checkbox" type="checkbox" data-kind="pi" data-key="${dk}" ${s.pi?'checked':''}></td>
-            <td style="text-align:center;"><input class="checkbox" type="checkbox" data-kind="wt" data-key="${dk}" ${s.wt?'checked':''}></td>
-          </tr>`;
+        const d=dm.get(dk);
+        if(d) codes.push(d.shift.code);
       }
-    }else{
-      for(const gk of gKeys){
-        const days = groups.get(gk);
-        const checked = selectedGroups.has(gk);
-        const detail = `${fmtDDMMYYYY(days.slice().sort()[0])} → ${fmtDDMMYYYY(days.slice().sort()[days.length-1])} (${days.length} gg)`;
-        html += `
-          <tr>
-            <td class="mono">${gk}</td>
-            <td style="text-align:center;"><input class="checkbox" type="checkbox" data-gkey="${gk}" ${checked?'checked':''}></td>
-            <td class="hint">${detail}</td>
-          </tr>`;
-      }
+      const uniq = Array.from(new Set(codes));
+      return uniq.length===1 ? uniq[0] : "MIX";
     }
 
-    html += `</tbody></table>`;
-    $('dsWrap').innerHTML = html;
+    const table=document.createElement("table");
+    table.innerHTML = `
+      <thead>
+        <tr>
+          <th>Operatore</th>
+          <th>Giorni</th>
+          <th>Turno</th>
+          <th class="mono">T Lavoro</th>
+          <th class="mono">PI Pick (T)</th>
+          <th class="mono">PI Bulk (T)</th>
+          <th class="mono">P2P (T)</th>
+          <th class="mono">Clean (T)</th>
+          <th class="mono">WT Other (T)</th>
+          <th class="mono">Indiretto</th>
+          <th class="mono">Pausa</th>
+          <th>Bin Pick</th>
+          <th>Bin Bulk</th>
+          <th>WO P2P</th>
+          <th>WO Clean</th>
+          <th>WO Other</th>
+          <th>Cambi</th>
+          <th class="mono">T Target</th>
+          <th class="mono">Delta</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    `;
+    const tb = table.querySelector("tbody");
 
-    // handlers
-    if(mode==='day'){
-      $('dsWrap').querySelectorAll('input[type="checkbox"]').forEach(cb=>{
-        cb.addEventListener('change', ()=>{
-          const dk = cb.getAttribute('data-key');
-          const kind = cb.getAttribute('data-kind');
-          const selNow = getSelection();
-          selNow.mode = 'day';
-          selNow.groups = [];
-          selNow.days = selNow.days || {};
-          if(!selNow.days[dk]) selNow.days[dk] = { pi:false, wt:false };
-          selNow.days[dk][kind] = cb.checked;
-          if(!selNow.days[dk].pi && !selNow.days[dk].wt) delete selNow.days[dk];
-          setSelection(selNow);
-          run();
-        });
-      });
-    }else{
-      $('dsWrap').querySelectorAll('input[type="checkbox"]').forEach(cb=>{
-        cb.addEventListener('change', ()=>{
-          const gk = cb.getAttribute('data-gkey');
-          const selNow = getSelection();
-          selNow.mode = mode;
-          selNow.days = {};
-          const gs = new Set(selNow.groups || []);
-          if(cb.checked) gs.add(gk); else gs.delete(gk);
-          selNow.groups = Array.from(gs);
-          setSelection(selNow);
-          run();
-        });
-      });
+    for(const r of rows){
+      const tr=document.createElement("tr");
+      const delta = (r.actualMin - r.targetMin);
+      tr.innerHTML = `
+        <td>${r.operator}</td>
+        <td class="mono">${r.dayCount}</td>
+        <td class="mono">${shiftLabel(r.operator)}</td>
+        <td class="mono">${Core.minToHHMM(r.actualMin)}</td>
+
+        <td class="mono">${Core.minToHHMM(r.minPiPick)}</td>
+        <td class="mono">${Core.minToHHMM(r.minPiBulk)}</td>
+        <td class="mono">${Core.minToHHMM(r.minP2P)}</td>
+        <td class="mono">${Core.minToHHMM(r.minClean)}</td>
+        <td class="mono">${Core.minToHHMM(r.minOther)}</td>
+        <td class="mono">${Core.minToHHMM(r.minIndirect)}</td>
+        <td class="mono">${Core.minToHHMM(r.minPause)}</td>
+
+        <td class="mono">${r.piPickBins}</td>
+        <td class="mono">${r.piBulkBins}</td>
+        <td class="mono">${r.woP2P}</td>
+        <td class="mono">${r.woClean}</td>
+        <td class="mono">${r.woOther}</td>
+        <td class="mono">${r.switchCount}</td>
+
+        <td class="mono">${Core.minToHHMM(r.targetMin)}</td>
+        <td class="mono">${(delta>=0?"+":"") + Core.minToHHMM(Math.abs(delta))}</td>
+      `;
+      tb.appendChild(tr);
     }
+    wrap.appendChild(table);
   }
 
-  function setQuickSelection(kind, allDays){
-    const mode = $('selMode').value;
-    const selNow = getSelection();
-    selNow.mode = mode;
-    selNow.days = {};
-    selNow.groups = [];
-    if(kind==='clear'){
-      setSelection(selNow);
-      return;
-    }
-    if(mode==='day'){
-      const sorted = allDays.slice().sort();
-      const chosen = (kind==='all') ? sorted : sorted.slice(-7);
-      for(const dk of chosen){ selNow.days[dk] = { pi:true, wt:true }; }
-      setSelection(selNow);
-      return;
-    }
-    // week/month: select last N days expanded then transform to groups
-    const sorted = allDays.slice().sort();
-    const chosen = (kind==='all') ? sorted : sorted.slice(-7);
-    const gset = new Set();
-    for(const dk of chosen) gset.add(groupKey(dk, mode));
-    selNow.groups = Array.from(gset);
-    setSelection(selNow);
-  }
+  function renderPieCharts(rows){
+    const d = Core.buildPieData(rows);
+    if(chartPiePick) chartPiePick.destroy();
+    if(chartPieBulk) chartPieBulk.destroy();
 
-  function destroyIf(chart){ try{ chart?.destroy(); }catch{} }
-
-  function renderPies(rows){
-    const { labels, pick, bulk } = buildPieBins(rows);
-    destroyIf(chartPick);
-    destroyIf(chartBulk);
-    chartPick = new Chart($('piePick'), {
-      type:'pie',
-      data:{ labels, datasets:[{ data: pick }] },
-      options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'bottom' } } }
+    chartPiePick = new Chart(document.getElementById("piePick"), {
+      type:"doughnut",
+      data:{ labels:d.labels, datasets:[{ data:d.pick }] },
+      options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:"bottom" } } }
     });
-    chartBulk = new Chart($('pieBulk'), {
-      type:'pie',
-      data:{ labels, datasets:[{ data: bulk }] },
-      options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'bottom' } } }
+    chartPieBulk = new Chart(document.getElementById("pieBulk"), {
+      type:"doughnut",
+      data:{ labels:d.labels, datasets:[{ data:d.bulk }] },
+      options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:"bottom" } } }
     });
   }
 
-  function renderCombo(rows){
-    const { labels, prod, switches } = buildComboSeries(rows);
-    destroyIf(chartCombo);
-    chartCombo = new Chart($('combo'), {
+  function renderComboChart(rows){
+    const d = Core.buildProdVsSwitch(rows);
+    if(chartCombo) chartCombo.destroy();
+    chartCombo = new Chart(document.getElementById("comboChart"), {
       data:{
-        labels,
+        labels: d.labels,
         datasets:[
-          { type:'bar', label:'Produttività (PI tph + 2×WT tph)', data: prod, yAxisID:'y' },
-          { type:'line', label:'Cambi Task', data: switches, yAxisID:'y1' }
+          { type:"bar", label:"Produttività", data:d.prod, yAxisID:"y" },
+          { type:"line", label:"Cambi Task", data:d.switches, yAxisID:"y1" }
         ]
       },
       options:{
         responsive:true, maintainAspectRatio:false,
         scales:{
-          y:{ beginAtZero:true, title:{ display:true, text:'Produttività' } },
-          y1:{ beginAtZero:true, position:'right', grid:{ drawOnChartArea:false }, title:{ display:true, text:'Cambi' } }
+          y:{ beginAtZero:true, title:{ display:true, text:"Produttività" } },
+          y1:{ beginAtZero:true, position:"right", grid:{ drawOnChartArea:false }, title:{ display:true, text:"Cambi" } }
         },
-        plugins:{ legend:{ position:'bottom' } }
+        plugins:{ legend:{ position:"bottom" } }
       }
     });
   }
 
-  function renderHeatmaps(dayKeys){
-    const pi = buildAisleHourHeatmap(dayKeys);
-    const wt = buildAisleHourHeatmapWT(dayKeys);
-
-    const layout = (title)=>({
-      title:{ text:title, font:{ color:'#e8eefc', size:12 } },
-      paper_bgcolor:'rgba(0,0,0,0)', plot_bgcolor:'rgba(0,0,0,0)',
-      margin:{l:70,r:20,t:30,b:50},
-      xaxis:{ title:'Corsia (01–50)', color:'#a9b7d6' },
-      yaxis:{ title:'Ora (05–22)', color:'#a9b7d6' },
-      font:{ color:'#e8eefc' }
-    });
-
-    Plotly.newPlot('heatPi', [{
-      z: pi.z,
-      x: pi.x,
-      y: pi.y,
-      type:'heatmap',
-      hovertemplate:'Corsia=%{x}<br>Ora=%{y}<br>Conte=%{z}<extra></extra>'
-    }], layout('PI'), {displayModeBar:false, responsive:true});
-
-    Plotly.newPlot('heatWt', [{
-      z: wt.z,
-      x: wt.x,
-      y: wt.y,
-      type:'heatmap',
-      hovertemplate:'Corsia=%{x}<br>Ora=%{y}<br>Conte=%{z}<extra></extra>'
-    }], layout('WT (Task)'), {displayModeBar:false, responsive:true});
+  function renderHeat(divId, heat){
+    const data=[{ type:"heatmap", x:heat.x, y:heat.y, z:heat.z, hoverongaps:false }];
+    const layout={
+      margin:{l:50,r:10,t:10,b:40},
+      xaxis:{ title:"Corsia (01–50)", tickangle:-45, automargin:true },
+      yaxis:{ title:"Ora", automargin:true },
+      height:520
+    };
+    Plotly.newPlot(divId, data, layout, {displayModeBar:false, responsive:true});
   }
 
   async function run(){
-    setErr('');
-    setStatus('Caricamento snapshot…');
-    const res = await loadSnapshot();
-    if(!res.ok){
-      setStatus(res.msg || 'Nessun dataset salvato.');
-      $('tableWrap').innerHTML = `<div class="hint">Vai in Home e importa PI+WT, poi torna qui.</div>`;
-      $('dsWrap').innerHTML = `<div class="hint">—</div>`;
-      updateSelSummary([]);
-      try{ Plotly.purge('heatPi'); Plotly.purge('heatWt'); }catch{}
-      return;
+    try{
+      setErr("");
+      const sel = Core.getSelection();
+      const res = await Core.computeAggregatesForSelection(sel);
+      setSelHint(res.dayKeys);
+
+      renderKpiTable(res.rows, res.dayKeys, res.perOpDay);
+      renderPieCharts(res.rows);
+      renderComboChart(res.rows);
+
+      // heatmaps use raw events filtered
+      const evRaw = await Core.fetchEvents(res.dayKeys);
+      const ev = Core.filterEventsBySelection(evRaw, sel);
+
+      const heatPI = Core.buildHeatAisleHour(ev, "PI");
+      const heatWT = Core.buildHeatAisleHour(ev, "WT");
+
+      renderHeat("heatPI", heatPI);
+      renderHeat("heatWT", heatWT);
+
+    }catch(e){
+      console.error(e);
+      setErr(e.message || String(e));
     }
-    const allDays = computeAllDayKeys();
-    renderSidebar(allDays);
-
-    const dayKeys = expandSelectionToDayKeys(allDays);
-    updateSelSummary(dayKeys);
-
-    if(!dayKeys.length){
-      setStatus('Nessun giorno selezionato.');
-      $('tableWrap').innerHTML = `<div class="hint">Seleziona almeno un giorno nella sidebar.</div>`;
-      try{ Plotly.purge('heatPi'); Plotly.purge('heatWt'); }catch{}
-      return;
-    }
-    setStatus('Calcolo KPI…');
-
-    const rows = buildAggRows(dayKeys);
-    $('tableWrap').innerHTML = buildChartsTableHTML(dayKeys, rows, { includeDays:true });
-
-    renderPies(rows);
-    renderCombo(rows);
-    renderHeatmaps(dayKeys);
-    setStatus(`OK. Snapshot: ${new Date(res.savedAt).toLocaleString()}`);
   }
 
-  // events
-  $('reloadBtn').addEventListener('click', run);
-  $('selMode').addEventListener('change', async ()=>{
-    const sel = getSelection();
-    sel.mode = $('selMode').value;
-    sel.days = {};
-    sel.groups = [];
-    setSelection(sel);
-    run();
-  });
-  $('clearSelBtn').addEventListener('click', async ()=>{
-    const sel = getSelection();
-    sel.days = {}; sel.groups = []; sel.mode = $('selMode').value;
-    setSelection(sel);
-    run();
-  });
-  $('selAllBtn').addEventListener('click', async ()=>{
-    const res = await loadSnapshot();
-    if(!res.ok) return run();
-    const allDays = computeAllDayKeys();
-    setQuickSelection('all', allDays);
-    run();
-  });
-  $('sel7Btn').addEventListener('click', async ()=>{
-    const res = await loadSnapshot();
-    if(!res.ok) return run();
-    const allDays = computeAllDayKeys();
-    setQuickSelection('last7', allDays);
-    run();
-  });
-
+  $("reloadBtn").addEventListener("click", run);
   run();
 </script>
-
 </body>
 </html>
