@@ -9,7 +9,8 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
   <!-- Supabase JS via CDN -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+
 
   <style>
     body{font-family:system-ui,Segoe UI,Roboto,Arial;margin:0;background:#0b1220;color:#e8eefc;}
@@ -80,14 +81,16 @@
 /** =======================
  *  CONFIG: inserisci i tuoi
  * ======================= */
-const SUPABASE_URL = "https://YOUR_PROJECT_REF.supabase.co";
+const SUPABASE_URL = "https://jslonbsvrtltfnrpneqw.supabase.co";
 const SUPABASE_ANON_KEY = "YOUR_ANON_KEY";
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
 
 /** Operators di interesse */
 const INTEREST_OPERATORS = new Set(["A.BEJAN","M.HAYAT","L.VUONO","S.ANASS","S.RODRIGUE."]);
 
 /** Supabase client (browser) */
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); // :contentReference[oaicite:6]{index=6}
+const supabase = window.supabase.createClient(https://jslonbsvrtltfnrpneqw.supabase.co, sb_publishable_OZZhrdcM8Zh3eXcqTdcljw_ZY4faGvl); // :contentReference[oaicite:6]{index=6}
 
 /** Helpers */
 const $ = (id)=>document.getElementById(id);
@@ -324,4 +327,3 @@ $("refreshBtn").addEventListener("click", loadDatasets);
 </script>
 </body>
 </html>
-
