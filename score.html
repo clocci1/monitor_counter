@@ -5,81 +5,253 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Score — Produttività</title>
 
+  <!-- Supabase JS (UMD) -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-  <script type="module" src="app-core.js"></script>
-
 
   <style>
-    body{font-family:system-ui,Segoe UI,Roboto,Arial;margin:0;background:#0b1220;color:#e8eefc;}
-    header{padding:14px 18px;border-bottom:1px solid rgba(255,255,255,.12);}
-    nav a{color:#e8eefc;text-decoration:none;margin-right:12px;font-weight:800;}
-    .wrap{max-width:1300px;margin:0 auto;padding:16px 18px;}
-    .card{background:#111a2e;border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:14px;margin:12px 0;}
-    table{width:100%;border-collapse:collapse;margin-top:10px;font-size:12px;}
-    th,td{padding:8px;border-bottom:1px solid rgba(255,255,255,.12);vertical-align:top;}
-    th{color:#a9b7d6;text-align:left;}
-    .hint{color:#a9b7d6;font-size:12px;}
+    :root{
+      --bg:#0b1220;
+      --card:#111a2e;
+      --border:rgba(255,255,255,.12);
+      --muted:#a9b7d6;
+      --text:#e8eefc;
+      --btn:#6ea8fe;
+      --bad:#ff6b6b;
+    }
+    body{font-family:system-ui,Segoe UI,Roboto,Arial;margin:0;background:var(--bg);color:var(--text);}
+    header{padding:14px 18px;border-bottom:1px solid var(--border);}
+    nav a{color:var(--text);text-decoration:none;margin-right:12px;font-weight:800;}
+
+    .wrap{max-width:1500px;margin:0 auto;padding:16px 18px;}
+    .layout{display:grid;grid-template-columns:1fr 360px;gap:12px;}
+    @media(max-width:1100px){.layout{grid-template-columns:1fr;}}
+
+    .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;}
+    .hint{color:var(--muted);font-size:12px;}
+    .bad{color:var(--bad);}
     .mono{font-variant-numeric:tabular-nums;}
-    button{border-radius:10px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.10);color:#e8eefc;padding:10px;cursor:pointer;font-weight:900;}
+
+    table{width:100%;border-collapse:collapse;margin-top:10px;font-size:12px;}
+    th,td{padding:8px;border-bottom:1px solid var(--border);vertical-align:top;}
+    th{color:var(--muted);text-align:left;}
+
+    button,input{border-radius:10px;border:1px solid var(--border);background:rgba(255,255,255,.06);color:var(--text);padding:10px;}
+    button{background:var(--btn);color:#0b1220;border:0;font-weight:900;cursor:pointer;}
+    button.secondary{background:rgba(255,255,255,.10);color:var(--text);border:1px solid var(--border);}
+    button.small{padding:6px 8px;font-size:12px;border-radius:8px;}
   </style>
 </head>
+
 <body>
 <header>
   <nav>
-    <a href="home.html">Home</a>
+    <a href="index.html">Home</a>
     <a href="charts.html">Charts</a>
     <a href="score.html">Score</a>
   </nav>
 </header>
 
 <div class="wrap">
-  <div class="card">
-    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
-      <div style="font-weight:900;">Score</div>
-      <button id="reloadBtn" type="button">Ricarica dataset selezionato</button>
-    </div>
-    <div class="hint" id="status">—</div>
-    <div class="hint" id="err" style="color:#ff6b6b;"></div>
-  </div>
+  <div class="layout">
+    <!-- MAIN -->
+    <div>
+      <div class="card">
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:space-between;">
+          <div>
+            <div style="font-weight:900;">Score</div>
+            <div class="hint" id="status">—</div>
+            <div class="hint bad" id="err"></div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button id="reloadBtn" type="button">Ricalcola</button>
+          </div>
+        </div>
+      </div>
 
-  <div class="card">
-    <div style="font-weight:900;">KPI base per operatore (conteggi)</div>
-    <div id="wrap"></div>
+      <div class="card">
+        <div style="font-weight:900;">KPI base per operatore (aggregati sui giorni selezionati)</div>
+        <div class="hint">Rispetta le checkbox PI/WT per ogni giorno nel pannello a destra.</div>
+        <div id="wrap"></div>
+      </div>
+    </div>
+
+    <!-- SIDEBAR -->
+    <div>
+      <div class="card">
+        <div style="font-weight:900;">Dataset presenti</div>
+        <div class="hint" style="margin-top:4px;">Spunta PI/WT per includere quel giorno nell’analisi.</div>
+
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
+          <button class="secondary small" id="clearSelBtn" type="button">Reset</button>
+          <button class="secondary small" id="sel7Btn" type="button">Ultimi 7</button>
+          <button class="secondary small" id="selAllBtn" type="button">Tutti</button>
+        </div>
+        <div class="hint" id="selSummary" style="margin-top:8px;"></div>
+        <div id="dsWrap"></div>
+      </div>
+    </div>
   </div>
 </div>
 
 <script>
+/** =======================
+ *  CONFIG SUPABASE
+ * ======================= */
 const SUPABASE_URL = "https://jslonbsvrtltfnrpneqw.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_OZZhrdcM8Zh3eXcqTdcljw_ZY4faGvl";
-const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const SUPABASE_ANON_KEY = "YOUR_ANON_KEY";
 
-console.log("Supabase client score OK?", sb);
+// Se nella tabella `events` la colonna dell'operatore NON si chiama `operator`,
+// cambia qui (esempio: "src operator").
+const EVENTS_OPERATOR_COL = "operator";
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+function opSelect(){
+  return EVENTS_OPERATOR_COL.includes(' ') ? `"${EVENTS_OPERATOR_COL}"` : EVENTS_OPERATOR_COL;
+}
 
+function opSelect(){
+  return EVENTS_OPERATOR_COL.includes(' ') ? `"${EVENTS_OPERATOR_COL}"` : EVENTS_OPERATOR_COL;
+}
+
+/** Utilities */
 const $ = (id)=>document.getElementById(id);
 function setStatus(t){ $("status").textContent=t; }
 function setErr(t){ $("err").textContent=t||""; }
-
-async function loadAllEvents(datasetId){
-  // Nota: se dataset grandi, si può paginare. Per ora semplice.
-  const { data, error } = await sb
-    .from("events")
-    .select("operator, kind, category, self_count, wo_id")
-    .eq("dataset_id", datasetId);
-
-  if(error) throw new Error(error.message);
-  return data || [];
+function fmtDDMMYYYY(dayKey){
+  const d = new Date(dayKey + "T00:00:00");
+  if(isNaN(d.getTime())) return dayKey;
+  const p=n=>String(n).padStart(2,'0');
+  return `${p(d.getDate())}-${p(d.getMonth()+1)}-${d.getFullYear()}`;
+}
+function fmtDT(iso){
+  const d=new Date(iso);
+  if(isNaN(d.getTime())) return iso||'';
+  const p=n=>String(n).padStart(2,'0');
+  return `${p(d.getDate())}-${p(d.getMonth()+1)}-${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-function render(events){
-  const wrap = $("wrap");
-  wrap.innerHTML = "";
-  if(!events.length){
-    wrap.innerHTML = `<div class="hint">Nessun evento nel dataset.</div>`;
+/** Selection map: { [day_key]: {pi:boolean, wt:boolean} } */
+function getSelection(){
+  try{
+    const raw = localStorage.getItem('selectedDays');
+    const obj = raw ? JSON.parse(raw) : {};
+    return (obj && typeof obj==='object') ? obj : {};
+  }catch{ return {}; }
+}
+function setSelection(obj){
+  localStorage.setItem('selectedDays', JSON.stringify(obj||{}));
+}
+function selectionToDayKeys(sel){
+  return Object.keys(sel||{}).filter(dk => !!sel[dk] && (sel[dk].pi || sel[dk].wt)).sort();
+}
+function updateSelSummary(){
+  const sel=getSelection();
+  const keys=selectionToDayKeys(sel);
+  if(!keys.length){ $("selSummary").textContent = "Nessun giorno selezionato."; return; }
+  $("selSummary").textContent = `Selezionati: ${keys.length} giorni (${fmtDDMMYYYY(keys[0])} → ${fmtDDMMYYYY(keys[keys.length-1])})`;
+}
+
+/** Sidebar datasets */
+async function loadDatasets(){
+  setErr('');
+  const { data, error } = await supabase
+    .from('datasets')
+    .select('id, day_key, label, created_at, pi_rows, wt_rows')
+    .order('day_key', { ascending:false });
+  if(error) throw new Error(error.message);
+
+  const wrap = $("dsWrap");
+  if(!data || !data.length){
+    wrap.innerHTML = `<div class="hint">Nessun dataset.</div>`;
     return;
   }
 
-  const ops = Array.from(new Set(events.map(e=>e.operator))).sort();
+  const sel = getSelection();
+  const rows = data.map(d=>{
+    const dk = d.day_key;
+    const piOk = (d.pi_rows||0) > 0;
+    const wtOk = (d.wt_rows||0) > 0;
+    const s = sel[dk] || { pi:false, wt:false };
+    const disPi = piOk ? '' : 'disabled';
+    const disWt = wtOk ? '' : 'disabled';
+
+    return `
+      <tr>
+        <td class="mono">${fmtDDMMYYYY(dk)}</td>
+        <td class="mono">${fmtDT(d.created_at)}</td>
+        <td style="text-align:center;">
+          <input type="checkbox" data-day="${dk}" data-kind="pi" ${s.pi?'checked':''} ${disPi} />
+        </td>
+        <td style="text-align:center;">
+          <input type="checkbox" data-day="${dk}" data-kind="wt" ${s.wt?'checked':''} ${disWt} />
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  wrap.innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Load Day</th>
+          <th>PI</th>
+          <th>WT</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+
+  wrap.querySelectorAll('input[type="checkbox"]').forEach(ch =>{
+    ch.addEventListener('change', ()=>{
+      const dk = ch.getAttribute('data-day');
+      const kind = ch.getAttribute('data-kind');
+      const sel = getSelection();
+      sel[dk] = sel[dk] || { pi:false, wt:false };
+      sel[dk][kind] = ch.checked;
+      if(!sel[dk].pi && !sel[dk].wt) delete sel[dk];
+      setSelection(sel);
+      updateSelSummary();
+      run();
+    });
+  });
+}
+
+/** =======================
+ *  SCORE KPI (semplice)
+ * ======================= */
+async function loadEventsForSelection(){
+  const sel=getSelection();
+  const dayKeys=selectionToDayKeys(sel);
+  if(!dayKeys.length) return [];
+
+  // NB: supabase .in() non accetta array vuoti, qui siamo ok.
+  const { data, error } = await supabase
+    .from('events')
+    .select(`day_key, ${opSelect()}, kind, category, self_count, wo_id`)
+    .in('day_key', dayKeys);
+  if(error) throw new Error(error.message);
+
+  // Applica filtro PI/WT day-by-day
+  return (data||[]).filter(e=>{
+    const s = sel[e.day_key];
+    if(!s) return false;
+    if(e.kind==='PI') return !!s.pi;
+    if(e.kind==='WT') return !!s.wt;
+    return false;
+  });
+}
+
+function renderKpiTable(events){
+  const wrap = $("wrap");
+  wrap.innerHTML = "";
+  if(!events.length){
+    wrap.innerHTML = `<div class="hint">Nessun evento nei giorni selezionati.</div>`;
+    return;
+  }
+
+  const ops = Array.from(new Set(events.map(e=>e[EVENTS_OPERATOR_COL]))).sort();
   const agg = new Map();
   for(const op of ops){
     agg.set(op, {
@@ -90,21 +262,21 @@ function render(events){
   }
 
   for(const e of events){
-    const a = agg.get(e.operator);
+    const a = agg.get(e[EVENTS_OPERATOR_COL]);
     if(!a) continue;
-    if(e.kind==="PI"){
-      if(e.category==="PI Pick") a.piPick++;
-      else if(e.category==="PI Bulk") a.piBulk++;
+    if(e.kind==='PI'){
+      if(e.category==='PI Pick') a.piPick++;
+      else if(e.category==='PI Bulk') a.piBulk++;
       if(e.self_count) a.selfCount++;
-    }else if(e.kind==="WT"){
-      if(e.category==="P2P") a.p2p++;
-      else if(e.category==="Clean PICK") a.clean++;
+    }else if(e.kind==='WT'){
+      if(e.category==='P2P') a.p2p++;
+      else if(e.category==='Clean PICK') a.clean++;
       else a.wtOther++;
       if(e.wo_id) a.woSet.add(e.wo_id);
     }
   }
 
-  const table = document.createElement("table");
+  const table = document.createElement('table');
   table.innerHTML = `
     <thead>
       <tr>
@@ -120,10 +292,10 @@ function render(events){
     </thead>
     <tbody></tbody>
   `;
-  const tb = table.querySelector("tbody");
+  const tb = table.querySelector('tbody');
 
   for(const [op, a] of agg.entries()){
-    const tr = document.createElement("tr");
+    const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>${op}</td>
       <td class="mono">${a.piPick}</td>
@@ -141,20 +313,65 @@ function render(events){
 }
 
 async function run(){
-  setErr("");
-  const datasetId = localStorage.getItem("activeDataset");
-  if(!datasetId){
-    setStatus("Nessun dataset selezionato. Vai in Home e seleziona un dataset.");
-    return;
+  try{
+    setErr('');
+    const sel=getSelection();
+    const keys=selectionToDayKeys(sel);
+    if(!keys.length){
+      setStatus('Seleziona almeno un giorno dalla sidebar.');
+      renderKpiTable([]);
+      return;
+    }
+    setStatus('Caricamento eventi…');
+    const ev = await loadEventsForSelection();
+    renderKpiTable(ev);
+    setStatus('OK.');
+  }catch(e){
+    console.error(e);
+    setErr(e.message);
+    setStatus('Errore');
   }
-  setStatus("Caricamento eventi…");
-  const events = await loadAllEvents(datasetId);
-  render(events);
-  setStatus("OK.");
 }
 
-$("reloadBtn").addEventListener("click", ()=>run().catch(e=>{console.error(e); setErr(e.message); setStatus("Errore");}));
-run().catch(e=>{console.error(e); setErr(e.message); setStatus("Errore");});
+// Sidebar quick selections
+$("clearSelBtn").addEventListener('click', async ()=>{
+  setSelection({});
+  updateSelSummary();
+  await loadDatasets();
+  run();
+});
+$("selAllBtn").addEventListener('click', async ()=>{
+  const { data } = await supabase.from('datasets').select('day_key, pi_rows, wt_rows');
+  const out={};
+  for(const d of (data||[])) out[d.day_key] = { pi:(d.pi_rows||0)>0, wt:(d.wt_rows||0)>0 };
+  setSelection(out);
+  updateSelSummary();
+  await loadDatasets();
+  run();
+});
+$("sel7Btn").addEventListener('click', async ()=>{
+  const { data } = await supabase.from('datasets').select('day_key, pi_rows, wt_rows').order('day_key',{ascending:false}).limit(7);
+  const out={};
+  for(const d of (data||[])) out[d.day_key] = { pi:(d.pi_rows||0)>0, wt:(d.wt_rows||0)>0 };
+  setSelection(out);
+  updateSelSummary();
+  await loadDatasets();
+  run();
+});
+$("reloadBtn").addEventListener('click', ()=> run());
+
+(async function boot(){
+  try{
+    setStatus('Caricamento dataset…');
+    await loadDatasets();
+    updateSelSummary();
+    await run();
+  }catch(e){
+    console.error(e);
+    setErr(e.message);
+    setStatus('Errore');
+  }
+})();
 </script>
 </body>
 </html>

@@ -4,77 +4,238 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Charts — Produttività</title>
-	
-	<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js"></script>
+
+  <!-- Supabase JS (UMD) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js"></script>
 
   <style>
-    body{font-family:system-ui,Segoe UI,Roboto,Arial;margin:0;background:#0b1220;color:#e8eefc;}
-    header{padding:14px 18px;border-bottom:1px solid rgba(255,255,255,.12);}
-    nav a{color:#e8eefc;text-decoration:none;margin-right:12px;font-weight:800;}
-    .wrap{max-width:1300px;margin:0 auto;padding:16px 18px;}
-    .card{background:#111a2e;border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:14px;margin:12px 0;}
-    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
-    @media(max-width:980px){.grid2{grid-template-columns:1fr;}}
-    .hint{color:#a9b7d6;font-size:12px;}
+    :root{
+      --bg:#0b1220;
+      --card:#111a2e;
+      --border:rgba(255,255,255,.12);
+      --muted:#a9b7d6;
+      --text:#e8eefc;
+      --btn:#6ea8fe;
+      --bad:#ff6b6b;
+    }
+    body{font-family:system-ui,Segoe UI,Roboto,Arial;margin:0;background:var(--bg);color:var(--text);}
+    header{padding:14px 18px;border-bottom:1px solid var(--border);}
+    nav a{color:var(--text);text-decoration:none;margin-right:12px;font-weight:800;}
+
+    .wrap{max-width:1500px;margin:0 auto;padding:16px 18px;}
+    .layout{display:grid;grid-template-columns:1fr 360px;gap:12px;}
+    @media(max-width:1100px){.layout{grid-template-columns:1fr;}}
+
+    .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;}
+    .hint{color:var(--muted);font-size:12px;}
+    .bad{color:var(--bad);}
+    .mono{font-variant-numeric:tabular-nums;}
     .plot{height:420px;}
-    input,button{border-radius:10px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:#e8eefc;padding:10px;}
-    button{background:#6ea8fe;color:#0b1220;border:0;font-weight:900;cursor:pointer;}
-    button.secondary{background:rgba(255,255,255,.10);color:#e8eefc;border:1px solid rgba(255,255,255,.12);}
-    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;}
+
+    table{width:100%;border-collapse:collapse;margin-top:10px;font-size:12px;}
+    th,td{padding:8px;border-bottom:1px solid var(--border);vertical-align:top;}
+    th{color:var(--muted);text-align:left;}
+
+    button,input{border-radius:10px;border:1px solid var(--border);background:rgba(255,255,255,.06);color:var(--text);padding:10px;}
+    button{background:var(--btn);color:var(--bg);border:0;font-weight:900;cursor:pointer;}
+    button.secondary{background:rgba(255,255,255,.10);color:var(--text);border:1px solid var(--border);}
+
+    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between;}
+    .chip{display:inline-flex;gap:6px;align-items:center;border:1px solid var(--border);border-radius:999px;padding:6px 10px;background:rgba(255,255,255,.06);}
+    .chip strong{font-weight:900;}
+
+    .dsControls{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
+    .dsControls button{padding:8px 10px;font-size:12px;}
+    .checkbox{transform:scale(1.05);}
   </style>
 </head>
+
 <body>
 <header>
   <nav>
-    <a href="home.html">Home</a>
+    <a href="index.html">Home</a>
     <a href="charts.html">Charts</a>
     <a href="score.html">Score</a>
   </nav>
 </header>
 
 <div class="wrap">
-  <div class="card">
-    <div class="row">
-      <div style="font-weight:900;">Charts</div>
-      <button class="secondary" id="useDsBtn" type="button">Usa dataset da Home</button>
-    </div>
-    <div class="hint" id="status">—</div>
-    <div class="hint" id="err" style="color:#ff6b6b;"></div>
-  </div>
+  <div class="layout">
+    <!-- MAIN -->
+    <div>
+      <div class="card">
+        <div class="row">
+          <div style="font-weight:900;">Charts</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="secondary" id="reloadBtn" type="button">Ricarica</button>
+          </div>
+        </div>
+        <div class="hint" id="status">—</div>
+        <div class="hint bad" id="err" style="margin-top:6px;"></div>
+      </div>
 
-  <div class="grid2">
-    <div class="card">
-      <div style="font-weight:900;">Heatmap conte PI per ora (X=operatore, Y=05–22)</div>
-      <div id="heatHour" class="plot"></div>
+      <div class="card" style="margin-top:12px;">
+        <div class="row">
+          <div class="chip"><span class="hint">Giorni selezionati</span> <strong id="selDays">0</strong></div>
+          <div class="chip"><span class="hint">PI attivo</span> <strong id="selPiDays">0</strong></div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;">
+        <div class="card">
+          <div style="font-weight:900;">Heatmap conte PI per ora (X=operatore, Y=05–22)</div>
+          <div id="heatHour" class="plot"></div>
+        </div>
+        <div class="card">
+          <div style="font-weight:900;">Heatmap conte PI per corsia (X=operatore, Y=01–50)</div>
+          <div id="heatLane" class="plot"></div>
+        </div>
+      </div>
     </div>
-    <div class="card">
-      <div style="font-weight:900;">Heatmap conte PI per corsia (X=operatore, Y=01–50)</div>
-      <div id="heatLane" class="plot"></div>
-    </div>
+
+    <!-- SIDEBAR -->
+    <aside>
+      <div class="card">
+        <div style="font-weight:900;">Dataset presenti</div>
+        <div class="hint">Seleziona i giorni e (facoltativo) abilita PI/WT per ogni giorno.</div>
+
+        <div class="dsControls">
+          <button class="secondary" id="selAllBtn" type="button">Seleziona tutto</button>
+          <button class="secondary" id="sel7Btn" type="button">Ultimi 7</button>
+          <button class="secondary" id="clearSelBtn" type="button">Svuota</button>
+        </div>
+
+        <div id="dsWrap"></div>
+      </div>
+    </aside>
   </div>
 </div>
 
 <script>
-
+/** =======================
+ *  CONFIG (stessi valori di Home)
+ * ======================= */
 const SUPABASE_URL = "https://jslonbsvrtltfnrpneqw.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_OZZhrdcM8Zh3eXcqTdcljw_ZY4faGvl";
-const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const SUPABASE_ANON_KEY = "YOUR_ANON_KEY";
 
-console.log("Supabase client charts OK?", sb);
+// Se nella tabella `events` la colonna dell'operatore NON si chiama `operator`,
+// cambia qui (esempio: "src operator").
+const EVENTS_OPERATOR_COL = "operator";
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+function opSelect(){
+  return EVENTS_OPERATOR_COL.includes(' ') ? `"${EVENTS_OPERATOR_COL}"` : EVENTS_OPERATOR_COL;
+}
 
 const $ = (id)=>document.getElementById(id);
-function setStatus(t){ $("status").textContent=t; }
-function setErr(t){ $("err").textContent=t||""; }
+function setStatus(t){ $("status").textContent = t; }
+function setErr(t){ $("err").textContent = t || ""; }
 
+/** =======================
+ *  SELECTION STATE
+ *  { [day_key]: { pi:boolean, wt:boolean } }
+ * ======================= */
+function getSelection(){
+  try{ return JSON.parse(localStorage.getItem('selectedDays')||'{}') || {}; }
+  catch{ return {}; }
+}
+function setSelection(sel){
+  localStorage.setItem('selectedDays', JSON.stringify(sel||{}));
+}
+
+function ddmmyyyy(dayKey){
+  const d = new Date(dayKey + 'T00:00:00');
+  const p = n => String(n).padStart(2,'0');
+  return `${p(d.getDate())}-${p(d.getMonth()+1)}-${d.getFullYear()}`;
+}
+
+function updateSelSummary(){
+  const sel = getSelection();
+  const dayKeys = Object.keys(sel).sort();
+  const piDays = dayKeys.filter(dk => !!sel[dk]?.pi);
+  $("selDays").textContent = String(dayKeys.length);
+  $("selPiDays").textContent = String(piDays.length);
+}
+
+/** =======================
+ *  DATASET SIDEBAR
+ * ======================= */
+async function loadDatasets(){
+  const { data, error } = await supabase
+    .from('datasets')
+    .select('id, day_key, created_at, label, pi_rows, wt_rows')
+    .order('day_key', {ascending:false});
+  if(error) throw new Error(error.message);
+
+  const wrap = $("dsWrap");
+  const sel = getSelection();
+
+  if(!data || !data.length){
+    wrap.innerHTML = `<div class="hint">Nessun dataset.</div>`;
+    return;
+  }
+
+  const rows = data.map(d=>{
+    const dk = d.day_key;
+    const s = sel[dk] || { pi:false, wt:false };
+    const canPi = (d.pi_rows||0) > 0;
+    const canWt = (d.wt_rows||0) > 0;
+    const piChecked = !!s.pi;
+    const wtChecked = !!s.wt;
+
+    return `
+      <tr>
+        <td class="mono">${dk ? ddmmyyyy(dk) : (d.label||'—')}</td>
+        <td class="mono">${(d.created_at||'').replace('T',' ').slice(0,16)}</td>
+        <td style="text-align:center;">
+          <input class="checkbox" type="checkbox" data-day="${dk}" data-kind="pi" ${canPi?'':'disabled'} ${piChecked?'checked':''}>
+        </td>
+        <td style="text-align:center;">
+          <input class="checkbox" type="checkbox" data-day="${dk}" data-kind="wt" ${canWt?'':'disabled'} ${wtChecked?'checked':''}>
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  wrap.innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Load Day</th>
+          <th>PI</th>
+          <th>WT</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+
+  wrap.querySelectorAll('input[type="checkbox"]').forEach(cb=>{
+    cb.addEventListener('change', ()=>{
+      const day = cb.getAttribute('data-day');
+      const kind = cb.getAttribute('data-kind');
+      const selNow = getSelection();
+      if(!selNow[day]) selNow[day] = { pi:false, wt:false };
+      selNow[day][kind] = cb.checked;
+      // se entrambi false => rimuovo la riga (pulito)
+      if(!selNow[day].pi && !selNow[day].wt) delete selNow[day];
+      setSelection(selNow);
+      updateSelSummary();
+    });
+  });
+}
+
+/** =======================
+ *  CHARTS
+ * ======================= */
 function buildHeatmap(ops, yLabels, rows, rowToKeyFn){
   const z = yLabels.map(()=> ops.map(()=>0));
   const yIndex = new Map(yLabels.map((v,i)=>[String(v), i]));
   const xIndex = new Map(ops.map((v,i)=>[v, i]));
-
   for(const r of rows){
-    const x = r.operator;
+    const x = r[EVENTS_OPERATOR_COL];
     const yk = rowToKeyFn(r);
     const xi = xIndex.get(x);
     const yi = yIndex.get(String(yk));
@@ -84,76 +245,115 @@ function buildHeatmap(ops, yLabels, rows, rowToKeyFn){
   return z;
 }
 
-async function loadPiRows(datasetId){
-  // Carichiamo solo PI con lane valorizzata
-  const { data, error } = await sb
-    .from("events")
-    .select("operator, ts, lane")
-    .eq("dataset_id", datasetId)
-    .eq("kind", "PI")
-    .not("lane", "is", null);
+async function loadPiRowsForSelectedDays(){
+  const sel = getSelection();
+  const dayKeys = Object.keys(sel).filter(dk => !!sel[dk]?.pi).sort();
+  if(!dayKeys.length) return [];
 
+  const { data, error } = await supabase
+    .from('events')
+    .select(`day_key, ts, lane, ${opSelect()}`)
+    .in('day_key', dayKeys)
+    .eq('kind', 'PI')
+    .not('lane','is', null);
   if(error) throw new Error(error.message);
   return data || [];
 }
 
 function renderHeatmaps(piRows){
-  const ops = Array.from(new Set(piRows.map(r=>r.operator))).sort();
+  const ops = Array.from(new Set(piRows.map(r=>r[EVENTS_OPERATOR_COL]))).sort();
   if(!ops.length){
-    Plotly.purge("heatHour"); Plotly.purge("heatLane");
-    setStatus("Nessun dato PI con corsia (lane) nel dataset.");
+    Plotly.purge('heatHour');
+    Plotly.purge('heatLane');
+    setStatus('Nessun dato PI con lane nei giorni selezionati.');
     return;
   }
 
   // hours 05-22
   const hours = [];
-  for(let h=5; h<=22; h++) hours.push(String(h).padStart(2,"0")+":00");
-  const hourKey = (r)=> {
+  for(let h=5; h<=22; h++) hours.push(String(h).padStart(2,'0')+':00');
+  const hourKey = (r)=>{
     const dt = new Date(r.ts);
     const h = dt.getHours();
     if(h<5 || h>22) return null;
-    return String(h).padStart(2,"0")+":00";
+    return String(h).padStart(2,'0')+':00';
   };
   const zH = buildHeatmap(ops, hours, piRows, hourKey);
-
-  Plotly.newPlot("heatHour", [{
-    z:zH, x:ops, y:hours, type:"heatmap",
-    hovertemplate:"%{x}<br>%{y}<br>Conte=%{z}<extra></extra>"
+  Plotly.newPlot('heatHour', [{
+    z:zH, x:ops, y:hours, type:'heatmap',
+    hovertemplate:'%{x}<br>%{y}<br>Conte=%{z}<extra></extra>'
   }], {
-    paper_bgcolor:"rgba(0,0,0,0)", plot_bgcolor:"rgba(0,0,0,0)",
-    margin:{l:70,r:20,t:10,b:80}, font:{color:"#e8eefc"}
+    paper_bgcolor:'rgba(0,0,0,0)', plot_bgcolor:'rgba(0,0,0,0)',
+    margin:{l:70,r:20,t:10,b:80}, font:{color:'#e8eefc'}
   }, {displayModeBar:false, responsive:true});
 
   // lanes 01-50
   const lanes = [];
-  for(let l=1;l<=50;l++) lanes.push(String(l).padStart(2,"0"));
-  const laneKey = (r)=> String(r.lane).padStart(2,"0");
+  for(let l=1; l<=50; l++) lanes.push(String(l).padStart(2,'0'));
+  const laneKey = (r)=> String(r.lane).padStart(2,'0');
   const zL = buildHeatmap(ops, lanes, piRows, laneKey);
-
-  Plotly.newPlot("heatLane", [{
-    z:zL, x:ops, y:lanes, type:"heatmap",
-    hovertemplate:"%{x}<br>Corsia=%{y}<br>Conte=%{z}<extra></extra>"
+  Plotly.newPlot('heatLane', [{
+    z:zL, x:ops, y:lanes, type:'heatmap',
+    hovertemplate:'%{x}<br>Corsia=%{y}<br>Conte=%{z}<extra></extra>'
   }], {
-    paper_bgcolor:"rgba(0,0,0,0)", plot_bgcolor:"rgba(0,0,0,0)",
-    margin:{l:70,r:20,t:10,b:80}, font:{color:"#e8eefc"}
+    paper_bgcolor:'rgba(0,0,0,0)', plot_bgcolor:'rgba(0,0,0,0)',
+    margin:{l:70,r:20,t:10,b:80}, font:{color:'#e8eefc'}
   }, {displayModeBar:false, responsive:true});
 }
 
 async function run(){
-  setErr("");
-  const datasetId = localStorage.getItem("activeDataset");
-  if(!datasetId){
-    setStatus("Nessun dataset selezionato. Vai in Home e premi 'Usa' su un dataset.");
+  setErr('');
+  updateSelSummary();
+
+  const sel = getSelection();
+  const dayKeys = Object.keys(sel).sort();
+  if(!dayKeys.length){
+    setStatus('Nessun giorno selezionato. Vai in Home o usa i checkbox a destra.');
+    Plotly.purge('heatHour');
+    Plotly.purge('heatLane');
     return;
   }
-  setStatus("Caricamento dati PI dal dataset…");
-  const piRows = await loadPiRows(datasetId);
+
+  setStatus('Caricamento PI (giorni selezionati)…');
+  const piRows = await loadPiRowsForSelectedDays();
   renderHeatmaps(piRows);
-  setStatus("OK.");
+  setStatus('OK.');
 }
 
-$("useDsBtn").addEventListener("click", run);
-run().catch(e=>{ console.error(e); setErr(e.message); setStatus("Errore"); });
+/** Quick selections */
+$("clearSelBtn").addEventListener('click', async ()=>{ setSelection({}); updateSelSummary(); await loadDatasets(); run(); });
+$("selAllBtn").addEventListener('click', async ()=>{
+  const { data } = await supabase.from('datasets').select('day_key, pi_rows, wt_rows');
+  const out={};
+  for(const d of (data||[])) out[d.day_key] = { pi:(d.pi_rows||0)>0, wt:(d.wt_rows||0)>0 };
+  setSelection(out);
+  updateSelSummary();
+  await loadDatasets();
+  run();
+});
+$("sel7Btn").addEventListener('click', async ()=>{
+  const { data } = await supabase.from('datasets').select('day_key, pi_rows, wt_rows').order('day_key',{ascending:false}).limit(7);
+  const out={};
+  for(const d of (data||[])) out[d.day_key] = { pi:(d.pi_rows||0)>0, wt:(d.wt_rows||0)>0 };
+  setSelection(out);
+  updateSelSummary();
+  await loadDatasets();
+  run();
+});
+$("reloadBtn").addEventListener('click', ()=> run().catch(e=>{console.error(e); setErr(e.message); setStatus('Errore');}));
+
+(async function boot(){
+  try{
+    setStatus('Caricamento dataset…');
+    await loadDatasets();
+    updateSelSummary();
+    await run();
+  }catch(e){
+    console.error(e);
+    setErr(e.message);
+    setStatus('Errore');
+  }
+})();
 </script>
 </body>
 </html>

@@ -8,100 +8,177 @@
   <!-- XLSX parser -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
-  <!-- Supabase JS via CDN -->
+  <!-- Supabase JS (UMD) -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 
-
   <style>
-    body{font-family:system-ui,Segoe UI,Roboto,Arial;margin:0;background:#0b1220;color:#e8eefc;}
-    header{padding:14px 18px;border-bottom:1px solid rgba(255,255,255,.12);}
-    nav a{color:#e8eefc;text-decoration:none;margin-right:12px;font-weight:800;}
-    .wrap{max-width:1200px;margin:0 auto;padding:16px 18px;}
-    .card{background:#111a2e;border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:14px;margin:12px 0;}
-    input,button{border-radius:10px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:#e8eefc;padding:10px;}
-    button{background:#6ea8fe;color:#0b1220;border:0;font-weight:900;cursor:pointer;}
-    button.secondary{background:rgba(255,255,255,.10);color:#e8eefc;border:1px solid rgba(255,255,255,.12);}
+    :root{
+      --bg:#0b1220;
+      --card:#111a2e;
+      --border:rgba(255,255,255,.12);
+      --muted:#a9b7d6;
+      --text:#e8eefc;
+      --btn:#6ea8fe;
+      --bad:#ff6b6b;
+      --ok:#76ff7a;
+    }
+    body{font-family:system-ui,Segoe UI,Roboto,Arial;margin:0;background:var(--bg);color:var(--text);}
+    header{padding:14px 18px;border-bottom:1px solid var(--border);}
+    nav a{color:var(--text);text-decoration:none;margin-right:12px;font-weight:800;}
+
+    .wrap{max-width:1400px;margin:0 auto;padding:16px 18px;}
+
+    /* Layout: contenuto + sidebar destra */
+    .layout{display:flex;gap:12px;align-items:flex-start;}
+    .main{flex:1;min-width:580px;}
+    .side{width:360px;position:sticky;top:16px;}
+    @media(max-width:1100px){
+      .layout{flex-direction:column;}
+      .side{width:100%;position:static;}
+      .main{min-width:unset;}
+    }
+
+    .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;margin:12px 0;}
+    input,button,select{border-radius:10px;border:1px solid var(--border);background:rgba(255,255,255,.06);color:var(--text);padding:10px;}
+    button{background:var(--btn);color:var(--bg);border:0;font-weight:900;cursor:pointer;}
+    button.secondary{background:rgba(255,255,255,.10);color:var(--text);border:1px solid var(--border);}
+    button.danger{background:rgba(255,107,107,.2);color:var(--text);border:1px solid rgba(255,107,107,.4);}
+
     table{width:100%;border-collapse:collapse;margin-top:10px;font-size:12px;}
-    th,td{padding:8px;border-bottom:1px solid rgba(255,255,255,.12);vertical-align:top;}
-    th{color:#a9b7d6;text-align:left;}
+    th,td{padding:8px;border-bottom:1px solid var(--border);vertical-align:middle;}
+    th{color:var(--muted);text-align:left;font-weight:800;}
     .mono{font-variant-numeric:tabular-nums;}
     .row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;}
     .col{display:flex;flex-direction:column;gap:6px;min-width:240px;}
-    .hint{color:#a9b7d6;font-size:12px;}
-    .ok{color:#76ff7a;}
-    .bad{color:#ff6b6b;}
+    .hint{color:var(--muted);font-size:12px;}
+    .ok{color:var(--ok);}
+    .bad{color:var(--bad);}
+    .tiny{font-size:11px;}
+
+    .badge{display:inline-block;padding:2px 8px;border-radius:999px;border:1px solid var(--border);font-size:11px;color:var(--muted)}
+    .pillOk{border-color:rgba(118,255,122,.35);color:var(--ok)}
+    .pillBad{border-color:rgba(255,107,107,.35);color:var(--bad)}
+
+    .side .card{margin-top:0;}
+    .sideHead{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+    .sideHead strong{font-size:14px;}
+    .sideActions{display:flex;gap:8px;flex-wrap:wrap;}
+    .dsTable td{padding:6px 8px;}
+    .chk{transform:translateY(1px);}
   </style>
 </head>
 
 <body>
 <header>
   <nav>
-    <a href="home.html">Home</a>
+    <a href="index.html">Home</a>
     <a href="charts.html">Charts</a>
     <a href="score.html">Score</a>
   </nav>
 </header>
 
 <div class="wrap">
-  <div class="card">
-    <div class="row">
-      <div class="col">
-        <label class="hint">PI (xlsx)</label>
-        <input id="piFile" type="file" accept=".xlsx,.xls" />
-      </div>
-      <div class="col">
-        <label class="hint">WT (xlsx)</label>
-        <input id="wtFile" type="file" accept=".xlsx,.xls" />
-      </div>
-      <div class="col" style="min-width:220px;">
-        <label class="hint">Nome dataset (es: 21-01)</label>
-        <input id="dsLabel" placeholder="Es: 21-01" />
+  <div class="layout">
+    <!-- MAIN -->
+    <div class="main">
+      <div class="card">
+        <div class="row">
+          <div class="col">
+            <label class="hint">PI (xlsx) — puoi selezionare più file</label>
+            <input id="piFile" type="file" accept=".xlsx,.xls" multiple />
+          </div>
+          <div class="col">
+            <label class="hint">WT (xlsx) — puoi selezionare più file</label>
+            <input id="wtFile" type="file" accept=".xlsx,.xls" multiple />
+          </div>
+          <div class="col" style="min-width:220px;">
+            <label class="hint">Formato nome dataset</label>
+            <select id="labelFmt">
+              <option value="dd-mm">dd-mm</option>
+              <option value="dd-mm-yyyy" selected>dd-mm-yyyy</option>
+            </select>
+          </div>
+          <div class="col" style="min-width:200px">
+            <button id="analyzeBtn" type="button">Importa su Supabase</button>
+          </div>
+          <div class="col" style="min-width:200px">
+            <button id="refreshBtn" class="secondary" type="button">Ricarica elenco</button>
+          </div>
+        </div>
+
+        <div id="status" class="hint" style="margin-top:10px;">Stato: —</div>
+        <div id="warn" class="hint" style="margin-top:6px;"></div>
+        <div id="err" class="hint bad" style="margin-top:6px;"></div>
       </div>
 
-      <div class="col" style="min-width:180px">
-        <button id="analyzeBtn" type="button">Importa su Supabase</button>
-      </div>
-      <div class="col" style="min-width:180px">
-        <button id="refreshBtn" class="secondary" type="button">Ricarica elenco dataset</button>
+      <div class="card">
+        <div style="font-weight:900;">Debug rapido (se qualcosa non torna)</div>
+        <div class="hint">
+          1) Console (F12) → <span class="mono">Console</span> e <span class="mono">Network</span>
+          2) Se vedi <span class="mono">400 Bad Request</span>, quasi sempre è un mismatch di colonne/tabella in Supabase.
+          3) Se vedi <span class="mono">Identifier 'supabase' has already been declared</span>, hai due <span class="mono">const supabase = ...</span> nello stesso file.
+        </div>
       </div>
     </div>
 
-    <div id="status" class="hint" style="margin-top:10px;">Stato: —</div>
-    <div id="err" class="hint bad" style="margin-top:6px;"></div>
-  </div>
+    <!-- SIDEBAR -->
+    <aside class="side">
+      <div class="card">
+        <div class="sideHead">
+          <strong>Dataset presenti</strong>
+          <span id="selSummary" class="badge">0 selezionati</span>
+        </div>
+        <div class="hint" style="margin-top:6px;">Spunta PI/WT per definire il periodo e cosa includere nell’analisi.</div>
 
-  <div class="card">
-    <div style="font-weight:900;">Dataset presenti</div>
-    <div class="hint">Seleziona un dataset per aprire Charts/Score su quel dataset.</div>
-    <div id="dsWrap"></div>
+        <div class="sideActions" style="margin-top:10px;">
+          <button id="selAllBtn" class="secondary" type="button">Tutti</button>
+          <button id="sel7Btn" class="secondary" type="button">Ultimi 7</button>
+          <button id="clearSelBtn" class="danger" type="button">Svuota</button>
+        </div>
+
+        <div id="dsWrap"></div>
+      </div>
+    </aside>
   </div>
 </div>
 
 <script>
 /** =======================
- *  CONFIG: inserisci i tuoi
+ *  CONFIG (Supabase)
+ *  - Le trovi in Supabase: Settings → API
  * ======================= */
 const SUPABASE_URL = "https://jslonbsvrtltfnrpneqw.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_OZZhrdcM8Zh3eXcqTdcljw_ZY4faGvl";
-const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const SUPABASE_ANON_KEY = "YOUR_ANON_KEY"; // <- incolla qui la tua anon/public key
 
-
+// Se nella tabella `events` la colonna dell'operatore NON si chiama `operator`,
+// cambia qui (esempio: "src operator").
+const EVENTS_OPERATOR_COL = "operator";
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 /** Operators di interesse */
 const INTEREST_OPERATORS = new Set(["A.BEJAN","M.HAYAT","L.VUONO","S.ANASS","S.RODRIGUE."]);
 
-/** Helpers */
+/** Helpers DOM */
 const $ = (id)=>document.getElementById(id);
 function setStatus(t, ok=false){
   $("status").innerHTML = `Stato: <span class="${ok?'ok':''}">${t}</span>`;
 }
 function setErr(t){ $("err").textContent = t||""; }
+function setWarn(t){ $("warn").innerHTML = t||""; }
 function normStr(v){ return (v===null||v===undefined) ? "" : String(v).trim(); }
 function isNonEmptyBin(v){ const s=normStr(v); return s!=="" && s!=="0"; }
-function dayKeyFromDate(dt){
-  const p=n=>String(n).padStart(2,"0");
-  return `${dt.getFullYear()}-${p(dt.getMonth()+1)}-${p(dt.getDate())}`;
+function p2(n){ return String(n).padStart(2,'0'); }
+function dayKeyFromDate(dt){ return `${dt.getFullYear()}-${p2(dt.getMonth()+1)}-${p2(dt.getDate())}`; }
+function fmtLabelFromDayKey(dayKey, fmt){
+  // dayKey = YYYY-MM-DD
+  const d = new Date(dayKey + "T00:00:00");
+  if(isNaN(d.getTime())) return dayKey;
+  const dd = p2(d.getDate());
+  const mm = p2(d.getMonth()+1);
+  const yyyy = d.getFullYear();
+  return (fmt === 'dd-mm') ? `${dd}-${mm}` : `${dd}-${mm}-${yyyy}`;
 }
+
 function parseTimeToHMS(t){
   if(t===null||t===undefined||t==="") return { h:0, min:0, s:0 };
   if(t instanceof Date && !isNaN(t.getTime())) return { h:t.getHours(), min:t.getMinutes(), s:t.getSeconds() };
@@ -142,9 +219,7 @@ function isPickBin(bin){
   const parts=s.split("-");
   return parts[parts.length-1]==="1";
 }
-function piCategory(bin){
-  return isPickBin(bin) ? "PI Pick" : "PI Bulk";
-}
+function piCategory(bin){ return isPickBin(bin) ? "PI Pick" : "PI Bulk"; }
 function laneFromStorageBin(bin){
   const s=normStr(bin);
   if(!s) return null;
@@ -163,149 +238,304 @@ async function readFirstSheetAsObjects(file){
   return XLSX.utils.sheet_to_json(ws, {defval:""});
 }
 
-/** Supabase API: datasets */
+/** =======================
+ *  SELEZIONE dataset (checkbox)
+ *  Struttura: { [day_key]: { pi:boolean, wt:boolean } }
+ * ======================= */
+const SEL_KEY = "selectedDays";
+function getSelection(){
+  try{
+    const raw = localStorage.getItem(SEL_KEY);
+    const obj = raw ? JSON.parse(raw) : {};
+    return (obj && typeof obj === 'object') ? obj : {};
+  }catch{ return {}; }
+}
+function setSelection(obj){
+  localStorage.setItem(SEL_KEY, JSON.stringify(obj||{}));
+  updateSelSummary();
+}
+function updateSelSummary(){
+  const sel = getSelection();
+  const picked = Object.entries(sel).filter(([,v])=>v && (v.pi || v.wt));
+  $("selSummary").textContent = `${picked.length} selezionati`;
+}
+
+/** Supabase: inserimento chunk */
+async function insertInChunks(table, rows, chunkSize=1000){
+  for(let i=0;i<rows.length;i+=chunkSize){
+    const chunk = rows.slice(i, i+chunkSize);
+    const { error } = await supabase.from(table).insert(chunk);
+    if(error) throw new Error(error.message);
+  }
+}
+
+/** =======================
+ *  LISTA DATASET (sidebar)
+ *  Richiede in tabella datasets almeno: id, day_key, created_at, label, pi_rows, wt_rows
+ * ======================= */
 async function loadDatasets(){
   setErr("");
-  const { data, error } = await sb
+  setWarn("");
+  const { data, error } = await supabase
     .from("datasets")
-    .select("id, created_at, label")
-    .order("created_at", { ascending:false });
+    .select("id, day_key, created_at, label, pi_rows, wt_rows")
+    .order("day_key", { ascending:false });
 
   if(error){ setErr(error.message); return; }
 
   const wrap = $("dsWrap");
   if(!data || !data.length){
     wrap.innerHTML = `<div class="hint">Nessun dataset.</div>`;
+    updateSelSummary();
     return;
   }
-  const rows = data.map(d=>`
-    <tr>
-      <td class="mono">${d.created_at}</td>
-      <td>${d.label}</td>
-      <td class="mono">${d.id}</td>
-      <td>
-        <button class="secondary" onclick="localStorage.setItem('activeDataset','${d.id}'); alert('Dataset selezionato. Ora vai su Charts/Score.');">
-          Usa
-        </button>
-      </td>
-    </tr>
-  `).join("");
+
+  const sel = getSelection();
+
+  const rows = data.map(d=>{
+    const dk = d.day_key || "";
+    const label = d.label || dk || "(senza label)";
+    const created = d.created_at ? String(d.created_at).replace('T',' ').slice(0,19) : "";
+    const piOk = (d.pi_rows||0) > 0;
+    const wtOk = (d.wt_rows||0) > 0;
+    const s = sel[dk] || { pi:false, wt:false };
+    return `
+      <tr>
+        <td class="mono">${label}</td>
+        <td class="mono tiny">${created}</td>
+        <td style="text-align:center;">
+          <input class="chk" type="checkbox" data-day="${dk}" data-kind="pi" ${s.pi?'checked':''} ${piOk?'':'disabled'} />
+        </td>
+        <td style="text-align:center;">
+          <input class="chk" type="checkbox" data-day="${dk}" data-kind="wt" ${s.wt?'checked':''} ${wtOk?'':'disabled'} />
+        </td>
+      </tr>
+    `;
+  }).join("");
 
   wrap.innerHTML = `
-    <table>
-      <thead><tr><th>Creato</th><th>Label</th><th>ID</th><th></th></tr></thead>
+    <table class="dsTable">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Load Day</th>
+          <th style="text-align:center;">PI</th>
+          <th style="text-align:center;">WT</th>
+        </tr>
+      </thead>
       <tbody>${rows}</tbody>
     </table>
   `;
-}
-window.loadDatasets = loadDatasets;
 
-/** Batch insert helper */
-async function insertInChunks(table, rows, chunkSize=1000){
-  for(let i=0;i<rows.length;i+=chunkSize){
-    const chunk = rows.slice(i, i+chunkSize);
-    const { error } = await sb.from(table).insert(chunk);
-    if(error) throw new Error(error.message);
+  // checkbox listeners
+  wrap.querySelectorAll('input[type="checkbox"][data-day]').forEach(chk=>{
+    chk.addEventListener('change', ()=>{
+      const day = chk.getAttribute('data-day');
+      const kind = chk.getAttribute('data-kind');
+      const sel2 = getSelection();
+      if(!sel2[day]) sel2[day] = { pi:false, wt:false };
+      sel2[day][kind] = chk.checked;
+      // se entrambe false -> rimuovi entry
+      if(!sel2[day].pi && !sel2[day].wt) delete sel2[day];
+      setSelection(sel2);
+    });
+  });
+
+  updateSelSummary();
+}
+
+/** =======================
+ *  IMPORT: split automatico per data
+ * ======================= */
+function groupRowsByDay(piRows, wtRows){
+  const piByDay = new Map();
+  const wtByDay = new Map();
+
+  // PI → usa Count Date / Count Time
+  for(const r of (piRows||[])){
+    const counter = normStr(r["Counter"]);
+    if(!INTEREST_OPERATORS.has(counter)) continue;
+    const ts = combineDateTime(r["Count Date"], r["Count Time"]);
+    if(!ts) continue;
+    const dayKey = dayKeyFromDate(ts);
+    if(!piByDay.has(dayKey)) piByDay.set(dayKey, []);
+    piByDay.get(dayKey).push(r);
   }
+
+  // WT → preferisci Confirmation Date/Time (se presenti), altrimenti Created On/At
+  for(const r of (wtRows||[])){
+    if(!isNonEmptyBin(r["Source Storage Bin"])) continue;
+    const createdBy = normStr(r["Created By"]);
+    const confirmedBy = normStr(r["Confirmed by"]);
+    const operator = confirmedBy || createdBy;
+    if(!INTEREST_OPERATORS.has(operator)) continue;
+
+    const dtVal = (r["Confirmation Date"] || r["Created On"]);
+    const tmVal = (r["Confirmation Time"] || r["Created At"]);
+    const ts = combineDateTime(dtVal, tmVal);
+    if(!ts) continue;
+
+    const dayKey = dayKeyFromDate(ts);
+    if(!wtByDay.has(dayKey)) wtByDay.set(dayKey, []);
+    wtByDay.get(dayKey).push(r);
+  }
+
+  const dayKeys = Array.from(new Set([ ...piByDay.keys(), ...wtByDay.keys() ])).sort();
+  return { dayKeys, piByDay, wtByDay };
+}
+
+async function upsertDatasetForDay(dayKey, label, piCount, wtCount){
+  // Richiede unique constraint su datasets.day_key
+  const payload = {
+    day_key: dayKey,
+    label,
+    pi_rows: piCount,
+    wt_rows: wtCount
+  };
+  const { data, error } = await supabase
+    .from('datasets')
+    .upsert([payload], { onConflict: 'day_key' })
+    .select()
+    .single();
+  if(error) throw new Error(error.message);
+  return data;
+}
+
+async function deleteEventsForDataset(datasetId){
+  const { error } = await supabase.from('events').delete().eq('dataset_id', datasetId);
+  if(error) throw new Error(error.message);
 }
 
 /** Main import */
 $("analyzeBtn").addEventListener("click", async ()=>{
   try{
     setErr("");
-    const piFile = $("piFile").files?.[0];
-    const wtFile = $("wtFile").files?.[0];
-    const label = normStr($("dsLabel").value) || "Import";
+    setWarn("");
 
-    if(!piFile || !wtFile){
-      setErr("Carica PI e WT.");
+    const piFiles = Array.from($("piFile").files||[]);
+    const wtFiles = Array.from($("wtFile").files||[]);
+    if(!piFiles.length || !wtFiles.length){
+      setErr("Carica PI e WT (puoi selezionare anche più file per ciascun tipo).");
       return;
     }
 
-    setStatus("Creazione dataset…");
-    const { data: ds, error: dsErr } = await sb
-      .from("datasets")
-      .insert([{ label }])
-      .select()
-      .single();
-
-    if(dsErr) throw new Error(dsErr.message);
-    const datasetId = ds.id;
-    localStorage.setItem("activeDataset", datasetId);
+    const labelFmt = $("labelFmt").value || 'dd-mm-yyyy';
 
     setStatus("Lettura Excel…");
-    const piRows = await readFirstSheetAsObjects(piFile);
-    const wtRows = await readFirstSheetAsObjects(wtFile);
-
-    setStatus("Normalizzazione eventi…");
-    const events = [];
-
-    // PI
-    for(const r of piRows){
-      const counter = normStr(r["Counter"]);
-      if(!INTEREST_OPERATORS.has(counter)) continue;
-
-      const ts = combineDateTime(r["Count Date"], r["Count Time"]);
-      if(!ts) continue;
-
-      const createdBy = normStr(r["Created By"]);
-      const storageBin = normStr(r["Storage Bin"]);
-      const category = piCategory(storageBin);
-      const lane = laneFromStorageBin(storageBin);
-
-      events.push({
-        dataset_id: datasetId,
-        ts: ts.toISOString(),
-        day_key: dayKeyFromDate(ts),
-        operator: counter,
-        kind: "PI",
-        category,
-        self_count: (counter && counter===createdBy),
-        storage_bin: storageBin || null,
-        lane: (lane===null ? null : lane),
-        wo_id: null
-      });
+    const piRowsAll = [];
+    for(const f of piFiles){
+      const rows = await readFirstSheetAsObjects(f);
+      piRowsAll.push(...rows);
+    }
+    const wtRowsAll = [];
+    for(const f of wtFiles){
+      const rows = await readFirstSheetAsObjects(f);
+      wtRowsAll.push(...rows);
     }
 
-    // WT
-    for(const r of wtRows){
-      if(!isNonEmptyBin(r["Source Storage Bin"])) continue;
-      const createdBy = normStr(r["Created By"]);
-      const confirmedBy = normStr(r["Confirmed by"]);
-      const operator = confirmedBy || createdBy;
-      if(!INTEREST_OPERATORS.has(operator)) continue;
+    setStatus("Analisi date (split per giorno)…");
+    const { dayKeys, piByDay, wtByDay } = groupRowsByDay(piRowsAll, wtRowsAll);
 
-      const ts = combineDateTime(r["Created On"], r["Created At"]);
-      if(!ts) continue;
-
-      const procType = normStr(r["Whse Proc. Type"]);
-      const category = wtCategory(procType);
-      const wo = normStr(r["Warehouse Order"]);
-
-      events.push({
-        dataset_id: datasetId,
-        ts: ts.toISOString(),
-        day_key: dayKeyFromDate(ts),
-        operator,
-        kind: "WT",
-        category,
-        self_count: false,
-        storage_bin: null,
-        lane: null,
-        wo_id: wo || null
-      });
-    }
-
-    if(!events.length){
-      setErr("Nessun evento generato. Controlla che le colonne dei file coincidano (nomi esatti).");
+    if(!dayKeys.length){
+      setErr("Nessun evento generabile: verifica che i nomi colonne corrispondano (es. 'Counter', 'Count Date', 'Created On', ...)." );
       setStatus("Nessun dato importato");
       return;
     }
 
-    setStatus(`Upload eventi su Supabase (${events.length})…`);
-    await insertInChunks("events", events, 1000);
+    // warning mismatch PI vs WT
+    const onlyPI = dayKeys.filter(k => piByDay.has(k) && !wtByDay.has(k));
+    const onlyWT = dayKeys.filter(k => !piByDay.has(k) && wtByDay.has(k));
+    if(onlyPI.length || onlyWT.length){
+      const parts=[];
+      if(onlyPI.length) parts.push(`<span class="badge pillBad">Solo PI</span> ${onlyPI.join(', ')}`);
+      if(onlyWT.length) parts.push(`<span class="badge pillBad">Solo WT</span> ${onlyWT.join(', ')}`);
+      setWarn(`ATTENZIONE: date non perfettamente allineate tra PI/WT. Importo comunque per giorno. ${parts.join(' | ')}`);
+    }
 
-    setStatus("Completato.", true);
+    let totalInserted = 0;
+
+    for(const dayKey of dayKeys){
+      const piRows = piByDay.get(dayKey) || [];
+      const wtRows = wtByDay.get(dayKey) || [];
+      const label = fmtLabelFromDayKey(dayKey, labelFmt);
+
+      setStatus(`Upsert dataset ${label}…`);
+      const ds = await upsertDatasetForDay(dayKey, label, piRows.length, wtRows.length);
+      const datasetId = ds.id;
+
+      // evita duplicati se ri-importi lo stesso giorno
+      setStatus(`Pulizia eventi esistenti (${label})…`);
+      await deleteEventsForDataset(datasetId);
+
+      setStatus(`Normalizzazione eventi (${label})…`);
+      const events = [];
+
+      // PI
+      for(const r of piRows){
+        const counter = normStr(r["Counter"]);
+        if(!INTEREST_OPERATORS.has(counter)) continue;
+
+        const ts = combineDateTime(r["Count Date"], r["Count Time"]);
+        if(!ts) continue;
+
+        const createdBy = normStr(r["Created By"]);
+        const storageBin = normStr(r["Storage Bin"]);
+        const category = piCategory(storageBin);
+        const lane = laneFromStorageBin(storageBin);
+
+        events.push({
+          dataset_id: datasetId,
+          ts: ts.toISOString(),
+          day_key: dayKey,
+          [EVENTS_OPERATOR_COL]: counter,
+          kind: "PI",
+          category,
+          self_count: (counter && counter===createdBy),
+          storage_bin: storageBin || null,
+          lane: (lane===null ? null : lane),
+          wo_id: null
+        });
+      }
+
+      // WT
+      for(const r of wtRows){
+        if(!isNonEmptyBin(r["Source Storage Bin"])) continue;
+        const createdBy = normStr(r["Created By"]);
+        const confirmedBy = normStr(r["Confirmed by"]);
+        const operator = confirmedBy || createdBy;
+        if(!INTEREST_OPERATORS.has(operator)) continue;
+
+        const dtVal = (r["Confirmation Date"] || r["Created On"]);
+        const tmVal = (r["Confirmation Time"] || r["Created At"]);
+        const ts = combineDateTime(dtVal, tmVal);
+        if(!ts) continue;
+
+        const procType = normStr(r["Whse Proc. Type"]);
+        const category = wtCategory(procType);
+        const wo = normStr(r["Warehouse Order"]);
+
+        events.push({
+          dataset_id: datasetId,
+          ts: ts.toISOString(),
+          day_key: dayKey,
+          [EVENTS_OPERATOR_COL]: operator,
+          kind: "WT",
+          category,
+          self_count: false,
+          storage_bin: null,
+          lane: null,
+          wo_id: wo || null
+        });
+      }
+
+      if(!events.length) continue;
+
+      setStatus(`Upload eventi (${label}) — ${events.length} righe…`);
+      await insertInChunks("events", events, 1000);
+      totalInserted += events.length;
+    }
+
+    setStatus(`Completato. Eventi inseriti: ${totalInserted}`, true);
     await loadDatasets();
 
   }catch(e){
@@ -317,12 +547,42 @@ $("analyzeBtn").addEventListener("click", async ()=>{
 
 $("refreshBtn").addEventListener("click", loadDatasets);
 
+// Selezioni rapide
+$("clearSelBtn").addEventListener('click', ()=> setSelection({}));
+$("selAllBtn").addEventListener('click', async ()=>{
+  const { data } = await supabase.from('datasets').select('day_key, pi_rows, wt_rows');
+  const out={};
+  for(const d of (data||[])){
+    const dk=d.day_key;
+    if(!dk) continue;
+    out[dk] = { pi:(d.pi_rows||0)>0, wt:(d.wt_rows||0)>0 };
+  }
+  setSelection(out);
+  await loadDatasets();
+});
+$("sel7Btn").addEventListener('click', async ()=>{
+  const { data } = await supabase
+    .from('datasets')
+    .select('day_key, pi_rows, wt_rows')
+    .order('day_key', {ascending:false})
+    .limit(7);
+  const out={};
+  for(const d of (data||[])){
+    const dk=d.day_key;
+    if(!dk) continue;
+    out[dk] = { pi:(d.pi_rows||0)>0, wt:(d.wt_rows||0)>0 };
+  }
+  setSelection(out);
+  await loadDatasets();
+});
+
 (async function boot(){
   setStatus("Caricamento…");
   await loadDatasets();
+  updateSelSummary();
   setStatus("Pronto.");
 })();
 </script>
+
 </body>
 </html>
-
