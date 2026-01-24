@@ -5,43 +5,28 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Home — Produttività</title>
 
-  <!-- XLSX parser -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <!-- Supabase JS (UMD) -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 
   <style>
     :root{
-      --bg:#0b1220;
-      --card:#111a2e;
-      --border:rgba(255,255,255,.12);
-      --muted:#a9b7d6;
-      --text:#e8eefc;
-      --btn:#6ea8fe;
-      --bad:#ff6b6b;
-      --ok:#76ff7a;
+      --bg:#0b1220; --card:#111a2e; --border:rgba(255,255,255,.12);
+      --muted:#a9b7d6; --text:#e8eefc; --btn:#6ea8fe;
+      --bad:#ff6b6b; --ok:#76ff7a;
     }
     body{font-family:system-ui,Segoe UI,Roboto,Arial;margin:0;background:var(--bg);color:var(--text);}
     header{padding:14px 18px;border-bottom:1px solid var(--border);}
     nav a{color:var(--text);text-decoration:none;margin-right:12px;font-weight:800;}
-
-    .wrap{max-width:1400px;margin:0 auto;padding:16px 18px;}
-
+    .wrap{max-width:1500px;margin:0 auto;padding:16px 18px;}
     .layout{display:flex;gap:12px;align-items:flex-start;}
-    .main{flex:1;min-width:580px;}
-    .side{width:360px;position:sticky;top:16px;}
-    @media(max-width:1100px){
-      .layout{flex-direction:column;}
-      .side{width:100%;position:static;}
-      .main{min-width:unset;}
-    }
-
+    .main{flex:1;min-width:640px;}
+    .side{width:420px;position:sticky;top:16px;}
+    @media(max-width:1200px){.layout{flex-direction:column;}.side{width:100%;position:static;}.main{min-width:unset;}}
     .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;margin:12px 0;}
     input,button,select{border-radius:10px;border:1px solid var(--border);background:rgba(255,255,255,.06);color:var(--text);padding:10px;}
     button{background:var(--btn);color:var(--bg);border:0;font-weight:900;cursor:pointer;}
     button.secondary{background:rgba(255,255,255,.10);color:var(--text);border:1px solid var(--border);}
     button.danger{background:rgba(255,107,107,.2);color:var(--text);border:1px solid rgba(255,107,107,.4);}
-
     table{width:100%;border-collapse:collapse;margin-top:10px;font-size:12px;}
     th,td{padding:8px;border-bottom:1px solid var(--border);vertical-align:middle;}
     th{color:var(--muted);text-align:left;font-weight:800;}
@@ -49,20 +34,16 @@
     .row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;}
     .col{display:flex;flex-direction:column;gap:6px;min-width:240px;}
     .hint{color:var(--muted);font-size:12px;}
-    .ok{color:var(--ok);}
-    .bad{color:var(--bad);}
-    .tiny{font-size:11px;}
-
+    .ok{color:var(--ok);} .bad{color:var(--bad);}
     .badge{display:inline-block;padding:2px 8px;border-radius:999px;border:1px solid var(--border);font-size:11px;color:var(--muted)}
-    .pillOk{border-color:rgba(118,255,122,.35);color:var(--ok)}
-    .pillBad{border-color:rgba(255,107,107,.35);color:var(--bad)}
-
-    .side .card{margin-top:0;}
-    .sideHead{display:flex;align-items:center;justify-content:space-between;gap:8px;}
-    .sideHead strong{font-size:14px;}
-    .sideActions{display:flex;gap:8px;flex-wrap:wrap;}
-    .dsTable td{padding:6px 8px;}
+    .sideActions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
+    .tiny{font-size:11px;}
     .chk{transform:translateY(1px);}
+    details summary{cursor:pointer;color:var(--text);font-weight:900;}
+    .groupBox{border:1px solid var(--border);border-radius:12px;padding:10px;margin-top:10px;background:rgba(255,255,255,.03);}
+    .groupRow{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;}
+    .groupRow .controls{display:flex;gap:10px;align-items:center;}
+    .pill{display:inline-flex;gap:6px;align-items:center;border:1px solid var(--border);border-radius:999px;padding:6px 10px;background:rgba(255,255,255,.06);}
   </style>
 </head>
 
@@ -78,7 +59,6 @@
 
 <div class="wrap">
   <div class="layout">
-    <!-- MAIN -->
     <div class="main">
       <div class="card">
         <div class="row">
@@ -108,28 +88,51 @@
         <div id="status" class="hint" style="margin-top:10px;">Stato: —</div>
         <div id="warn" class="hint" style="margin-top:6px;"></div>
         <div id="err" class="hint bad" style="margin-top:6px;"></div>
+
+        <div class="hint" style="margin-top:10px;">
+          Nota: per abilitare heatmap “Task (tutto)” per corsia, l’import WT salva anche <span class="mono">lane</span> (derivata da Source Bin).
+          Se hai dataset vecchi importati senza lane su WT, serve re-import.
+        </div>
       </div>
 
       <div class="card">
-        <div style="font-weight:900;">Debug rapido (se qualcosa non torna)</div>
+        <div style="font-weight:900;">Debug rapido</div>
         <div class="hint">
-          1) Console (F12) → <span class="mono">Console</span> e <span class="mono">Network</span><br/>
-          2) Se vedi <span class="mono">400 Bad Request</span>, quasi sempre è un mismatch di colonne/tabella in Supabase.<br/>
-          3) Se vedi <span class="mono">Identifier 'supabase' has already been declared</span>, hai due <span class="mono">const supabase = ...</span> nello stesso file.
+          Se dopo import non vedi lane su WT: re-import dei giorni interessati (l’import ora valorizza la corsia anche per WT).
         </div>
       </div>
     </div>
 
-    <!-- SIDEBAR -->
     <aside class="side">
       <div class="card">
-        <div class="sideHead">
-          <strong>Dataset presenti</strong>
+        <div class="groupRow">
+          <div>
+            <strong>Dataset presenti</strong>
+            <div class="hint">Selezione per Giorni / Settimane / Mesi</div>
+          </div>
           <span id="selSummary" class="badge">0 selezionati</span>
         </div>
-        <div class="hint" style="margin-top:6px;">Spunta PI/WT per definire il periodo e cosa includere nell’analisi.</div>
 
-        <div class="sideActions" style="margin-top:10px;">
+        <div class="row" style="margin-top:10px;">
+          <div class="col" style="min-width:220px;">
+            <label class="hint">Modalità selezione</label>
+            <select id="selMode">
+              <option value="days" selected>Giorni</option>
+              <option value="weeks">Settimane</option>
+              <option value="months">Mesi</option>
+            </select>
+          </div>
+          <div class="col" style="min-width:160px;">
+            <label class="hint">Applica a</label>
+            <select id="selApply">
+              <option value="both" selected>PI + WT</option>
+              <option value="pi">Solo PI</option>
+              <option value="wt">Solo WT</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="sideActions">
           <button id="selAllBtn" class="secondary" type="button">Tutti</button>
           <button id="sel7Btn" class="secondary" type="button">Ultimi 7</button>
           <button id="clearSelBtn" class="danger" type="button">Svuota</button>
@@ -142,17 +145,16 @@
 </div>
 
 <script>
-/** CONFIG */
 const SUPABASE_URL = "https://jslonbsvrtltfnrpneqw.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_OZZhrdcM8Zh3eXcqTdcljw_ZY4faGvl";
 const EVENTS_OPERATOR_COL = "operator";
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-/** Operators di interesse */
 const INTEREST_OPERATORS = new Set(["A.BEJAN","M.HAYAT","L.VUONO","S.ANASS","S.RODRIGUE."]);
 
-/** Helpers */
 const $ = (id)=>document.getElementById(id);
+const SEL_KEY = "selectedDays";
+
 function setStatus(t, ok=false){ $("status").innerHTML = `Stato: <span class="${ok?'ok':''}">${t}</span>`; }
 function setErr(t){ $("err").textContent = t||""; }
 function setWarn(t){ $("warn").innerHTML = t||""; }
@@ -163,10 +165,13 @@ function dayKeyFromDate(dt){ return `${dt.getFullYear()}-${p2(dt.getMonth()+1)}-
 function fmtLabelFromDayKey(dayKey, fmt){
   const d = new Date(dayKey + "T00:00:00");
   if(isNaN(d.getTime())) return dayKey;
-  const dd = p2(d.getDate());
-  const mm = p2(d.getMonth()+1);
-  const yyyy = d.getFullYear();
+  const dd = p2(d.getDate()), mm = p2(d.getMonth()+1), yyyy = d.getFullYear();
   return (fmt === 'dd-mm') ? `${dd}-${mm}` : `${dd}-${mm}-${yyyy}`;
+}
+function fmtDDMMYYYY(dayKey){
+  const d=new Date(dayKey+"T00:00:00");
+  if(isNaN(d.getTime())) return dayKey;
+  return `${p2(d.getDate())}-${p2(d.getMonth()+1)}-${d.getFullYear()}`;
 }
 
 function parseTimeToHMS(t){
@@ -197,6 +202,7 @@ function combineDateTime(dateVal, timeVal){
   const dt=new Date(ymd.y, ymd.m-1, ymd.day, hms.h, hms.min, hms.s);
   return isNaN(dt.getTime()) ? null : dt;
 }
+
 function wtCategory(procType){
   const n=parseInt(procType,10);
   if(n===9994 || n===9995) return "P2P";
@@ -210,7 +216,9 @@ function isPickBin(bin){
   return parts[parts.length-1]==="1";
 }
 function piCategory(bin){ return isPickBin(bin) ? "PI Pick" : "PI Bulk"; }
-function laneFromStorageBin(bin){
+
+// lane: primi due numeri (01-50)
+function laneFromAnyBin(bin){
   const s=normStr(bin);
   if(!s) return null;
   const m=s.match(/(\d{2})/);
@@ -220,7 +228,6 @@ function laneFromStorageBin(bin){
   return n;
 }
 
-/** Read first sheet */
 async function readFirstSheetAsObjects(file){
   const ab = await file.arrayBuffer();
   const wb = XLSX.read(ab, {type:"array", cellDates:true});
@@ -228,8 +235,6 @@ async function readFirstSheetAsObjects(file){
   return XLSX.utils.sheet_to_json(ws, {defval:""});
 }
 
-/** Selection */
-const SEL_KEY = "selectedDays";
 function getSelection(){
   try{
     const raw = localStorage.getItem(SEL_KEY);
@@ -247,7 +252,6 @@ function updateSelSummary(){
   $("selSummary").textContent = `${picked.length} selezionati`;
 }
 
-/** Insert chunk */
 async function insertInChunks(table, rows, chunkSize=1000){
   for(let i=0;i<rows.length;i+=chunkSize){
     const chunk = rows.slice(i, i+chunkSize);
@@ -256,15 +260,12 @@ async function insertInChunks(table, rows, chunkSize=1000){
   }
 }
 
-/** Sidebar datasets */
 async function loadDatasets(){
-  setErr("");
-  setWarn("");
+  setErr(""); setWarn("");
   const { data, error } = await sb
     .from("datasets")
     .select("id, day_key, created_at, label, pi_rows, wt_rows")
     .order("day_key", { ascending:false });
-
   if(error){ setErr(error.message); return; }
 
   const wrap = $("dsWrap");
@@ -274,59 +275,177 @@ async function loadDatasets(){
     return;
   }
 
-  const sel = getSelection();
-
-  const rows = data.map(d=>{
-    const dk = d.day_key || "";
-    const label = d.label || dk || "(senza label)";
-    const created = d.created_at ? String(d.created_at).replace('T',' ').slice(0,19) : "";
-    const piOk = (d.pi_rows||0) > 0;
-    const wtOk = (d.wt_rows||0) > 0;
-    const s = sel[dk] || { pi:false, wt:false };
-    return `
-      <tr>
-        <td class="mono">${label}</td>
-        <td class="mono tiny">${created}</td>
-        <td style="text-align:center;">
-          <input class="chk" type="checkbox" data-day="${dk}" data-kind="pi" ${s.pi?'checked':''} ${piOk?'':'disabled'} />
-        </td>
-        <td style="text-align:center;">
-          <input class="chk" type="checkbox" data-day="${dk}" data-kind="wt" ${s.wt?'checked':''} ${wtOk?'':'disabled'} />
-        </td>
-      </tr>
-    `;
-  }).join("");
-
-  wrap.innerHTML = `
-    <table class="dsTable">
-      <thead>
-        <tr>
-          <th>Date</th>
-          <th>Load Day</th>
-          <th style="text-align:center;">PI</th>
-          <th style="text-align:center;">WT</th>
-        </tr>
-      </thead>
-      <tbody>${rows}</tbody>
-    </table>
-  `;
-
-  wrap.querySelectorAll('input[type="checkbox"][data-day]').forEach(chk=>{
-    chk.addEventListener('change', ()=>{
-      const day = chk.getAttribute('data-day');
-      const kind = chk.getAttribute('data-kind');
-      const sel2 = getSelection();
-      if(!sel2[day]) sel2[day] = { pi:false, wt:false };
-      sel2[day][kind] = chk.checked;
-      if(!sel2[day].pi && !sel2[day].wt) delete sel2[day];
-      setSelection(sel2);
-    });
-  });
-
+  renderSelectionUI(data);
   updateSelSummary();
 }
 
-/** Split per giorno */
+function isoWeekKey(dayKey){
+  const d = new Date(dayKey+"T00:00:00");
+  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dayNum = date.getUTCDay() || 7;
+  date.setUTCDate(date.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(),0,1));
+  const weekNo = Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
+  return `${date.getUTCFullYear()}-W${String(weekNo).padStart(2,'0')}`;
+}
+function monthKey(dayKey){
+  const d = new Date(dayKey+"T00:00:00");
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+}
+function renderSelectionUI(datasets){
+  const sel = getSelection();
+  const mode = $("selMode").value || "days";
+  const apply = $("selApply").value || "both";
+
+  const byDay = datasets.map(d=>({
+    day_key:d.day_key, label: d.label || fmtDDMMYYYY(d.day_key),
+    created_at:d.created_at, pi_rows:d.pi_rows||0, wt_rows:d.wt_rows||0
+  }));
+
+  if(mode === "days"){
+    const rows = byDay.map(d=>{
+      const dk = d.day_key;
+      const s = sel[dk] || { pi:false, wt:false };
+      const piOk = d.pi_rows>0, wtOk=d.wt_rows>0;
+      return `
+        <tr>
+          <td class="mono">${d.label}</td>
+          <td class="mono tiny">${String(d.created_at||"").replace('T',' ').slice(0,16)}</td>
+          <td style="text-align:center;">
+            <input class="chk" type="checkbox" data-day="${dk}" data-kind="pi" ${s.pi?'checked':''} ${piOk?'':'disabled'} />
+          </td>
+          <td style="text-align:center;">
+            <input class="chk" type="checkbox" data-day="${dk}" data-kind="wt" ${s.wt?'checked':''} ${wtOk?'':'disabled'} />
+          </td>
+        </tr>
+      `;
+    }).join("");
+
+    $("dsWrap").innerHTML = `
+      <table>
+        <thead><tr><th>Date</th><th>Load Day</th><th style="text-align:center;">PI</th><th style="text-align:center;">WT</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `;
+
+    $("dsWrap").querySelectorAll('input[type="checkbox"][data-day]').forEach(chk=>{
+      chk.addEventListener('change', ()=>{
+        const day = chk.getAttribute('data-day');
+        const kind = chk.getAttribute('data-kind');
+        const sel2 = getSelection();
+        if(!sel2[day]) sel2[day] = { pi:false, wt:false };
+        sel2[day][kind] = chk.checked;
+        if(!sel2[day].pi && !sel2[day].wt) delete sel2[day];
+        setSelection(sel2);
+      });
+    });
+    return;
+  }
+
+  // group by week/month
+  const groups = new Map();
+  for(const d of byDay){
+    const k = (mode==="weeks") ? isoWeekKey(d.day_key) : monthKey(d.day_key);
+    if(!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(d);
+  }
+  const groupKeys = Array.from(groups.keys()).sort().reverse();
+
+  const html = groupKeys.map(gk=>{
+    const days = groups.get(gk).sort((a,b)=>a.day_key.localeCompare(b.day_key));
+    const label = (mode==="weeks") ? `Settimana ${gk}` : `Mese ${gk}`;
+    const anyPi = days.some(x=>x.pi_rows>0), anyWt = days.some(x=>x.wt_rows>0);
+
+    return `
+      <div class="groupBox">
+        <div class="groupRow">
+          <div>
+            <div style="font-weight:900;">${label}</div>
+            <div class="hint">Giorni: ${days.length} (${fmtDDMMYYYY(days[0].day_key)} → ${fmtDDMMYYYY(days[days.length-1].day_key)})</div>
+          </div>
+          <div class="controls">
+            <label class="pill"><span class="hint">PI</span>
+              <input type="checkbox" class="chk" data-group="${gk}" data-gkind="pi" ${anyPi?'':'disabled'}>
+            </label>
+            <label class="pill"><span class="hint">WT</span>
+              <input type="checkbox" class="chk" data-group="${gk}" data-gkind="wt" ${anyWt?'':'disabled'}>
+            </label>
+            <details>
+              <summary>Apri</summary>
+              <div style="margin-top:8px;">
+                <table>
+                  <thead><tr><th>Date</th><th>PI</th><th>WT</th></tr></thead>
+                  <tbody>
+                    ${days.map(d=>{
+                      const s = sel[d.day_key] || {pi:false, wt:false};
+                      return `
+                        <tr>
+                          <td class="mono">${d.label}</td>
+                          <td class="mono">${d.pi_rows}</td>
+                          <td class="mono">${d.wt_rows}</td>
+                        </tr>
+                      `;
+                    }).join('')}
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  $("dsWrap").innerHTML = html;
+
+  // group toggles
+  $("dsWrap").querySelectorAll('input[type="checkbox"][data-group]').forEach(ch=>{
+    ch.addEventListener('change', ()=>{
+      const gk = ch.getAttribute('data-group');
+      const kind = ch.getAttribute('data-gkind');
+      const checked = ch.checked;
+      const apply = $("selApply").value || "both";
+      const days = groups.get(gk) || [];
+      const sel2 = getSelection();
+
+      for(const d of days){
+        sel2[d.day_key] = sel2[d.day_key] || {pi:false, wt:false};
+        const canPi = d.pi_rows>0;
+        const canWt = d.wt_rows>0;
+
+        if(kind==="pi" && canPi){
+          sel2[d.day_key].pi = checked && (apply==="both" || apply==="pi");
+        }
+        if(kind==="wt" && canWt){
+          sel2[d.day_key].wt = checked && (apply==="both" || apply==="wt");
+        }
+        if(!sel2[d.day_key].pi && !sel2[d.day_key].wt) delete sel2[d.day_key];
+      }
+      setSelection(sel2);
+      // re-render per aggiornare contatori e dettagli
+      renderSelectionUI(datasets);
+    });
+  });
+}
+
+$("selMode").addEventListener("change", async ()=>{ await loadDatasets(); });
+$("selApply").addEventListener("change", async ()=>{ await loadDatasets(); });
+
+async function upsertDatasetForDay(dayKey, label, piCount, wtCount){
+  const payload = { day_key: dayKey, label, pi_rows: piCount, wt_rows: wtCount };
+  const { data, error } = await sb
+    .from('datasets')
+    .upsert([payload], { onConflict: 'day_key' })
+    .select()
+    .single();
+  if(error) throw new Error(error.message);
+  return data;
+}
+async function deleteEventsForDataset(datasetId){
+  const { error } = await sb.from('events').delete().eq('dataset_id', datasetId);
+  if(error) throw new Error(error.message);
+}
+
 function groupRowsByDay(piRows, wtRows){
   const piByDay = new Map();
   const wtByDay = new Map();
@@ -362,26 +481,9 @@ function groupRowsByDay(piRows, wtRows){
   return { dayKeys, piByDay, wtByDay };
 }
 
-async function upsertDatasetForDay(dayKey, label, piCount, wtCount){
-  const payload = { day_key: dayKey, label, pi_rows: piCount, wt_rows: wtCount };
-  const { data, error } = await sb
-    .from('datasets')
-    .upsert([payload], { onConflict: 'day_key' })
-    .select()
-    .single();
-  if(error) throw new Error(error.message);
-  return data;
-}
-async function deleteEventsForDataset(datasetId){
-  const { error } = await sb.from('events').delete().eq('dataset_id', datasetId);
-  if(error) throw new Error(error.message);
-}
-
-/** Main import */
 $("analyzeBtn").addEventListener("click", async ()=>{
   try{
-    setErr("");
-    setWarn("");
+    setErr(""); setWarn("");
 
     const piFiles = Array.from($("piFile").files||[]);
     const wtFiles = Array.from($("wtFile").files||[]);
@@ -398,11 +500,10 @@ $("analyzeBtn").addEventListener("click", async ()=>{
     const wtRowsAll = [];
     for(const f of wtFiles) wtRowsAll.push(...await readFirstSheetAsObjects(f));
 
-    setStatus("Analisi date (split per giorno)…");
+    setStatus("Split per giorno…");
     const { dayKeys, piByDay, wtByDay } = groupRowsByDay(piRowsAll, wtRowsAll);
-
     if(!dayKeys.length){
-      setErr("Nessun evento generabile: verifica che i nomi colonne corrispondano (es. 'Counter', 'Count Date', 'Created On', ...)." );
+      setErr("Nessun evento generabile: verifica intestazioni colonne e filtri.");
       setStatus("Nessun dato importato");
       return;
     }
@@ -418,12 +519,13 @@ $("analyzeBtn").addEventListener("click", async ()=>{
       const ds = await upsertDatasetForDay(dayKey, label, piRows.length, wtRows.length);
       const datasetId = ds.id;
 
-      setStatus(`Pulizia eventi esistenti (${label})…`);
+      setStatus(`Pulizia eventi (${label})…`);
       await deleteEventsForDataset(datasetId);
 
       setStatus(`Normalizzazione eventi (${label})…`);
       const events = [];
 
+      // PI
       for(const r of piRows){
         const counter = normStr(r["Counter"]);
         if(!INTEREST_OPERATORS.has(counter)) continue;
@@ -433,13 +535,13 @@ $("analyzeBtn").addEventListener("click", async ()=>{
         const createdBy = normStr(r["Created By"]);
         const storageBin = normStr(r["Storage Bin"]);
         const category = piCategory(storageBin);
-        const lane = laneFromStorageBin(storageBin);
+        const lane = laneFromAnyBin(storageBin);
 
         events.push({
           dataset_id: datasetId,
           ts: ts.toISOString(),
           day_key: dayKey,
-          [EVENTS_OPERATOR_COL]: counter,
+          operator: counter,
           kind: "PI",
           category,
           self_count: (counter && counter===createdBy),
@@ -449,8 +551,10 @@ $("analyzeBtn").addEventListener("click", async ()=>{
         });
       }
 
+      // WT (IMPORTANTE: valorizzo lane dal Source Bin così heatmap Task funziona)
       for(const r of wtRows){
         if(!isNonEmptyBin(r["Source Storage Bin"])) continue;
+
         const createdBy = normStr(r["Created By"]);
         const confirmedBy = normStr(r["Confirmed by"]);
         const operator = confirmedBy || createdBy;
@@ -464,17 +568,19 @@ $("analyzeBtn").addEventListener("click", async ()=>{
         const procType = normStr(r["Whse Proc. Type"]);
         const category = wtCategory(procType);
         const wo = normStr(r["Warehouse Order"]);
+        const srcBin = normStr(r["Source Storage Bin"]);
+        const lane = laneFromAnyBin(srcBin);
 
         events.push({
           dataset_id: datasetId,
           ts: ts.toISOString(),
           day_key: dayKey,
-          [EVENTS_OPERATOR_COL]: operator,
+          operator,
           kind: "WT",
           category,
           self_count: false,
-          storage_bin: null,
-          lane: null,
+          storage_bin: srcBin || null,
+          lane: (lane===null ? null : lane),
           wo_id: wo || null
         });
       }
@@ -498,15 +604,13 @@ $("analyzeBtn").addEventListener("click", async ()=>{
 
 $("refreshBtn").addEventListener("click", loadDatasets);
 
-// Selezioni rapide
 $("clearSelBtn").addEventListener('click', ()=> { setSelection({}); loadDatasets(); });
 $("selAllBtn").addEventListener('click', async ()=>{
   const { data } = await sb.from('datasets').select('day_key, pi_rows, wt_rows');
   const out={};
   for(const d of (data||[])){
-    const dk=d.day_key;
-    if(!dk) continue;
-    out[dk] = { pi:(d.pi_rows||0)>0, wt:(d.wt_rows||0)>0 };
+    if(!d.day_key) continue;
+    out[d.day_key] = { pi:(d.pi_rows||0)>0, wt:(d.wt_rows||0)>0 };
   }
   setSelection(out);
   await loadDatasets();
@@ -519,9 +623,8 @@ $("sel7Btn").addEventListener('click', async ()=>{
     .limit(7);
   const out={};
   for(const d of (data||[])){
-    const dk=d.day_key;
-    if(!dk) continue;
-    out[dk] = { pi:(d.pi_rows||0)>0, wt:(d.wt_rows||0)>0 };
+    if(!d.day_key) continue;
+    out[d.day_key] = { pi:(d.pi_rows||0)>0, wt:(d.wt_rows||0)>0 };
   }
   setSelection(out);
   await loadDatasets();
