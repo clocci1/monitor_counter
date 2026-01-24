@@ -148,12 +148,12 @@
  *  - Le trovi in Supabase: Settings → API
  * ======================= */
 const SUPABASE_URL = "https://jslonbsvrtltfnrpneqw.supabase.co";
-const SUPABASE_ANON_KEY = "YOUR_ANON_KEY"; // <- incolla qui la tua anon/public key
+const SUPABASE_ANON_KEY = "sb_publishable_OZZhrdcM8Zh3eXcqTdcljw_ZY4faGvl"; // <- incolla qui la tua anon/public key
 
 // Se nella tabella `events` la colonna dell'operatore NON si chiama `operator`,
 // cambia qui (esempio: "src operator").
 const EVENTS_OPERATOR_COL = "operator";
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 /** Operators di interesse */
 const INTEREST_OPERATORS = new Set(["A.BEJAN","M.HAYAT","L.VUONO","S.ANASS","S.RODRIGUE."]);
@@ -264,7 +264,7 @@ function updateSelSummary(){
 async function insertInChunks(table, rows, chunkSize=1000){
   for(let i=0;i<rows.length;i+=chunkSize){
     const chunk = rows.slice(i, i+chunkSize);
-    const { error } = await supabase.from(table).insert(chunk);
+    const { error } = await sb.from(table).insert(chunk);
     if(error) throw new Error(error.message);
   }
 }
@@ -276,7 +276,7 @@ async function insertInChunks(table, rows, chunkSize=1000){
 async function loadDatasets(){
   setErr("");
   setWarn("");
-  const { data, error } = await supabase
+  const { data, error } = await sb
     .from("datasets")
     .select("id, day_key, created_at, label, pi_rows, wt_rows")
     .order("day_key", { ascending:false });
@@ -392,7 +392,7 @@ async function upsertDatasetForDay(dayKey, label, piCount, wtCount){
     pi_rows: piCount,
     wt_rows: wtCount
   };
-  const { data, error } = await supabase
+  const { data, error } = await sb
     .from('datasets')
     .upsert([payload], { onConflict: 'day_key' })
     .select()
@@ -402,7 +402,7 @@ async function upsertDatasetForDay(dayKey, label, piCount, wtCount){
 }
 
 async function deleteEventsForDataset(datasetId){
-  const { error } = await supabase.from('events').delete().eq('dataset_id', datasetId);
+  const { error } = await sb.from('events').delete().eq('dataset_id', datasetId);
   if(error) throw new Error(error.message);
 }
 
@@ -550,7 +550,7 @@ $("refreshBtn").addEventListener("click", loadDatasets);
 // Selezioni rapide
 $("clearSelBtn").addEventListener('click', ()=> setSelection({}));
 $("selAllBtn").addEventListener('click', async ()=>{
-  const { data } = await supabase.from('datasets').select('day_key, pi_rows, wt_rows');
+  const { data } = await sb.from('datasets').select('day_key, pi_rows, wt_rows');
   const out={};
   for(const d of (data||[])){
     const dk=d.day_key;
@@ -561,7 +561,7 @@ $("selAllBtn").addEventListener('click', async ()=>{
   await loadDatasets();
 });
 $("sel7Btn").addEventListener('click', async ()=>{
-  const { data } = await supabase
+  const { data } = await sb
     .from('datasets')
     .select('day_key, pi_rows, wt_rows')
     .order('day_key', {ascending:false})

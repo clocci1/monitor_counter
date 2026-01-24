@@ -98,12 +98,12 @@
  *  CONFIG SUPABASE
  * ======================= */
 const SUPABASE_URL = "https://jslonbsvrtltfnrpneqw.supabase.co";
-const SUPABASE_ANON_KEY = "YOUR_ANON_KEY";
+const SUPABASE_ANON_KEY = "sb_publishable_OZZhrdcM8Zh3eXcqTdcljw_ZY4faGvl";
 
 // Se nella tabella `events` la colonna dell'operatore NON si chiama `operator`,
 // cambia qui (esempio: "src operator").
 const EVENTS_OPERATOR_COL = "operator";
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 function opSelect(){
   return EVENTS_OPERATOR_COL.includes(' ') ? `"${EVENTS_OPERATOR_COL}"` : EVENTS_OPERATOR_COL;
@@ -154,7 +154,7 @@ function updateSelSummary(){
 /** Sidebar datasets */
 async function loadDatasets(){
   setErr('');
-  const { data, error } = await supabase
+  const { data, error } = await sb
     .from('datasets')
     .select('id, day_key, label, created_at, pi_rows, wt_rows')
     .order('day_key', { ascending:false });
@@ -227,7 +227,7 @@ async function loadEventsForSelection(){
   if(!dayKeys.length) return [];
 
   // NB: supabase .in() non accetta array vuoti, qui siamo ok.
-  const { data, error } = await supabase
+  const { data, error } = await sb
     .from('events')
     .select(`day_key, ${opSelect()}, kind, category, self_count, wo_id`)
     .in('day_key', dayKeys);
@@ -341,7 +341,7 @@ $("clearSelBtn").addEventListener('click', async ()=>{
   run();
 });
 $("selAllBtn").addEventListener('click', async ()=>{
-  const { data } = await supabase.from('datasets').select('day_key, pi_rows, wt_rows');
+  const { data } = await sb.from('datasets').select('day_key, pi_rows, wt_rows');
   const out={};
   for(const d of (data||[])) out[d.day_key] = { pi:(d.pi_rows||0)>0, wt:(d.wt_rows||0)>0 };
   setSelection(out);
@@ -350,7 +350,7 @@ $("selAllBtn").addEventListener('click', async ()=>{
   run();
 });
 $("sel7Btn").addEventListener('click', async ()=>{
-  const { data } = await supabase.from('datasets').select('day_key, pi_rows, wt_rows').order('day_key',{ascending:false}).limit(7);
+  const { data } = await sb.from('datasets').select('day_key, pi_rows, wt_rows').order('day_key',{ascending:false}).limit(7);
   const out={};
   for(const d of (data||[])) out[d.day_key] = { pi:(d.pi_rows||0)>0, wt:(d.wt_rows||0)>0 };
   setSelection(out);
