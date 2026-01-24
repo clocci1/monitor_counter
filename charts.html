@@ -5,35 +5,56 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Charts — Produttività</title>
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
   <style>
     :root{
-      --bg:#0b1220; --card:#111a2e; --border:rgba(255,255,255,.12);
-      --muted:#a9b7d6; --text:#e8eefc; --btn:#6ea8fe; --bad:#ff6b6b;
+      --bg:#0b1220;
+      --card:#111a2e;
+      --border:rgba(255,255,255,.12);
+      --muted:#a9b7d6;
+      --text:#e8eefc;
+      --btn:#6ea8fe;
+      --bad:#ff6b6b;
     }
     body{font-family:system-ui,Segoe UI,Roboto,Arial;margin:0;background:var(--bg);color:var(--text);}
     header{padding:14px 18px;border-bottom:1px solid var(--border);}
     nav a{color:var(--text);text-decoration:none;margin-right:12px;font-weight:800;}
-    .wrap{max-width:1750px;margin:0 auto;padding:16px 18px;}
-    .layout{display:grid;grid-template-columns:1fr 460px;gap:12px;align-items:start;}
-    @media(max-width:1200px){.layout{grid-template-columns:1fr;}}
-    aside{position:sticky;top:16px;}
-    @media(max-width:1200px){aside{position:static;}}
 
-    .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:12px;}
+    .wrap{max-width:1600px;margin:0 auto;padding:16px 18px;}
+    .layout{display:grid;grid-template-columns:1fr 380px;gap:12px;align-items:start;}
+    @media(max-width:1150px){.layout{grid-template-columns:1fr;}}
+
+    .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;}
     .hint{color:var(--muted);font-size:12px;}
     .bad{color:var(--bad);}
-    button{border-radius:10px;border:1px solid var(--border);background:rgba(255,255,255,.10);color:var(--text);padding:10px;cursor:pointer;font-weight:900;}
-    button.secondary{background:rgba(255,255,255,.08);}
-    button.small{padding:6px 8px;font-size:12px;border-radius:8px;}
-    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between;}
-    .plot{height:420px;}
-    .plotTall{height:520px;}
+    .mono{font-variant-numeric:tabular-nums;}
+
     table{width:100%;border-collapse:collapse;margin-top:10px;font-size:12px;}
-    th,td{padding:8px;border-bottom:1px solid var(--border);vertical-align:middle;}
+    th,td{padding:8px;border-bottom:1px solid var(--border);vertical-align:top;}
     th{color:var(--muted);text-align:left;font-weight:800;}
+
+    button,input,select{border-radius:10px;border:1px solid var(--border);background:rgba(255,255,255,.06);color:var(--text);padding:10px;}
+    button{background:var(--btn);color:var(--bg);border:0;font-weight:900;cursor:pointer;}
+    button.secondary{background:rgba(255,255,255,.10);color:var(--text);border:1px solid var(--border);}
+    button.small{padding:6px 8px;font-size:12px;border-radius:8px;}
+
+    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between;}
+    .chip{display:inline-flex;gap:6px;align-items:center;border:1px solid var(--border);border-radius:999px;padding:6px 10px;background:rgba(255,255,255,.06);}
+    .chip strong{font-weight:900;}
+
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+    @media(max-width:900px){.grid2{grid-template-columns:1fr;}}
+
+    .plotWide{height:420px;}
+    .plotHeat{height:520px;}
+    .chartBox{height:340px;}
+    .chartBoxTall{height:360px;}
+
+    .dsControls{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
+    .dsControls button{padding:8px 10px;font-size:12px;}
+    .checkbox{transform:scale(1.05);}
   </style>
 </head>
 
@@ -49,6 +70,7 @@
 
 <div class="wrap">
   <div class="layout">
+    <!-- MAIN -->
     <div>
       <div class="card">
         <div class="row">
@@ -58,501 +80,385 @@
             <div class="hint bad" id="err"></div>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
-            <button class="secondary" id="reloadBtn" type="button">Ricalcola</button>
+            <button class="secondary" id="reloadBtn" type="button">Ricarica</button>
           </div>
         </div>
       </div>
 
-      <div class="card">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-          <div>
-            <div style="font-weight:900;">PI Pick vs PI Bulk (conte)</div>
-            <div id="piePi" class="plot"></div>
-          </div>
-          <div>
-            <div style="font-weight:900;">Tempo per categoria (hh:mm)</div>
-            <div id="pieTime" class="plot"></div>
-          </div>
+      <div class="card" style="margin-top:12px;">
+        <div class="row">
+          <div class="chip"><span class="hint">Giorni selezionati</span> <strong id="selDays">0</strong></div>
+          <div class="chip"><span class="hint">Range</span> <strong id="selRange">—</strong></div>
         </div>
       </div>
 
-      <div class="card">
-        <div style="font-weight:900;">Produttività vs Cambi task</div>
-        <div class="hint">Produttività = (PI bin + WT task) / ore lavorate (esclude pause). Cambi task = passaggi tra categorie consecutive.</div>
-        <div id="prodChange" class="plot"></div>
+      <div class="card" style="margin-top:12px;">
+        <div style="font-weight:900;">Tabella esplicativa (filtrata)</div>
+        <div class="hint">Tempi sempre in <span class="mono">hh:mm</span>. Clean PICK include 3060/3062 + 3040/3041/3042.</div>
+        <div id="tableWrap"></div>
       </div>
 
-      <div class="card">
-        <div style="font-weight:900;">Heatmap PI — conte per corsia (01–50) per ora (05–22)</div>
-        <div class="hint">Z = conte PI. X = ora. Y = corsia (primi due numeri).</div>
-        <div id="heatPiLaneHour" class="plotTall"></div>
+      <div class="grid2" style="margin-top:12px;">
+        <div class="card">
+          <div style="font-weight:900;">Distribuzione BIN — Pick</div>
+          <div class="chartBox"><canvas id="piePick"></canvas></div>
+        </div>
+        <div class="card">
+          <div style="font-weight:900;">Distribuzione BIN — Bulk</div>
+          <div class="chartBox"><canvas id="pieBulk"></canvas></div>
+        </div>
       </div>
 
-      <div class="card">
-        <div style="font-weight:900;">Heatmap Task (tutto) — conte per corsia (01–50) per ora (05–22)</div>
-        <div class="hint">Z = conte PI+WT (serve WT importati con lane).</div>
-        <div id="heatAllLaneHour" class="plotTall"></div>
+      <div class="card" style="margin-top:12px;">
+        <div style="font-weight:900;">Produttività vs Cambi Task</div>
+        <div class="hint">Produttività proxy: <span class="mono">PI TPH + 2×WT TPH</span>.</div>
+        <div class="chartBoxTall"><canvas id="combo"></canvas></div>
+      </div>
+
+      <div class="card" style="margin-top:12px;">
+        <div style="font-weight:900;">Heatmap PI (Y=Ora 05–22, X=Corsia 01–50)</div>
+        <div id="heatPi" class="plotHeat"></div>
+      </div>
+
+      <div class="card" style="margin-top:12px;">
+        <div style="font-weight:900;">Heatmap Task (Y=Ora 05–22, X=Corsia 01–50)</div>
+        <div class="hint">Conteggio basato su corsia del <span class="mono">Source Bin</span> (per P2P conteggia anche Destination se presente).</div>
+        <div id="heatWt" class="plotHeat"></div>
       </div>
     </div>
 
+    <!-- SIDEBAR -->
     <aside>
       <div class="card">
         <div style="font-weight:900;">Dataset presenti</div>
-        <div class="hint">Selezione coerente con Home/Overview/Score. Spunta PI/WT per giorno.</div>
+        <div class="hint">Seleziona i giorni (e filtri PI/WT) nella sidebar. Se non vedi nulla, importa in Home.</div>
 
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
-          <button class="secondary small" id="clearSelBtn" type="button">Reset</button>
-          <button class="secondary small" id="sel7Btn" type="button">Ultimi 7</button>
-          <button class="secondary small" id="selAllBtn" type="button">Tutti</button>
+        <div class="dsControls">
+          <button class="secondary" id="selAllBtn" type="button">Tutti</button>
+          <button class="secondary" id="sel7Btn" type="button">Ultimi 7</button>
+          <button class="secondary" id="clearSelBtn" type="button">Reset</button>
         </div>
 
-        <div class="hint" id="selSummary" style="margin-top:8px;"></div>
-        <div id="dsWrap"></div>
+        <div style="margin-top:10px;">
+          <label class="hint">Vista selezione</label>
+          <select id="selMode" style="width:100%;">
+            <option value="day" selected>Giorni</option>
+            <option value="week">Settimane</option>
+            <option value="month">Mesi</option>
+          </select>
+          <div class="hint" style="margin-top:6px;" id="selHelp">—</div>
+        </div>
+
+        <div id="dsWrap" style="margin-top:10px;"></div>
       </div>
     </aside>
   </div>
 </div>
 
-<script>
-const SUPABASE_URL = "https://jslonbsvrtltfnrpneqw.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_OZZhrdcM8Zh3eXcqTdcljw_ZY4faGvl";
-const EVENTS_OPERATOR_COL = "operator";
-const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+<script type="module">
+  import {
+    loadSnapshot, computeAllDayKeys, listOperators, minToHHMM,
+    getSelection, setSelection, expandSelectionToDayKeys,
+    buildAggRows, buildChartsTableHTML,
+    buildAisleHourHeatmap, buildAisleHourHeatmapWT,
+    buildPieBins, buildComboSeries
+  } from './app-core.js';
 
-const PAUSE_THRESHOLD_MIN = 30;
-const SHIFT_DEFS = { AM:{start:"05:00",end:"13:00"}, C:{start:"08:00",end:"16:00"}, PM:{start:"14:00",end:"22:00"} };
-const SHIFT_TARGET_MIN = 480;
+  const $ = (id)=>document.getElementById(id);
+  const setStatus = (t)=>{ $('status').textContent = t; };
+  const setErr = (t)=>{ $('err').textContent = t||''; };
 
-const SEL_KEY="selectedDays";
-const SUPPORT_KEY="supportRules_v1";
-const SHIFT_OV_KEY="shiftOverride_v1";
-const INDIRECT_KEY="indirectRules_v1";
+  let chartPick=null, chartBulk=null, chartCombo=null;
 
-const $ = (id)=>document.getElementById(id);
-function setStatus(t){ $("status").textContent=t; }
-function setErr(t){ $("err").textContent=t||""; }
-function p2(n){ return String(n).padStart(2,'0'); }
-function fmtDDMMYYYY(dayKey){
-  const d=new Date(dayKey+"T00:00:00");
-  if(isNaN(d.getTime())) return dayKey;
-  return `${p2(d.getDate())}-${p2(d.getMonth()+1)}-${d.getFullYear()}`;
-}
-function getJSON(key, fallback){ try{ return JSON.parse(localStorage.getItem(key)||"") ?? fallback; }catch{ return fallback; } }
-function getSelection(){ return getJSON(SEL_KEY, {}); }
-function setSelection(v){ localStorage.setItem(SEL_KEY, JSON.stringify(v||{})); }
-function getSupport(){ return getJSON(SUPPORT_KEY, {}); }
-function getShiftOv(){ return getJSON(SHIFT_OV_KEY, {}); }
-function getIndirect(){ return getJSON(INDIRECT_KEY, {}); }
-
-function selectionToDayKeys(sel){ return Object.keys(sel||{}).filter(dk=>!!sel[dk] && (sel[dk].pi||sel[dk].wt)).sort(); }
-function updateSelSummary(){
-  const sel=getSelection();
-  const keys=selectionToDayKeys(sel);
-  if(!keys.length){ $("selSummary").textContent="Nessun giorno selezionato."; return; }
-  const piDays=keys.filter(dk=>!!sel[dk]?.pi).length;
-  const wtDays=keys.filter(dk=>!!sel[dk]?.wt).length;
-  $("selSummary").textContent=`Giorni: ${keys.length} (PI ${piDays}, WT ${wtDays}) | ${fmtDDMMYYYY(keys[0])} → ${fmtDDMMYYYY(keys[keys.length-1])}`;
-}
-
-async function loadDatasets(){
-  const { data, error } = await sb.from('datasets')
-    .select('day_key, created_at, pi_rows, wt_rows')
-    .order('day_key',{ascending:false});
-  if(error) throw new Error(error.message);
-
-  const wrap=$("dsWrap");
-  const sel=getSelection();
-  if(!data||!data.length){ wrap.innerHTML=`<div class="hint">Nessun dataset.</div>`; return; }
-
-  wrap.innerHTML=`
-    <table>
-      <thead><tr><th>Date</th><th>Load</th><th>PI</th><th>WT</th></tr></thead>
-      <tbody>
-        ${data.map(d=>{
-          const dk=d.day_key;
-          const s=sel[dk]||{pi:false,wt:false};
-          const piOk=(d.pi_rows||0)>0, wtOk=(d.wt_rows||0)>0;
-          return `
-            <tr>
-              <td class="mono">${fmtDDMMYYYY(dk)}</td>
-              <td class="mono">${String(d.created_at||"").replace('T',' ').slice(0,16)}</td>
-              <td style="text-align:center;"><input type="checkbox" data-day="${dk}" data-kind="pi" ${s.pi?'checked':''} ${piOk?'':'disabled'}></td>
-              <td style="text-align:center;"><input type="checkbox" data-day="${dk}" data-kind="wt" ${s.wt?'checked':''} ${wtOk?'':'disabled'}></td>
-            </tr>
-          `;
-        }).join('')}
-      </tbody>
-    </table>
-  `;
-
-  wrap.querySelectorAll('input[type="checkbox"]').forEach(ch=>{
-    ch.addEventListener('change', async ()=>{
-      const dk=ch.getAttribute('data-day');
-      const kind=ch.getAttribute('data-kind');
-      const sel2=getSelection();
-      sel2[dk]=sel2[dk]||{pi:false,wt:false};
-      sel2[dk][kind]=ch.checked;
-      if(!sel2[dk].pi && !sel2[dk].wt) delete sel2[dk];
-      setSelection(sel2);
-      updateSelSummary();
-    });
-  });
-}
-
-function mapEffectiveOperator(srcOp, ts){
-  const sup=getSupport();
-  const rules=(sup[srcOp]||[]).slice().sort((a,b)=>String(a.startISO).localeCompare(String(b.startISO)));
-  for(const r of rules){
-    const a=new Date(r.startISO), b=new Date(r.endISO);
-    if(ts>=a && ts<b) return r.realOp;
+  function fmtDDMMYYYY(dayKey){
+    const d = new Date(dayKey+'T00:00:00');
+    const p=n=>String(n).padStart(2,'0');
+    return `${p(d.getDate())}-${p(d.getMonth()+1)}-${d.getFullYear()}`;
   }
-  return srcOp;
-}
-function shiftWindow(dayKey, code){
-  const base=new Date(dayKey+"T00:00:00");
-  const def=SHIFT_DEFS[code];
-  const [sh,sm]=def.start.split(":").map(Number);
-  const [eh,em]=def.end.split(":").map(Number);
-  return {
-    start:new Date(base.getFullYear(),base.getMonth(),base.getDate(),sh,sm,0),
-    end:new Date(base.getFullYear(),base.getMonth(),base.getDate(),eh,em,0)
-  };
-}
-function inferShift(op, dayKey, events){
-  const ov=getShiftOv();
-  const forced=ov?.[op]?.[dayKey] || "AUTO";
-  if(forced!=="AUTO"){
-    const w=shiftWindow(dayKey, forced);
-    return {code:forced,start:w.start,end:w.end,inferred:false};
-  }
-  const first=events[0]?.ts;
-  let code="C";
-  if(first){
-    const hm=first.getHours()*60+first.getMinutes();
-    if(hm<7*60) code="AM"; else if(hm<12*60) code="C"; else code="PM";
-  }
-  const w=shiftWindow(dayKey, code);
-  return {code,start:w.start,end:w.end,inferred:true};
-}
-function clampDate(d, a, b){
-  const t=d.getTime();
-  return new Date(Math.min(Math.max(t,a.getTime()), b.getTime()));
-}
-function minutesBetween(a,b){ return (b-a)/60000; }
-
-function getIndirectFor(op, dayKey){
-  const ind=getIndirect();
-  const arr=ind?.[op]?.[dayKey]||[];
-  return arr.map(x=>({start:new Date(x.startISO), end:new Date(x.endISO), desc:x.desc||""})).filter(x=>x.end>x.start);
-}
-
-function buildIntervals(op, dayKey, evList){
-  if(!evList || evList.length<2) return {shift:null, intervals:[], changeTask:0};
-
-  const shift=inferShift(op, dayKey, evList);
-  const aS=shift.start, aE=shift.end;
-
-  const intervals=[];
-  let changeTask=0, prevCat=null;
-
-  for(let i=1;i<evList.length;i++){
-    const prev=evList[i-1], curr=evList[i];
-    const rawGap=minutesBetween(prev.ts, curr.ts);
-    if(!(rawGap>0)) continue;
-
-    const s0=clampDate(prev.ts, aS, aE);
-    const e0=clampDate(curr.ts, aS, aE);
-    const gap=minutesBetween(s0,e0);
-    if(!(gap>0)) continue;
-
-    let cat=(gap>=PAUSE_THRESHOLD_MIN) ? "PAUSA" : curr.category;
-
-    if(prevCat && cat!==prevCat) changeTask++;
-    prevCat=cat;
-
-    intervals.push({start:s0,end:e0,minutes:gap,category:cat,kind:curr.kind});
+  function updateSelSummary(dayKeys){
+    $('selDays').textContent = String(dayKeys.length);
+    if(!dayKeys.length){ $('selRange').textContent = '—'; return; }
+    $('selRange').textContent = `${fmtDDMMYYYY(dayKeys[0])} → ${fmtDDMMYYYY(dayKeys[dayKeys.length-1])}`;
   }
 
-  // apply indirect on pauses
-  const indRules=getIndirectFor(op, dayKey);
-  const out=[];
-  for(const it of intervals){
-    if(it.category!=="PAUSA" || !indRules.length){ out.push(it); continue; }
-    let remaining=[{start:it.start,end:it.end}];
-    for(const rule of indRules){
-      const next=[];
-      for(const seg of remaining){
-        const a=Math.max(seg.start.getTime(), rule.start.getTime());
-        const b=Math.min(seg.end.getTime(), rule.end.getTime());
-        if(b<=a){ next.push(seg); continue; }
-        if(seg.start.getTime()<a){
-          out.push({...it,start:seg.start,end:new Date(a),minutes:(a-seg.start.getTime())/60000,category:"PAUSA"});
-        }
-        out.push({...it,start:new Date(a),end:new Date(b),minutes:(b-a)/60000,category:"INDIRETTA"});
-        if(b<seg.end.getTime()) next.push({start:new Date(b), end:seg.end});
-      }
-      remaining=next;
-      if(!remaining.length) break;
+  function groupKey(dayKey, mode){
+    const d = new Date(dayKey+'T00:00:00');
+    if(isNaN(d.getTime())) return dayKey;
+    if(mode==='month'){
+      const p=n=>String(n).padStart(2,'0');
+      return `${d.getFullYear()}-${p(d.getMonth()+1)}`;
     }
-    for(const seg of remaining){
-      out.push({...it,start:seg.start,end:seg.end,minutes:(seg.end-seg.start)/60000,category:"PAUSA"});
+    if(mode==='week'){
+      // ISO week
+      const tmp = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+      const dayNum = tmp.getUTCDay() || 7;
+      tmp.setUTCDate(tmp.getUTCDate() + 4 - dayNum);
+      const yearStart = new Date(Date.UTC(tmp.getUTCFullYear(),0,1));
+      const weekNo = Math.ceil((((tmp - yearStart) / 86400000) + 1)/7);
+      return `${tmp.getUTCFullYear()}-W${String(weekNo).padStart(2,'0')}`;
     }
+    return dayKey;
   }
-  out.sort((a,b)=>a.start-b.start);
-  return {shift, intervals:out, changeTask};
-}
 
-function sumByCategory(intervals){
-  const m=new Map();
-  for(const it of intervals) m.set(it.category, (m.get(it.category)||0)+it.minutes);
-  return m;
-}
-function hhmmFromMin(min){
-  const total=Math.max(0,Math.round(min||0));
-  const h=Math.floor(total/60), m=total%60;
-  return `${h}:${String(m).padStart(2,'0')}`;
-}
+  function renderSidebar(allDays){
+    const sel = getSelection();
+    const mode = sel.mode || 'day';
+    $('selMode').value = mode;
 
-/** Load events from DB for selected days */
-async function loadEventsForSelection(){
-  const sel=getSelection();
-  const dayKeys=selectionToDayKeys(sel);
-  if(!dayKeys.length) return [];
-
-  const { data, error } = await sb
-    .from('events')
-    .select(`day_key, ts, kind, category, self_count, wo_id, lane, ${EVENTS_OPERATOR_COL}`)
-    .in('day_key', dayKeys)
-    .order('ts',{ascending:true});
-  if(error) throw new Error(error.message);
-
-  return (data||[]).filter(e=>{
-    const s=sel[e.day_key];
-    if(!s) return false;
-    if(e.kind==="PI") return !!s.pi;
-    if(e.kind==="WT") return !!s.wt;
-    return false;
-  }).map(e=>({
-    ...e,
-    tsObj:new Date(e.ts),
-    effOp: mapEffectiveOperator(e[EVENTS_OPERATOR_COL], new Date(e.ts))
-  }));
-}
-
-/** Build aggregates for pies & prod */
-function computeAgg(events){
-  const piPick=events.filter(e=>e.kind==="PI" && e.category==="PI Pick").length;
-  const piBulk=events.filter(e=>e.kind==="PI" && e.category==="PI Bulk").length;
-
-  // per op/day build intervals
-  const byOpDay=new Map();
-  for(const e of events){
-    const k=`${e.effOp}|${e.day_key}`;
-    if(!byOpDay.has(k)) byOpDay.set(k, []);
-    byOpDay.get(k).push({ts:e.tsObj, kind:e.kind, category:e.category});
-  }
-  for(const [k,arr] of byOpDay.entries()) arr.sort((a,b)=>a.ts-b.ts);
-
-  const opAgg=new Map(); // op -> {workMin, change, piCount, wtCount, sumByCat}
-  let sumAll=new Map(); // sum durations for pieTime
-
-  for(const [k,evList] of byOpDay.entries()){
-    const [op, dayKey]=k.split("|");
-    const built=buildIntervals(op, dayKey, evList);
-    if(!built.shift) continue;
-
-    const sum=sumByCategory(built.intervals);
-    // work excludes PAUSA
-    const work=Array.from(sum.entries()).filter(([c])=>c!=="PAUSA").reduce((a,[,v])=>a+v,0);
-
-    if(!opAgg.has(op)){
-      opAgg.set(op, {workMin:0, change:0, piCount:0, wtCount:0, catMin:new Map()});
+    const groups = new Map();
+    for(const dk of allDays){
+      const gk = groupKey(dk, mode);
+      if(!groups.has(gk)) groups.set(gk, []);
+      groups.get(gk).push(dk);
     }
-    const a=opAgg.get(op);
-    a.workMin += work;
-    a.change += built.changeTask||0;
-    a.piCount += evList.filter(x=>x.kind==="PI").length;
-    a.wtCount += evList.filter(x=>x.kind==="WT").length;
+    const gKeys = Array.from(groups.keys()).sort().reverse();
 
-    for(const [cat,min] of sum.entries()){
-      a.catMin.set(cat, (a.catMin.get(cat)||0)+min);
-      sumAll.set(cat, (sumAll.get(cat)||0)+min);
-    }
-  }
+    $('selHelp').textContent = mode==='day'
+      ? 'Spunta PI/WT per includere il giorno.'
+      : mode==='week'
+        ? 'Spunta una settimana: include tutti i giorni in quella settimana.'
+        : 'Spunta un mese: include tutti i giorni in quel mese.';
 
-  return { piPick, piBulk, opAgg, sumAll };
-}
-
-/** Heatmaps lane x hour */
-function hourLabel(h){ return String(h).padStart(2,'0')+":00"; }
-
-function buildLaneHourMatrix(rows){
-  // x=hours 05-22, y=lanes 01-50
-  const hours=[]; for(let h=5;h<=22;h++) hours.push(hourLabel(h));
-  const lanes=[]; for(let l=1;l<=50;l++) lanes.push(String(l).padStart(2,'0'));
-
-  const xIndex=new Map(hours.map((v,i)=>[v,i]));
-  const yIndex=new Map(lanes.map((v,i)=>[v,i]));
-  const z=lanes.map(()=>hours.map(()=>0));
-
-  for(const r of rows){
-    if(!r.lane) continue;
-    const dt=r.tsObj;
-    const h=dt.getHours();
-    if(h<5 || h>22) continue;
-    const x=hourLabel(h);
-    const y=String(r.lane).padStart(2,'0');
-    const xi=xIndex.get(x), yi=yIndex.get(y);
-    if(xi===undefined || yi===undefined) continue;
-    z[yi][xi] += 1;
-  }
-  return {hours, lanes, z};
-}
-
-function plotHeat(targetId, title, mat){
-  Plotly.newPlot(targetId, [{
-    z: mat.z,
-    x: mat.hours,
-    y: mat.lanes,
-    type: 'heatmap',
-    hovertemplate: 'Ora=%{x}<br>Corsia=%{y}<br>Conte=%{z}<extra></extra>'
-  }],{
-    title: {text: "", font:{color:"#e8eefc"}},
-    paper_bgcolor:'rgba(0,0,0,0)', plot_bgcolor:'rgba(0,0,0,0)',
-    margin:{l:70,r:20,t:10,b:60},
-    font:{color:'#e8eefc'},
-    yaxis:{title:"Corsia (01–50)"},
-    xaxis:{title:"Ora (05–22)"}
-  },{displayModeBar:false, responsive:true});
-}
-
-function plotPies(agg){
-  Plotly.newPlot('piePi', [{
-    type:'pie',
-    labels:['PI Pick','PI Bulk'],
-    values:[agg.piPick, agg.piBulk],
-    textinfo:'label+percent',
-    hovertemplate:'%{label}: %{value}<extra></extra>'
-  }],{
-    paper_bgcolor:'rgba(0,0,0,0)', plot_bgcolor:'rgba(0,0,0,0)',
-    margin:{l:10,r:10,t:10,b:10},
-    font:{color:'#e8eefc'}
-  },{displayModeBar:false, responsive:true});
-
-  // pie tempo per categorie principali
-  const wanted = ["PI Pick","PI Bulk","P2P","Clean PICK","WT Other","INDIRETTA","PAUSA"];
-  const labels=[], values=[];
-  for(const k of wanted){
-    const v=agg.sumAll.get(k)||0;
-    if(v>0){ labels.push(k); values.push(v); }
-  }
-  Plotly.newPlot('pieTime', [{
-    type:'pie', labels, values,
-    textinfo:'label+percent',
-    hovertemplate:'%{label}: %{value:.0f} min<extra></extra>'
-  }],{
-    paper_bgcolor:'rgba(0,0,0,0)', plot_bgcolor:'rgba(0,0,0,0)',
-    margin:{l:10,r:10,t:10,b:10},
-    font:{color:'#e8eefc'}
-  },{displayModeBar:false, responsive:true});
-}
-
-function plotProdChange(opAgg){
-  const ops=Array.from(opAgg.keys()).sort();
-  const prod=[], change=[];
-  for(const op of ops){
-    const a=opAgg.get(op);
-    const hours = (a.workMin||0)/60;
-    const totalTasks = (a.piCount||0) + (a.wtCount||0);
-    const p = hours>0 ? (totalTasks/hours) : 0;
-    prod.push(Number(p.toFixed(2)));
-    change.push(a.change||0);
-  }
-
-  Plotly.newPlot('prodChange', [
-    { type:'bar', x:ops, y:prod, name:'Produttività (task/h)', yaxis:'y' },
-    { type:'scatter', x:ops, y:change, name:'Cambi task', yaxis:'y2', mode:'lines+markers' }
-  ],{
-    paper_bgcolor:'rgba(0,0,0,0)', plot_bgcolor:'rgba(0,0,0,0)',
-    margin:{l:60,r:60,t:10,b:80},
-    font:{color:'#e8eefc'},
-    yaxis:{title:'Produttività (task/h)'},
-    yaxis2:{title:'Cambi task', overlaying:'y', side:'right'},
-    legend:{orientation:'h'}
-  },{displayModeBar:false, responsive:true});
-}
-
-async function run(){
-  try{
-    setErr("");
-    updateSelSummary();
-
-    const sel=getSelection();
-    const keys=selectionToDayKeys(sel);
-    if(!keys.length){
-      setStatus("Seleziona almeno un giorno.");
-      Plotly.purge("piePi"); Plotly.purge("pieTime");
-      Plotly.purge("prodChange");
-      Plotly.purge("heatPiLaneHour");
-      Plotly.purge("heatAllLaneHour");
+    if(!allDays.length){
+      $('dsWrap').innerHTML = `<div class="hint">Nessun dataset salvato. Vai in Home e importa.</div>`;
       return;
     }
 
-    setStatus("Caricamento eventi…");
-    const events=await loadEventsForSelection();
+    const selectedGroups = new Set(sel.groups || []);
+    const selectedDays = sel.days || {};
 
-    setStatus("Calcolo KPI e grafici…");
-    const agg=computeAgg(events);
-    plotPies(agg);
-    plotProdChange(agg.opAgg);
+    let html = `<table><thead><tr>`;
+    html += mode==='day'
+      ? `<th>Giorno</th><th style="text-align:center;">PI</th><th style="text-align:center;">WT</th>`
+      : `<th>${mode==='week'?'Settimana':'Mese'}</th><th style="text-align:center;">Includi</th><th class="hint">Dettaglio</th>`;
+    html += `</tr></thead><tbody>`;
 
-    // Heatmap PI
-    const piRows=events.filter(e=>e.kind==="PI" && e.lane!=null);
-    const matPi=buildLaneHourMatrix(piRows);
-    plotHeat("heatPiLaneHour", "PI", matPi);
+    if(mode==='day'){
+      const dayKeys = allDays.slice().sort().reverse();
+      for(const dk of dayKeys){
+        const s = selectedDays[dk] || { pi:false, wt:false };
+        html += `
+          <tr>
+            <td class="mono">${fmtDDMMYYYY(dk)}</td>
+            <td style="text-align:center;"><input class="checkbox" type="checkbox" data-kind="pi" data-key="${dk}" ${s.pi?'checked':''}></td>
+            <td style="text-align:center;"><input class="checkbox" type="checkbox" data-kind="wt" data-key="${dk}" ${s.wt?'checked':''}></td>
+          </tr>`;
+      }
+    }else{
+      for(const gk of gKeys){
+        const days = groups.get(gk);
+        const checked = selectedGroups.has(gk);
+        const detail = `${fmtDDMMYYYY(days.slice().sort()[0])} → ${fmtDDMMYYYY(days.slice().sort()[days.length-1])} (${days.length} gg)`;
+        html += `
+          <tr>
+            <td class="mono">${gk}</td>
+            <td style="text-align:center;"><input class="checkbox" type="checkbox" data-gkey="${gk}" ${checked?'checked':''}></td>
+            <td class="hint">${detail}</td>
+          </tr>`;
+      }
+    }
 
-    // Heatmap All (PI+WT) con lane valorizzata
-    const allRows=events.filter(e=>e.lane!=null);
-    const matAll=buildLaneHourMatrix(allRows);
-    plotHeat("heatAllLaneHour", "All", matAll);
+    html += `</tbody></table>`;
+    $('dsWrap').innerHTML = html;
 
-    setStatus("OK.");
-  }catch(e){
-    console.error(e);
-    setErr(e.message||String(e));
-    setStatus("Errore");
+    // handlers
+    if(mode==='day'){
+      $('dsWrap').querySelectorAll('input[type="checkbox"]').forEach(cb=>{
+        cb.addEventListener('change', ()=>{
+          const dk = cb.getAttribute('data-key');
+          const kind = cb.getAttribute('data-kind');
+          const selNow = getSelection();
+          selNow.mode = 'day';
+          selNow.groups = [];
+          selNow.days = selNow.days || {};
+          if(!selNow.days[dk]) selNow.days[dk] = { pi:false, wt:false };
+          selNow.days[dk][kind] = cb.checked;
+          if(!selNow.days[dk].pi && !selNow.days[dk].wt) delete selNow.days[dk];
+          setSelection(selNow);
+          run();
+        });
+      });
+    }else{
+      $('dsWrap').querySelectorAll('input[type="checkbox"]').forEach(cb=>{
+        cb.addEventListener('change', ()=>{
+          const gk = cb.getAttribute('data-gkey');
+          const selNow = getSelection();
+          selNow.mode = mode;
+          selNow.days = {};
+          const gs = new Set(selNow.groups || []);
+          if(cb.checked) gs.add(gk); else gs.delete(gk);
+          selNow.groups = Array.from(gs);
+          setSelection(selNow);
+          run();
+        });
+      });
+    }
   }
-}
 
-$("clearSelBtn").addEventListener("click", async ()=>{
-  setSelection({}); updateSelSummary(); await loadDatasets(); await run();
-});
-$("selAllBtn").addEventListener("click", async ()=>{
-  const { data } = await sb.from('datasets').select('day_key, pi_rows, wt_rows');
-  const out={};
-  for(const d of (data||[])) out[d.day_key]={pi:(d.pi_rows||0)>0, wt:(d.wt_rows||0)>0};
-  setSelection(out); updateSelSummary(); await loadDatasets(); await run();
-});
-$("sel7Btn").addEventListener("click", async ()=>{
-  const { data } = await sb.from('datasets').select('day_key, pi_rows, wt_rows').order('day_key',{ascending:false}).limit(7);
-  const out={};
-  for(const d of (data||[])) out[d.day_key]={pi:(d.pi_rows||0)>0, wt:(d.wt_rows||0)>0};
-  setSelection(out); updateSelSummary(); await loadDatasets(); await run();
-});
-$("reloadBtn").addEventListener("click", run);
-
-(async function boot(){
-  try{
-    setStatus("Caricamento dataset…");
-    await loadDatasets();
-    updateSelSummary();
-    await run();
-  }catch(e){
-    console.error(e);
-    setErr(e.message);
-    setStatus("Errore");
+  function setQuickSelection(kind, allDays){
+    const mode = $('selMode').value;
+    const selNow = getSelection();
+    selNow.mode = mode;
+    selNow.days = {};
+    selNow.groups = [];
+    if(kind==='clear'){
+      setSelection(selNow);
+      return;
+    }
+    if(mode==='day'){
+      const sorted = allDays.slice().sort();
+      const chosen = (kind==='all') ? sorted : sorted.slice(-7);
+      for(const dk of chosen){ selNow.days[dk] = { pi:true, wt:true }; }
+      setSelection(selNow);
+      return;
+    }
+    // week/month: select last N days expanded then transform to groups
+    const sorted = allDays.slice().sort();
+    const chosen = (kind==='all') ? sorted : sorted.slice(-7);
+    const gset = new Set();
+    for(const dk of chosen) gset.add(groupKey(dk, mode));
+    selNow.groups = Array.from(gset);
+    setSelection(selNow);
   }
-})();
+
+  function destroyIf(chart){ try{ chart?.destroy(); }catch{} }
+
+  function renderPies(rows){
+    const { labels, pick, bulk } = buildPieBins(rows);
+    destroyIf(chartPick);
+    destroyIf(chartBulk);
+    chartPick = new Chart($('piePick'), {
+      type:'pie',
+      data:{ labels, datasets:[{ data: pick }] },
+      options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'bottom' } } }
+    });
+    chartBulk = new Chart($('pieBulk'), {
+      type:'pie',
+      data:{ labels, datasets:[{ data: bulk }] },
+      options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'bottom' } } }
+    });
+  }
+
+  function renderCombo(rows){
+    const { labels, prod, switches } = buildComboSeries(rows);
+    destroyIf(chartCombo);
+    chartCombo = new Chart($('combo'), {
+      data:{
+        labels,
+        datasets:[
+          { type:'bar', label:'Produttività (PI tph + 2×WT tph)', data: prod, yAxisID:'y' },
+          { type:'line', label:'Cambi Task', data: switches, yAxisID:'y1' }
+        ]
+      },
+      options:{
+        responsive:true, maintainAspectRatio:false,
+        scales:{
+          y:{ beginAtZero:true, title:{ display:true, text:'Produttività' } },
+          y1:{ beginAtZero:true, position:'right', grid:{ drawOnChartArea:false }, title:{ display:true, text:'Cambi' } }
+        },
+        plugins:{ legend:{ position:'bottom' } }
+      }
+    });
+  }
+
+  function renderHeatmaps(dayKeys){
+    const pi = buildAisleHourHeatmap(dayKeys);
+    const wt = buildAisleHourHeatmapWT(dayKeys);
+
+    const layout = (title)=>({
+      title:{ text:title, font:{ color:'#e8eefc', size:12 } },
+      paper_bgcolor:'rgba(0,0,0,0)', plot_bgcolor:'rgba(0,0,0,0)',
+      margin:{l:70,r:20,t:30,b:50},
+      xaxis:{ title:'Corsia (01–50)', color:'#a9b7d6' },
+      yaxis:{ title:'Ora (05–22)', color:'#a9b7d6' },
+      font:{ color:'#e8eefc' }
+    });
+
+    Plotly.newPlot('heatPi', [{
+      z: pi.z,
+      x: pi.x,
+      y: pi.y,
+      type:'heatmap',
+      hovertemplate:'Corsia=%{x}<br>Ora=%{y}<br>Conte=%{z}<extra></extra>'
+    }], layout('PI'), {displayModeBar:false, responsive:true});
+
+    Plotly.newPlot('heatWt', [{
+      z: wt.z,
+      x: wt.x,
+      y: wt.y,
+      type:'heatmap',
+      hovertemplate:'Corsia=%{x}<br>Ora=%{y}<br>Conte=%{z}<extra></extra>'
+    }], layout('WT (Task)'), {displayModeBar:false, responsive:true});
+  }
+
+  async function run(){
+    setErr('');
+    setStatus('Caricamento snapshot…');
+    const res = await loadSnapshot();
+    if(!res.ok){
+      setStatus(res.msg || 'Nessun dataset salvato.');
+      $('tableWrap').innerHTML = `<div class="hint">Vai in Home e importa PI+WT, poi torna qui.</div>`;
+      $('dsWrap').innerHTML = `<div class="hint">—</div>`;
+      updateSelSummary([]);
+      try{ Plotly.purge('heatPi'); Plotly.purge('heatWt'); }catch{}
+      return;
+    }
+    const allDays = computeAllDayKeys();
+    renderSidebar(allDays);
+
+    const dayKeys = expandSelectionToDayKeys(allDays);
+    updateSelSummary(dayKeys);
+
+    if(!dayKeys.length){
+      setStatus('Nessun giorno selezionato.');
+      $('tableWrap').innerHTML = `<div class="hint">Seleziona almeno un giorno nella sidebar.</div>`;
+      try{ Plotly.purge('heatPi'); Plotly.purge('heatWt'); }catch{}
+      return;
+    }
+    setStatus('Calcolo KPI…');
+
+    const rows = buildAggRows(dayKeys);
+    $('tableWrap').innerHTML = buildChartsTableHTML(dayKeys, rows, { includeDays:true });
+
+    renderPies(rows);
+    renderCombo(rows);
+    renderHeatmaps(dayKeys);
+    setStatus(`OK. Snapshot: ${new Date(res.savedAt).toLocaleString()}`);
+  }
+
+  // events
+  $('reloadBtn').addEventListener('click', run);
+  $('selMode').addEventListener('change', async ()=>{
+    const sel = getSelection();
+    sel.mode = $('selMode').value;
+    sel.days = {};
+    sel.groups = [];
+    setSelection(sel);
+    run();
+  });
+  $('clearSelBtn').addEventListener('click', async ()=>{
+    const sel = getSelection();
+    sel.days = {}; sel.groups = []; sel.mode = $('selMode').value;
+    setSelection(sel);
+    run();
+  });
+  $('selAllBtn').addEventListener('click', async ()=>{
+    const res = await loadSnapshot();
+    if(!res.ok) return run();
+    const allDays = computeAllDayKeys();
+    setQuickSelection('all', allDays);
+    run();
+  });
+  $('sel7Btn').addEventListener('click', async ()=>{
+    const res = await loadSnapshot();
+    if(!res.ok) return run();
+    const allDays = computeAllDayKeys();
+    setQuickSelection('last7', allDays);
+    run();
+  });
+
+  run();
 </script>
+
 </body>
 </html>

@@ -5,37 +5,41 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Score — Produttività</title>
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-
   <style>
     :root{
-      --bg:#0b1220; --card:#111a2e; --border:rgba(255,255,255,.12);
-      --muted:#a9b7d6; --text:#e8eefc; --btn:#6ea8fe; --bad:#ff6b6b;
+      --bg:#0b1220;
+      --card:#111a2e;
+      --border:rgba(255,255,255,.12);
+      --muted:#a9b7d6;
+      --text:#e8eefc;
+      --btn:#6ea8fe;
+      --bad:#ff6b6b;
+      --ok:#76ff7a;
     }
+    *{box-sizing:border-box;}
     body{font-family:system-ui,Segoe UI,Roboto,Arial;margin:0;background:var(--bg);color:var(--text);}
     header{padding:14px 18px;border-bottom:1px solid var(--border);}
     nav a{color:var(--text);text-decoration:none;margin-right:12px;font-weight:800;}
-    .wrap{max-width:1750px;margin:0 auto;padding:16px 18px;}
-    .layout{display:grid;grid-template-columns:1fr 460px;gap:12px;align-items:start;}
+    .wrap{max-width:1600px;margin:0 auto;padding:16px 18px;}
+    .layout{display:grid;grid-template-columns:1fr 380px;gap:12px;align-items:start;}
     @media(max-width:1200px){.layout{grid-template-columns:1fr;}}
-    aside{position:sticky;top:16px;}
-    @media(max-width:1200px){aside{position:static;}}
-
-    .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:12px;}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;}
     .hint{color:var(--muted);font-size:12px;}
-    .bad{color:var(--bad);}
+    .bad{color:var(--bad);} .ok{color:var(--ok);}
     .mono{font-variant-numeric:tabular-nums;}
-
     table{width:100%;border-collapse:collapse;margin-top:10px;font-size:12px;}
     th,td{padding:8px;border-bottom:1px solid var(--border);vertical-align:top;}
     th{color:var(--muted);text-align:left;font-weight:800;}
-
-    button{border-radius:10px;border:1px solid var(--border);background:rgba(255,255,255,.10);color:var(--text);padding:10px;cursor:pointer;font-weight:900;}
-    button.secondary{background:rgba(255,255,255,.08);}
+    button,input,select{border-radius:10px;border:1px solid var(--border);background:rgba(255,255,255,.06);color:var(--text);padding:10px;}
+    button{background:var(--btn);color:var(--bg);border:0;font-weight:900;cursor:pointer;}
+    button.secondary{background:rgba(255,255,255,.10);color:var(--text);border:1px solid var(--border);}
     button.small{padding:6px 8px;font-size:12px;border-radius:8px;}
-    .chip{display:inline-flex;gap:8px;align-items:center;border:1px solid var(--border);border-radius:999px;padding:6px 10px;background:rgba(255,255,255,.06);}
-    .chip strong{font-weight:900;}
     .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between;}
+    .chip{display:inline-flex;gap:6px;align-items:center;border:1px solid var(--border);border-radius:999px;padding:6px 10px;background:rgba(255,255,255,.06);}
+    .chip strong{font-weight:900;}
+    .dsControls{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
+    .dsControls button{padding:8px 10px;font-size:12px;}
+    .checkbox{transform:scale(1.05);}
   </style>
 </head>
 
@@ -51,6 +55,7 @@
 
 <div class="wrap">
   <div class="layout">
+    <!-- MAIN -->
     <div>
       <div class="card">
         <div class="row">
@@ -60,40 +65,43 @@
             <div class="hint bad" id="err"></div>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
-            <button id="reloadBtn" type="button">Ricalcola</button>
+            <button class="secondary" id="reloadBtn" type="button">Ricalcola</button>
           </div>
         </div>
+      </div>
 
-        <div class="row" style="margin-top:10px;">
-          <div class="chip"><span class="hint">Giorni</span> <strong id="kDays">0</strong></div>
-          <div class="chip"><span class="hint">Turno target</span> <strong id="kTarget">8:00</strong></div>
-          <div class="chip"><span class="hint">Ore lavorate medie</span> <strong id="kAvgWork">—</strong></div>
-          <div class="chip"><span class="hint">Pausa media</span> <strong id="kAvgPause">—</strong></div>
+      <div class="card" style="margin-top:12px;">
+        <div style="font-weight:900;">Score per operatore (filtrato)</div>
+        <div class="hint">
+          Target = durata nominale turno (8h). Actual = presenza osservata nel turno (prima→ultima attività nel turno).
+          Effettivo = tempo operativo (PI/WT) + Indiretta (separata). Inattività = Target − Actual.
         </div>
+        <div id="scoreWrap"></div>
       </div>
 
-      <div class="card">
-        <div style="font-weight:900;">Score per operatore (aggregato sui giorni selezionati)</div>
-        <div class="hint">Durate stimate da timestamp consecutivi, clippate al turno; PAUSA se gap ≥ 30 minuti. Supporti/Indirette/Turni manuali coerenti con Overview.</div>
-        <div id="wrap"></div>
+      <div class="card" style="margin-top:12px;">
+        <div style="font-weight:900;">TPH & sec/task (filtrato)</div>
+        <div class="hint">Target = mediana globale (stesso filtro) per task.</div>
+        <div id="tphWrap"></div>
       </div>
 
-      <div class="card">
-        <div style="font-weight:900;">Dettaglio per giorno (per operatore)</div>
-        <div class="hint">Serve per controllare turni e anomalie. Se vuoi, aggiungo filtro operatore e export CSV.</div>
+      <div class="card" style="margin-top:12px;">
+        <div style="font-weight:900;">Dettaglio giornaliero (filtrato)</div>
+        <div class="hint">Utile per verificare turni, inattività e giornate miste (account usato in AM e PM).</div>
         <div id="dailyWrap"></div>
       </div>
     </div>
 
+    <!-- SIDEBAR -->
     <aside>
       <div class="card">
-        <div style="font-weight:900;">Dataset presenti</div>
-        <div class="hint">Spunta PI/WT per includere quel giorno nell’analisi.</div>
+        <div style="font-weight:900;">Filtri</div>
+        <div class="hint" style="margin-top:4px;">Sono gli stessi usati in Overview/Charts.</div>
 
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
-          <button class="secondary small" id="clearSelBtn" type="button">Reset</button>
-          <button class="secondary small" id="sel7Btn" type="button">Ultimi 7</button>
-          <button class="secondary small" id="selAllBtn" type="button">Tutti</button>
+        <div class="dsControls">
+          <button class="secondary" id="selAllBtn" type="button">Tutti</button>
+          <button class="secondary" id="sel7Btn" type="button">Ultimi 7</button>
+          <button class="secondary" id="clearSelBtn" type="button">Reset</button>
         </div>
 
         <div class="hint" id="selSummary" style="margin-top:8px;"></div>
@@ -103,553 +111,148 @@
   </div>
 </div>
 
-<script>
-const SUPABASE_URL = "https://jslonbsvrtltfnrpneqw.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_OZZhrdcM8Zh3eXcqTdcljw_ZY4faGvl";
-const EVENTS_OPERATOR_COL = "operator";
-const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+<script type="module">
+  import {
+    loadSnapshot,
+    computeAllDayKeys,
+    buildSelectionModel,
+    setSelection,
+    getSelection,
+    selectionToDayKeys,
+    formatSelectionSummary,
+    buildScoreForOperators,
+    buildTPHTable,
+    buildDailyScoreRows,
+    minToHHMM
+  } from './app-core.js';
 
-const PAUSE_THRESHOLD_MIN = 30;
-const SHIFT_DEFS = { AM:{start:"05:00",end:"13:00"}, C:{start:"08:00",end:"16:00"}, PM:{start:"14:00",end:"22:00"} };
-const SHIFT_TARGET_MIN = 480;
+  const $ = (id)=>document.getElementById(id);
+  const setStatus = (t)=>$("status").textContent = t;
+  const setErr = (t)=>$("err").textContent = t||"";
 
-const SEL_KEY="selectedDays";
-const SUPPORT_KEY="supportRules_v1";
-const SHIFT_OV_KEY="shiftOverride_v1";
-const INDIRECT_KEY="indirectRules_v1";
-
-const $ = (id)=>document.getElementById(id);
-function setStatus(t){ $("status").textContent=t; }
-function setErr(t){ $("err").textContent=t||""; }
-function p2(n){ return String(n).padStart(2,'0'); }
-function fmtDDMMYYYY(dayKey){
-  const d=new Date(dayKey+"T00:00:00");
-  if(isNaN(d.getTime())) return dayKey;
-  return `${p2(d.getDate())}-${p2(d.getMonth()+1)}-${d.getFullYear()}`;
-}
-function fmtDT(d){
-  return `${p2(d.getHours())}:${p2(d.getMinutes())}`;
-}
-function minToHHMM(min){
-  const total=Math.max(0,Math.round(Number(min||0)));
-  const h=Math.floor(total/60), m=total%60;
-  return `${h}:${String(m).padStart(2,'0')}`;
-}
-function minutesBetween(a,b){ return (b-a)/60000; }
-function getJSON(key, fallback){ try{ return JSON.parse(localStorage.getItem(key)||"") ?? fallback; }catch{ return fallback; } }
-function getSelection(){ return getJSON(SEL_KEY, {}); }
-function setSelection(v){ localStorage.setItem(SEL_KEY, JSON.stringify(v||{})); }
-function getSupport(){ return getJSON(SUPPORT_KEY, {}); }
-function getShiftOv(){ return getJSON(SHIFT_OV_KEY, {}); }
-function getIndirect(){ return getJSON(INDIRECT_KEY, {}); }
-
-function selectionToDayKeys(sel){ return Object.keys(sel||{}).filter(dk=>!!sel[dk] && (sel[dk].pi||sel[dk].wt)).sort(); }
-function updateSelSummary(){
-  const sel=getSelection();
-  const keys=selectionToDayKeys(sel);
-  if(!keys.length){ $("selSummary").textContent="Nessun giorno selezionato."; return; }
-  $("selSummary").textContent=`Selezionati: ${keys.length} (${fmtDDMMYYYY(keys[0])} → ${fmtDDMMYYYY(keys[keys.length-1])})`;
-}
-
-async function loadDatasets(){
-  const { data, error } = await sb.from('datasets')
-    .select('day_key, created_at, pi_rows, wt_rows')
-    .order('day_key',{ascending:false});
-  if(error) throw new Error(error.message);
-
-  const wrap=$("dsWrap");
-  const sel=getSelection();
-  if(!data||!data.length){ wrap.innerHTML=`<div class="hint">Nessun dataset.</div>`; return; }
-
-  wrap.innerHTML = `
-    <table>
-      <thead><tr><th>Date</th><th>Load</th><th>PI</th><th>WT</th></tr></thead>
-      <tbody>
-        ${data.map(d=>{
-          const dk=d.day_key;
-          const s=sel[dk]||{pi:false,wt:false};
-          const piOk=(d.pi_rows||0)>0, wtOk=(d.wt_rows||0)>0;
-          return `
-            <tr>
-              <td class="mono">${fmtDDMMYYYY(dk)}</td>
-              <td class="mono">${String(d.created_at||"").replace('T',' ').slice(0,16)}</td>
-              <td style="text-align:center;"><input type="checkbox" data-day="${dk}" data-kind="pi" ${s.pi?'checked':''} ${piOk?'':'disabled'}></td>
-              <td style="text-align:center;"><input type="checkbox" data-day="${dk}" data-kind="wt" ${s.wt?'checked':''} ${wtOk?'':'disabled'}></td>
-            </tr>
-          `;
-        }).join('')}
-      </tbody>
-    </table>
-  `;
-
-  wrap.querySelectorAll('input[type="checkbox"]').forEach(ch=>{
-    ch.addEventListener('change', ()=>{
-      const dk=ch.getAttribute('data-day');
-      const kind=ch.getAttribute('data-kind');
-      const sel2=getSelection();
-      sel2[dk]=sel2[dk]||{pi:false,wt:false};
-      sel2[dk][kind]=ch.checked;
-      if(!sel2[dk].pi && !sel2[dk].wt) delete sel2[dk];
-      setSelection(sel2);
-      updateSelSummary();
-      run();
-    });
-  });
-}
-
-function mapEffectiveOperator(srcOp, ts){
-  const sup=getSupport();
-  const rules=(sup[srcOp]||[]).slice().sort((a,b)=>String(a.startISO).localeCompare(String(b.startISO)));
-  for(const r of rules){
-    const a=new Date(r.startISO), b=new Date(r.endISO);
-    if(ts>=a && ts<b) return r.realOp;
-  }
-  return srcOp;
-}
-function shiftWindow(dayKey, code){
-  const base=new Date(dayKey+"T00:00:00");
-  const def=SHIFT_DEFS[code];
-  const [sh,sm]=def.start.split(":").map(Number);
-  const [eh,em]=def.end.split(":").map(Number);
-  return {
-    start:new Date(base.getFullYear(),base.getMonth(),base.getDate(),sh,sm,0),
-    end:new Date(base.getFullYear(),base.getMonth(),base.getDate(),eh,em,0)
-  };
-}
-function inferShift(op, dayKey, events){
-  const ov=getShiftOv();
-  const forced=ov?.[op]?.[dayKey] || "AUTO";
-  if(forced!=="AUTO"){
-    const w=shiftWindow(dayKey, forced);
-    return {code:forced,start:w.start,end:w.end,inferred:false};
-  }
-  const first=events[0]?.ts;
-  let code="C";
-  if(first){
-    const hm=first.getHours()*60+first.getMinutes();
-    if(hm<7*60) code="AM"; else if(hm<12*60) code="C"; else code="PM";
-  }
-  const w=shiftWindow(dayKey, code);
-  return {code,start:w.start,end:w.end,inferred:true};
-}
-function clampDate(d,a,b){
-  const t=d.getTime();
-  return new Date(Math.min(Math.max(t,a.getTime()), b.getTime()));
-}
-
-function getIndirectFor(op, dayKey){
-  const ind=getIndirect();
-  const arr=ind?.[op]?.[dayKey]||[];
-  return arr.map(x=>({start:new Date(x.startISO), end:new Date(x.endISO), desc:x.desc||""})).filter(x=>x.end>x.start);
-}
-
-function buildIntervals(op, dayKey, evList){
-  if(!evList || evList.length<2) return {shift:null, intervals:[], change:0};
-
-  const shift=inferShift(op, dayKey, evList);
-  const aS=shift.start, aE=shift.end;
-
-  const intervals=[];
-  let change=0, prevCat=null;
-
-  for(let i=1;i<evList.length;i++){
-    const prev=evList[i-1], curr=evList[i];
-    const rawGap=minutesBetween(prev.ts, curr.ts);
-    if(!(rawGap>0)) continue;
-
-    const s0=clampDate(prev.ts, aS, aE);
-    const e0=clampDate(curr.ts, aS, aE);
-    const gap=minutesBetween(s0,e0);
-    if(!(gap>0)) continue;
-
-    const cat=(gap>=PAUSE_THRESHOLD_MIN) ? "PAUSA" : curr.category;
-    if(prevCat && cat!==prevCat) change++;
-    prevCat=cat;
-
-    intervals.push({
-      start:s0, end:e0, minutes:gap,
-      category:cat,
-      kind:curr.kind,
-      self: !!curr.self_count,
-      wo: curr.wo_id || ""
-    });
+  function renderSelSidebar(model){
+    const sel = getSelection();
+    $("selSummary").textContent = formatSelectionSummary(model, sel);
+    $("dsWrap").innerHTML = model.renderHTML(sel);
+    model.bind($("dsWrap"));
   }
 
-  // split pauses into indirect where overlaps exist
-  const indRules=getIndirectFor(op, dayKey);
-  const out=[];
-  for(const it of intervals){
-    if(it.category!=="PAUSA" || !indRules.length){ out.push(it); continue; }
-    let remaining=[{start:it.start,end:it.end}];
-    for(const rule of indRules){
-      const next=[];
-      for(const seg of remaining){
-        const a=Math.max(seg.start.getTime(), rule.start.getTime());
-        const b=Math.min(seg.end.getTime(), rule.end.getTime());
-        if(b<=a){ next.push(seg); continue; }
-        if(seg.start.getTime()<a){
-          out.push({...it,start:seg.start,end:new Date(a),minutes:(a-seg.start.getTime())/60000,category:"PAUSA"});
-        }
-        out.push({...it,start:new Date(a),end:new Date(b),minutes:(b-a)/60000,category:"INDIRETTA"});
-        if(b<seg.end.getTime()) next.push({start:new Date(b), end:seg.end});
-      }
-      remaining=next;
-      if(!remaining.length) break;
-    }
-    for(const seg of remaining){
-      out.push({...it,start:seg.start,end:seg.end,minutes:(seg.end-seg.start)/60000,category:"PAUSA"});
-    }
-  }
-  out.sort((a,b)=>a.start-b.start);
-  return {shift, intervals:out, change};
-}
-
-function sumByCat(intervals){
-  const m=new Map();
-  for(const it of intervals) m.set(it.category, (m.get(it.category)||0)+it.minutes);
-  return m;
-}
-function uniqWO(intervals){
-  const s=new Set();
-  for(const it of intervals){ if(it.kind==="WT" && it.wo) s.add(it.wo); }
-  return s.size;
-}
-function countPiBins(events){
-  let pick=0, bulk=0, self=0, tot=0;
-  for(const e of events){
-    if(e.kind!=="PI") continue;
-    tot++;
-    if(e.category==="PI Pick") pick++;
-    if(e.category==="PI Bulk") bulk++;
-    if(e.self_count) self++;
-  }
-  return {pick, bulk, tot, self, selfPct: tot?Math.round((self/tot)*100):0};
-}
-
-async function loadEventsForSelection(){
-  const sel=getSelection();
-  const dayKeys=selectionToDayKeys(sel);
-  if(!dayKeys.length) return [];
-
-  const { data, error } = await sb
-    .from('events')
-    .select(`day_key, ts, kind, category, self_count, wo_id, ${EVENTS_OPERATOR_COL}`)
-    .in('day_key', dayKeys)
-    .order('ts',{ascending:true});
-  if(error) throw new Error(error.message);
-
-  return (data||[]).filter(e=>{
-    const s=sel[e.day_key];
-    if(!s) return false;
-    if(e.kind==="PI") return !!s.pi;
-    if(e.kind==="WT") return !!s.wt;
-    return false;
-  }).map(e=>({
-    ...e,
-    tsObj:new Date(e.ts),
-    effOp: mapEffectiveOperator(e[EVENTS_OPERATOR_COL], new Date(e.ts))
-  }));
-}
-
-function renderScore(opAgg){
-  const ops=Array.from(opAgg.keys()).sort();
-  if(!ops.length){
-    $("wrap").innerHTML=`<div class="hint">Nessun dato calcolabile (servono almeno 2 eventi per op/giorno).</div>`;
-    return;
+  function renderTable(wrapId, cols, rows){
+    const wrap = $(wrapId);
+    if(!rows.length){ wrap.innerHTML = `<div class="hint">Nessun dato nel filtro selezionato.</div>`; return; }
+    const thead = `<thead><tr>${cols.map(c=>`<th>${c}</th>`).join('')}</tr></thead>`;
+    const tbody = `<tbody>${rows.map(r=>`<tr>${r.map(v=>`<td>${v}</td>`).join('')}</tr>`).join('')}</tbody>`;
+    wrap.innerHTML = `<table>${thead}${tbody}</table>`;
   }
 
-  const rows = ops.map(op=>{
-    const a=opAgg.get(op);
-
-    const shiftMin=a.shiftMin||0;
-    const workMin=a.workMin||0;
-    const pauseMin=a.pauseMin||0;
-    const indMin=a.indMin||0;
-
-    const piBins=a.piPick+a.piBulk;
-    const wtTasks=a.wtP2P+a.wtClean+a.wtOther;
-
-    const workH=workMin/60;
-    const tphAll = workH>0 ? ((piBins+wtTasks)/workH) : 0;
-    const tphPi = (a.piMin>0) ? (piBins/(a.piMin/60)) : 0;
-    const tphP2P = (a.p2pMin>0) ? (a.wtP2P/(a.p2pMin/60)) : 0;
-    const tphCLP = (a.cleanMin>0) ? (a.wtClean/(a.cleanMin/60)) : 0;
-
-    const selfPct = a.piTot ? Math.round((a.selfCount/a.piTot)*100) : 0;
-
-    return `
-      <tr>
-        <td>${op}</td>
-        <td class="mono">${minToHHMM(shiftMin)}</td>
-        <td class="mono">${minToHHMM(workMin)}</td>
-        <td class="mono">${minToHHMM(pauseMin)}</td>
-        <td class="mono">${minToHHMM(indMin)}</td>
-
-        <td class="mono">${a.piPick}</td>
-        <td class="mono">${a.piBulk}</td>
-        <td class="mono">${a.selfCount} (${selfPct}%)</td>
-
-        <td class="mono">${a.wtP2P}</td>
-        <td class="mono">${a.wtClean}</td>
-        <td class="mono">${a.wtOther}</td>
-        <td class="mono">${a.woUnique}</td>
-
-        <td class="mono">${a.change}</td>
-        <td class="mono">${minToHHMM(a.changeLossMin)}</td>
-
-        <td class="mono">${tphAll.toFixed(1)}</td>
-        <td class="mono">${tphPi.toFixed(1)}</td>
-        <td class="mono">${tphP2P.toFixed(1)}</td>
-        <td class="mono">${tphCLP.toFixed(1)}</td>
-      </tr>
-    `;
-  }).join("");
-
-  $("wrap").innerHTML = `
-    <table>
-      <thead>
-        <tr>
-          <th>Operatore</th>
-          <th>Turno (min)</th>
-          <th>Lavoro</th>
-          <th>Pausa</th>
-          <th>Indiretta</th>
-
-          <th>PI Pick</th>
-          <th>PI Bulk</th>
-          <th>Self Count</th>
-
-          <th>P2P</th>
-          <th>Clean</th>
-          <th>WT Other</th>
-          <th>WO uniche</th>
-
-          <th>Cambi</th>
-          <th>Loss Cambi</th>
-
-          <th>TPH Tot</th>
-          <th>TPH PI</th>
-          <th>TPH P2P</th>
-          <th>TPH CLP</th>
-        </tr>
-      </thead>
-      <tbody>${rows}</tbody>
-    </table>
-  `;
-}
-
-function renderDaily(dailyRows){
-  if(!dailyRows.length){
-    $("dailyWrap").innerHTML=`<div class="hint">—</div>`;
-    return;
-  }
-  $("dailyWrap").innerHTML = `
-    <table>
-      <thead>
-        <tr>
-          <th>Operatore</th>
-          <th>Giorno</th>
-          <th>Turno</th>
-          <th>Start</th>
-          <th>End</th>
-          <th>Lavoro</th>
-          <th>Pausa</th>
-          <th>Indiretta</th>
-          <th>PI bin</th>
-          <th>WT task</th>
-          <th>Cambi</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${dailyRows.map(r=>`
-          <tr>
-            <td>${r.op}</td>
-            <td class="mono">${fmtDDMMYYYY(r.dayKey)}</td>
-            <td class="mono">${r.shiftCode}</td>
-            <td class="mono">${fmtDT(r.shiftStart)}</td>
-            <td class="mono">${fmtDT(r.shiftEnd)}</td>
-            <td class="mono">${minToHHMM(r.workMin)}</td>
-            <td class="mono">${minToHHMM(r.pauseMin)}</td>
-            <td class="mono">${minToHHMM(r.indMin)}</td>
-            <td class="mono">${r.piBins}</td>
-            <td class="mono">${r.wtTasks}</td>
-            <td class="mono">${r.change}</td>
-          </tr>
-        `).join("")}
-      </tbody>
-    </table>
-  `;
-}
-
-async function run(){
-  try{
-    setErr("");
-    updateSelSummary();
-
-    const sel=getSelection();
-    const dayKeys=selectionToDayKeys(sel);
-    $("kDays").textContent = String(dayKeys.length);
-    $("kTarget").textContent = minToHHMM(SHIFT_TARGET_MIN);
-
-    if(!dayKeys.length){
-      setStatus("Seleziona almeno un giorno.");
-      $("wrap").innerHTML=`<div class="hint">—</div>`;
-      $("dailyWrap").innerHTML=`<div class="hint">—</div>`;
-      $("kAvgWork").textContent="—";
-      $("kAvgPause").textContent="—";
+  async function run(){
+    setErr('');
+    const snap = await loadSnapshot();
+    if(!snap.ok){
+      setStatus('Nessun dataset salvato. Vai in Home e carica PI+WT.');
+      $("scoreWrap").innerHTML = `<div class="hint">—</div>`;
+      $("tphWrap").innerHTML = `<div class="hint">—</div>`;
+      $("dailyWrap").innerHTML = `<div class="hint">—</div>`;
+      $("dsWrap").innerHTML = `<div class="hint">—</div>`;
+      $("selSummary").textContent = '';
       return;
     }
 
-    setStatus("Caricamento eventi…");
-    const events=await loadEventsForSelection();
+    const allDays = computeAllDayKeys();
+    const model = buildSelectionModel(allDays);
+    renderSelSidebar(model);
 
-    setStatus("Calcolo score…");
-    // group per op/day
-    const byOpDay=new Map();
-    for(const e of events){
-      const k=`${e.effOp}|${e.day_key}`;
-      if(!byOpDay.has(k)) byOpDay.set(k, []);
-      byOpDay.get(k).push({
-        ts:e.tsObj,
-        kind:e.kind,
-        category:e.category,
-        self_count:!!e.self_count,
-        wo_id:e.wo_id||""
-      });
-    }
-    for(const [k,arr] of byOpDay.entries()) arr.sort((a,b)=>a.ts-b.ts);
-
-    const opAgg=new Map();
-    const dailyRows=[];
-
-    let workAll=0, pauseAll=0, daysCount=0;
-
-    for(const [k,evList] of byOpDay.entries()){
-      const [op, dayKey]=k.split("|");
-      const built=buildIntervals(op, dayKey, evList);
-      if(!built.shift) continue;
-
-      const sum=sumByCat(built.intervals);
-      const shiftMin=minutesBetween(built.shift.start, built.shift.end);
-      const pauseMin=sum.get("PAUSA")||0;
-      const indMin=sum.get("INDIRETTA")||0;
-      const workMin=Array.from(sum.entries()).filter(([c])=>c!=="PAUSA").reduce((a,[,v])=>a+v,0);
-
-      const piMin=(sum.get("PI Pick")||0)+(sum.get("PI Bulk")||0);
-      const p2pMin=sum.get("P2P")||0;
-      const cleanMin=sum.get("Clean PICK")||0;
-      const otherMin=sum.get("WT Other")||0;
-
-      const piBins = evList.filter(x=>x.kind==="PI").length;
-      const piPick = evList.filter(x=>x.kind==="PI" && x.category==="PI Pick").length;
-      const piBulk = evList.filter(x=>x.kind==="PI" && x.category==="PI Bulk").length;
-      const selfCount = evList.filter(x=>x.kind==="PI" && x.self_count).length;
-      const piTot = evList.filter(x=>x.kind==="PI").length;
-
-      const wtP2P = evList.filter(x=>x.kind==="WT" && x.category==="P2P").length;
-      const wtClean = evList.filter(x=>x.kind==="WT" && x.category==="Clean PICK").length;
-      const wtOther = evList.filter(x=>x.kind==="WT" && x.category==="WT Other").length;
-      const wtTasks = wtP2P+wtClean+wtOther;
-
-      const woUnique = (new Set(evList.filter(x=>x.kind==="WT" && x.wo_id).map(x=>x.wo_id))).size;
-
-      // loss cambi: qui stimiamo il tempo “non attributo” ai task se cambia spesso.
-      // per ora: 1 minuto per cambio come proxy + lo mostriamo separato.
-      const changeLossMin = (built.change||0) * 1;
-
-      if(!opAgg.has(op)){
-        opAgg.set(op,{
-          shiftMin:0, workMin:0, pauseMin:0, indMin:0,
-          piPick:0, piBulk:0, piTot:0, selfCount:0,
-          wtP2P:0, wtClean:0, wtOther:0, woUnique:0,
-          piMin:0, p2pMin:0, cleanMin:0, otherMin:0,
-          change:0, changeLossMin:0
-        });
-      }
-      const a=opAgg.get(op);
-      a.shiftMin += shiftMin;
-      a.workMin += workMin;
-      a.pauseMin += pauseMin;
-      a.indMin += indMin;
-
-      a.piPick += piPick;
-      a.piBulk += piBulk;
-      a.piTot  += piTot;
-      a.selfCount += selfCount;
-
-      a.wtP2P += wtP2P;
-      a.wtClean += wtClean;
-      a.wtOther += wtOther;
-      a.woUnique += woUnique;
-
-      a.piMin += piMin;
-      a.p2pMin += p2pMin;
-      a.cleanMin += cleanMin;
-      a.otherMin += otherMin;
-
-      a.change += built.change||0;
-      a.changeLossMin += changeLossMin;
-
-      dailyRows.push({
-        op, dayKey,
-        shiftCode: built.shift.code,
-        shiftStart: built.shift.start,
-        shiftEnd: built.shift.end,
-        workMin, pauseMin, indMin,
-        piBins, wtTasks,
-        change: built.change||0
-      });
-
-      workAll += workMin;
-      pauseAll += pauseMin;
-      daysCount += 1;
+    const sel = getSelection();
+    const dayKeys = selectionToDayKeys(model, sel);
+    if(!dayKeys.length){
+      setStatus('Seleziona almeno un giorno nel pannello a destra (oppure “Tutti”).');
+      $("scoreWrap").innerHTML = `<div class="hint">—</div>`;
+      $("tphWrap").innerHTML = `<div class="hint">—</div>`;
+      $("dailyWrap").innerHTML = `<div class="hint">—</div>`;
+      return;
     }
 
-    // medie globali (sui giorni effettivamente calcolabili)
-    $("kAvgWork").textContent = daysCount ? minToHHMM(workAll/daysCount) : "—";
-    $("kAvgPause").textContent = daysCount ? minToHHMM(pauseAll/daysCount) : "—";
+    setStatus(`Dataset caricato (salvato: ${new Date(snap.savedAt).toLocaleString()}). Filtri: ${dayKeys.length} giorni.`);
 
-    renderScore(opAgg);
-    dailyRows.sort((a,b)=> (a.op===b.op) ? a.dayKey.localeCompare(b.dayKey) : a.op.localeCompare(b.op));
-    renderDaily(dailyRows);
+    const scoreRows = buildScoreForOperators(dayKeys);
+    renderTable('scoreWrap',
+      [
+        'Operatore','Giorni','Turno','Target','Actual','Inattività','Produttivo','Indiretta','Pausa',
+        'PI BIN','WO P2P','WO Clean','WO Other','Cambio task','T cambio'
+      ],
+      scoreRows.map(r=>[
+        r.operator,
+        String(r.dayCount),
+        r.shiftLabel,
+        minToHHMM(r.targetMin),
+        minToHHMM(r.actualMin),
+        minToHHMM(r.inactivityMin),
+        minToHHMM(r.productiveMin),
+        minToHHMM(r.indirectMin),
+        minToHHMM(r.pauseMin),
+        String(r.piBins),
+        String(r.woP2P),
+        String(r.woClean),
+        String(r.woOther),
+        String(r.switchCount),
+        minToHHMM(r.switchMin)
+      ])
+    );
 
-    setStatus("OK.");
-  }catch(e){
-    console.error(e);
-    setErr(e.message||String(e));
-    setStatus("Errore");
+    const tph = buildTPHTable(dayKeys);
+    renderTable('tphWrap',
+      ['Operatore','PI tph','PI sec/bin','P2P tph','P2P sec/WO','Clean tph','Clean sec/WO','WT Other tph','WT Other sec/WO'],
+      tph.map(x=>[
+        x.operator,
+        x.pi.tph.toFixed(1), String(x.pi.secPerTask),
+        x.p2p.tph.toFixed(1), String(x.p2p.secPerTask),
+        x.clean.tph.toFixed(1), String(x.clean.secPerTask),
+        x.other.tph.toFixed(1), String(x.other.secPerTask)
+      ])
+    );
+
+    const daily = buildDailyScoreRows(dayKeys);
+    renderTable('dailyWrap',
+      ['Data','Operatore','Turno','Target','Actual','Inattività','Produttivo','Indiretta','Pausa','PI BIN','WO tot','Cambio','T cambio'],
+      daily.map(r=>[
+        r.dayKey,
+        r.operator,
+        r.shift,
+        minToHHMM(r.targetMin),
+        minToHHMM(r.actualMin),
+        minToHHMM(r.inactivityMin),
+        minToHHMM(r.productiveMin),
+        minToHHMM(r.indirectMin),
+        minToHHMM(r.pauseMin),
+        String(r.piBins),
+        String(r.woTotal),
+        String(r.switchCount),
+        minToHHMM(r.switchMin)
+      ])
+    );
   }
-}
 
-$("clearSelBtn").addEventListener("click", async ()=>{
-  setSelection({}); updateSelSummary(); await loadDatasets(); await run();
-});
-$("selAllBtn").addEventListener("click", async ()=>{
-  const { data } = await sb.from('datasets').select('day_key, pi_rows, wt_rows');
-  const out={};
-  for(const d of (data||[])) out[d.day_key]={pi:(d.pi_rows||0)>0, wt:(d.wt_rows||0)>0};
-  setSelection(out); updateSelSummary(); await loadDatasets(); await run();
-});
-$("sel7Btn").addEventListener("click", async ()=>{
-  const { data } = await sb.from('datasets').select('day_key, pi_rows, wt_rows').order('day_key',{ascending:false}).limit(7);
-  const out={};
-  for(const d of (data||[])) out[d.day_key]={pi:(d.pi_rows||0)>0, wt:(d.wt_rows||0)>0};
-  setSelection(out); updateSelSummary(); await loadDatasets(); await run();
-});
-$("reloadBtn").addEventListener("click", run);
-
-(async function boot(){
-  try{
-    setStatus("Caricamento dataset…");
-    await loadDatasets();
-    updateSelSummary();
+  $("reloadBtn").addEventListener('click', run);
+  $("clearSelBtn").addEventListener('click', async ()=>{
+    const allDays = computeAllDayKeys();
+    const model = buildSelectionModel(allDays);
+    setSelection(model.emptySelection());
     await run();
-  }catch(e){
-    console.error(e);
-    setErr(e.message);
-    setStatus("Errore");
-  }
-})();
+  });
+  $("selAllBtn").addEventListener('click', async ()=>{
+    const allDays = computeAllDayKeys();
+    const model = buildSelectionModel(allDays);
+    setSelection(model.allSelection());
+    await run();
+  });
+  $("sel7Btn").addEventListener('click', async ()=>{
+    const allDays = computeAllDayKeys();
+    const model = buildSelectionModel(allDays);
+    setSelection(model.lastNDaysSelection(7));
+    await run();
+  });
+
+  run();
 </script>
 </body>
 </html>
