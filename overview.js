@@ -10,14 +10,12 @@ const logEl = $("log");
 const PAUSE_THRESHOLD_SEC = 30 * 60; // > 30 min => pausa
 const SLOT_MINUTES = 30;
 
-// shift definitions
 const SHIFTS = {
   AM: { start: "05:00", end: "13:00" },
   C:  { start: "08:00", end: "16:00" },
   OM: { start: "14:00", end: "22:00" },
 };
 
-// state
 let currentUser = null;
 let cachedEvents = [];
 let currentRange = { start: null, end: null };
@@ -28,8 +26,7 @@ let currentBlocks = [];
 let operatorDayList = [];
 
 let supportAccountOpen = null;
-let manualActivities = []; // loaded for current operator & range
-let pauseClickContext = null; // { operator, start, end }
+let manualActivities = [];
 
 function log(...args) {
   const line = args.map(a => (typeof a === "string" ? a : JSON.stringify(a, null, 2))).join(" ");
@@ -99,7 +96,6 @@ function categoryToRowClass(cat) {
 }
 
 function categoryToCssBg(cat) {
-  // must match CSS variables
   if (cat === "PI Pick") return "var(--c-pick)";
   if (cat === "PI Bulk") return "var(--c-bulk)";
   if (cat === "P2P") return "var(--c-p2p)";
@@ -124,8 +120,7 @@ async function ensureAnonymousSession() {
 
 async function resetSession() {
   setBusy(true, "reset session...");
-  const { error } = await supabase.auth.signOut();
-  if (error) log("❌ signOut:", error.message);
+  await supabase.auth.signOut();
   setAuthUI(false, "signed-out", "-");
   setBusy(false, "");
   location.reload();
@@ -153,20 +148,41 @@ function rangeToFilter(range) {
   return { start, end };
 }
 
-// -------------------- Fetch --------------------
-async function fetchEvents(range) {
+// -------------------- Fetch ALL events (pagination) --------------------
+// Fix "operatori mancanti": la API può limitare le righe per request.
+// Con questa funzione paginiamo finché non finisce.
+async function fetchEventsAll(range) {
   const { start, end } = rangeToFilter(range);
 
-  const { data, error } = await supabase
-    .from("v_operator_events_effective")
-    .select("source,event_dt,operator_code,operator_original,warehouse_order,category,created_by,counter")
-    .gte("event_dt", start)
-    .lte("event_dt", end)
-    .order("operator_code", { ascending: true })
-    .order("event_dt", { ascending: true });
+  const PAGE = 1000;
+  let from = 0;
+  let all = [];
 
-  if (error) throw error;
-  return data ?? [];
+  while (true) {
+    const to = from + PAGE - 1;
+
+    const { data, error } = await supabase
+      .from("v_operator_events_effective")
+      .select("source,event_dt,operator_code,operator_original,warehouse_order,category,created_by,counter")
+      .gte("event_dt", start)
+      .lte("event_dt", end)
+      .order("operator_code", { ascending: true })
+      .order("event_dt", { ascending: true })
+      .range(from, to);
+
+    if (error) throw error;
+
+    const batch = data ?? [];
+    all = all.concat(batch);
+
+    if (batch.length < PAGE) break; // finito
+    from += PAGE;
+
+    // safety per evitare runaway
+    if (from > 50000) break;
+  }
+
+  return all;
 }
 
 async function fetchManualActivities(operator, range) {
@@ -189,17 +205,14 @@ function mapCatForUI(ev) {
   if (ev.source === "PI") {
     if (ev.category === "Pick") return "PI Pick";
     if (ev.category === "Bulk") return "PI Bulk";
-    return "PI Pick"; // fallback: se "Altro" lo trattiamo come pick per ora
+    return "PI Pick";
   }
-  // WT
   if (ev.category === "Pick to Pick") return "P2P";
   if (ev.category === "Clean Pick") return "CLP";
-  return "CLP"; // fallback
+  return "CLP";
 }
 
 // -------------------- Intervals logic --------------------
-// Duration between event[i] and event[i+1] is assigned to NEXT event category.
-// If duration > 30 min => PAUSA.
 function buildIntervalsForOperator(events) {
   const out = [];
   for (let i = 0; i < events.length - 1; i++) {
@@ -215,13 +228,7 @@ function buildIntervalsForOperator(events) {
     let cat = mapCatForUI(b);
     if (dtSec > PAUSE_THRESHOLD_SEC) cat = "PAUSA";
 
-    out.push({
-      start: da,
-      end: db,
-      sec: dtSec,
-      category: cat,
-      nextEvent: b,
-    });
+    out.push({ start: da, end: db, sec: dtSec, category: cat, nextEvent: b });
   }
   return out;
 }
@@ -232,12 +239,7 @@ function groupBlocks(intervals) {
 
   for (const it of intervals) {
     if (!cur || cur.category !== it.category) {
-      cur = {
-        category: it.category,
-        start: it.start,
-        end: it.end,
-        sec: it.sec,
-      };
+      cur = { category: it.category, start: it.start, end: it.end, sec: it.sec };
       blocks.push(cur);
     } else {
       cur.end = it.end;
@@ -253,10 +255,7 @@ function computeOperatorStats(opEvents) {
 
   const time = { work: 0, pause: 0, pick: 0, bulk: 0, p2p: 0, clp: 0 };
   for (const it of intervals) {
-    if (it.category === "PAUSA") {
-      time.pause += it.sec;
-      continue;
-    }
+    if (it.category === "PAUSA") { time.pause += it.sec; continue; }
     time.work += it.sec;
     if (it.category === "PI Pick") time.pick += it.sec;
     else if (it.category === "PI Bulk") time.bulk += it.sec;
@@ -282,16 +281,17 @@ function computeOperatorStats(opEvents) {
 }
 
 function buildOperatorMap(events) {
+  // trim per evitare operatori “splittati” per spazi/refusi
   const map = new Map();
   for (const e of events) {
-    const op = e.operator_code ?? "-";
+    const op = String(e.operator_code ?? "-").trim() || "-";
     if (!map.has(op)) map.set(op, []);
     map.get(op).push(e);
   }
   return map;
 }
 
-// -------------------- Render: Summary + KPI --------------------
+// -------------------- Render tables --------------------
 function renderSummary(rows) {
   const tb = $("tblSummary").querySelector("tbody");
   tb.innerHTML = "";
@@ -311,13 +311,8 @@ function renderSummary(rows) {
     tb.appendChild(tr);
   }
 
-  tb.querySelectorAll("[data-op]").forEach(el => {
-    el.addEventListener("click", () => openDrilldown(el.getAttribute("data-op")));
-  });
-
-  tb.querySelectorAll("[data-support]").forEach(btn => {
-    btn.addEventListener("click", () => openSupportModal(btn.getAttribute("data-support")));
-  });
+  tb.querySelectorAll("[data-op]").forEach(el => el.addEventListener("click", () => openDrilldown(el.getAttribute("data-op"))));
+  tb.querySelectorAll("[data-support]").forEach(btn => btn.addEventListener("click", () => openSupportModal(btn.getAttribute("data-support"))));
 }
 
 function renderKpi(rows) {
@@ -348,12 +343,9 @@ function renderKpi(rows) {
     tb.appendChild(tr);
   }
 
-  tb.querySelectorAll("[data-op]").forEach(el => {
-    el.addEventListener("click", () => openDrilldown(el.getAttribute("data-op")));
-  });
+  tb.querySelectorAll("[data-op]").forEach(el => el.addEventListener("click", () => openDrilldown(el.getAttribute("data-op"))));
 }
 
-// -------------------- Render: blocks + intervals --------------------
 function renderBlocks(blocks) {
   const tb = $("tblBlocks").querySelector("tbody");
   tb.innerHTML = "";
@@ -362,7 +354,6 @@ function renderBlocks(blocks) {
   for (const b of blocks) {
     const tr = document.createElement("tr");
     tr.className = categoryToRowClass(b.category);
-
     const changeText = prev ? `${prev} → ${b.category}` : "—";
     prev = b.category;
 
@@ -418,31 +409,21 @@ function buildDayListForOperator(opEvents) {
 }
 
 function chooseDefaultDayShift(intervals, days) {
-  // pick day with max "work" seconds (non pause)
   let bestDay = days[0] ?? null;
   let bestSec = -1;
 
   for (const day of days) {
     const dayStart = new Date(`${day}T00:00:00`);
     const dayEnd = new Date(`${day}T23:59:59`);
-
     let sec = 0;
-    for (const it of intervals) {
-      const a = it.start.getTime();
-      const b = it.end.getTime();
-      const s = dayStart.getTime();
-      const e = dayEnd.getTime();
-      const overlap = Math.max(0, Math.min(b, e) - Math.max(a, s));
-      if (overlap > 0 && it.category !== "PAUSA") sec += overlap/1000;
-    }
 
-    if (sec > bestSec) {
-      bestSec = sec;
-      bestDay = day;
+    for (const it of intervals) {
+      const overlap = Math.max(0, Math.min(it.end, dayEnd) - Math.max(it.start, dayStart));
+      if (overlap > 0 && it.category !== "PAUSA") sec += overlap / 1000;
     }
+    if (sec > bestSec) { bestSec = sec; bestDay = day; }
   }
 
-  // choose shift with max overlap
   let bestShift = "AM";
   let bestShiftSec = -1;
 
@@ -450,28 +431,31 @@ function chooseDefaultDayShift(intervals, days) {
     const sh = SHIFTS[shiftKey];
     const shStart = parseTimeToDay(bestDay, sh.start);
     const shEnd = parseTimeToDay(bestDay, sh.end);
-
     let sec = 0;
+
     for (const it of intervals) {
       const overlap = Math.max(0, Math.min(it.end, shEnd) - Math.max(it.start, shStart));
-      if (overlap > 0 && it.category !== "PAUSA") sec += overlap/1000;
+      if (overlap > 0 && it.category !== "PAUSA") sec += overlap / 1000;
     }
-    if (sec > bestShiftSec) {
-      bestShiftSec = sec;
-      bestShift = shiftKey;
-    }
+    if (sec > bestShiftSec) { bestShiftSec = sec; bestShift = shiftKey; }
   }
 
   return { day: bestDay, shift: bestShift };
 }
 
-// -------------------- Timeline single row --------------------
-function slotLabel(start, end) {
-  return `${fmtDT(start).slice(11,16)}–${fmtDT(end).slice(11,16)}`;
+function fillDaySelect(days) {
+  const sel = $("daySelect");
+  sel.innerHTML = "";
+  for (const d of days) {
+    const opt = document.createElement("option");
+    opt.value = d;
+    opt.textContent = d;
+    sel.appendChild(opt);
+  }
 }
 
+// -------------------- Manual overlay on PAUSA (visual) --------------------
 function findManualActivityForSlot(slotStart, slotEnd) {
-  // if any manual activity overlaps this slot, return its label
   for (const a of manualActivities) {
     const as = parseDT(a.start_dt);
     const ae = parseDT(a.end_dt);
@@ -482,23 +466,50 @@ function findManualActivityForSlot(slotStart, slotEnd) {
   return null;
 }
 
+// -------------------- Timeline full width (grid) --------------------
+function renderAxisAndTicks(day, shiftKey) {
+  const sh = SHIFTS[shiftKey];
+  $("axisLeft").textContent = `${day} ${sh.start}`;
+  $("axisRight").textContent = `${day} ${sh.end}`;
+
+  // 8 hours => 9 ticks (inclusive)
+  const startH = Number(sh.start.split(":")[0]);
+  const endH = Number(sh.end.split(":")[0]);
+
+  const ticks = $("timelineTicks");
+  ticks.innerHTML = "";
+
+  const hours = endH - startH;
+  const tickCount = hours + 1; // 9
+  for (let i = 0; i < tickCount; i++) {
+    const h = String(startH + i).padStart(2,"0");
+    const span = document.createElement("span");
+    span.textContent = `${h}:00`;
+    ticks.appendChild(span);
+  }
+}
+
 function renderTimelineForShift(intervals, day, shiftKey) {
   const sh = SHIFTS[shiftKey];
   const shiftStart = parseTimeToDay(day, sh.start);
   const shiftEnd = parseTimeToDay(day, sh.end);
 
-  $("tickStart").textContent = `${day} ${sh.start}`;
-  $("tickEnd").textContent = `${day} ${sh.end}`;
+  renderAxisAndTicks(day, shiftKey);
 
   const row = $("timelineRow");
   row.innerHTML = "";
 
   const slotMs = SLOT_MINUTES * 60 * 1000;
-  for (let t = new Date(shiftStart.getTime()); t < shiftEnd; t = new Date(t.getTime() + slotMs)) {
-    const slotStart = new Date(t.getTime());
-    const slotEnd = new Date(Math.min(t.getTime() + slotMs, shiftEnd.getTime()));
+  const slotCount = Math.round((shiftEnd.getTime() - shiftStart.getTime()) / slotMs);
 
-    // compute overlap by category from intervals
+  // grid full width: repeat(slotCount, 1fr)
+  row.style.gridTemplateColumns = `repeat(${slotCount}, 1fr)`;
+
+  for (let i = 0; i < slotCount; i++) {
+    const slotStart = new Date(shiftStart.getTime() + i * slotMs);
+    const slotEnd = new Date(slotStart.getTime() + slotMs);
+
+    // overlap durations per category
     const acc = new Map();
     for (const it of intervals) {
       const overlap = Math.max(0, Math.min(it.end, slotEnd) - Math.max(it.start, slotStart));
@@ -512,18 +523,14 @@ function renderTimelineForShift(intervals, day, shiftKey) {
     else if (cats.length === 1) cat = cats[0];
     else cat = "MIX";
 
-    // manual overlay: if pause and manual exists => show manual label but keep pause category logic
-    let displayCat = cat;
     const manual = findManualActivityForSlot(slotStart, slotEnd);
-    if (manual && cat === "PAUSA") displayCat = manual.label || "INDIRECT";
+    const displayLabel = (manual && cat === "PAUSA") ? manual.label : cat;
 
     const seg = document.createElement("div");
     seg.className = "seg";
     seg.style.background = categoryToCssBg(cat === "MIX" ? "MIX" : cat);
+    seg.title = `${fmtDT(slotStart).slice(11,16)}–${fmtDT(slotEnd).slice(11,16)} | ${displayLabel}`;
 
-    seg.title = `${slotLabel(slotStart, slotEnd)} | ${displayCat}`;
-
-    // click only pause => add manual activity
     seg.addEventListener("click", () => {
       if (cat !== "PAUSA") return;
       openActivityModal(slotStart, slotEnd);
@@ -537,8 +544,9 @@ function renderTimelineForShift(intervals, day, shiftKey) {
 async function openDrilldown(operator) {
   currentOperator = operator;
 
-  const opEvents = cachedEvents.filter(e => e.operator_code === operator);
-  opEvents.sort((a,b) => parseDT(a.event_dt) - parseDT(b.event_dt));
+  const opEvents = cachedEvents
+    .filter(e => String(e.operator_code ?? "-").trim() === operator)
+    .sort((a,b) => parseDT(a.event_dt) - parseDT(b.event_dt));
 
   currentIntervals = buildIntervalsForOperator(opEvents);
   currentBlocks = groupBlocks(currentIntervals);
@@ -550,7 +558,6 @@ async function openDrilldown(operator) {
   $("daySelect").value = day ?? "";
   $("shiftSelect").value = shift ?? "AM";
 
-  // load manual activities for operator
   manualActivities = await fetchManualActivities(operator, currentRange);
 
   const changes = Math.max(0, currentBlocks.length - 1);
@@ -559,22 +566,7 @@ async function openDrilldown(operator) {
   renderBlocks(currentBlocks);
   renderIntervals(currentIntervals);
 
-  renderTimelineForShift(
-    currentIntervals,
-    $("daySelect").value,
-    $("shiftSelect").value
-  );
-}
-
-function fillDaySelect(days) {
-  const sel = $("daySelect");
-  sel.innerHTML = "";
-  for (const d of days) {
-    const opt = document.createElement("option");
-    opt.value = d;
-    opt.textContent = d;
-    sel.appendChild(opt);
-  }
+  if (day) renderTimelineForShift(currentIntervals, day, shift);
 }
 
 // -------------------- CSV Export --------------------
@@ -641,10 +633,7 @@ async function loadSupportRanges() {
     .eq("support_account", supportAccountOpen)
     .order("start_dt", { ascending: false });
 
-  if (error) {
-    log("❌ loadSupportRanges:", error.message);
-    return;
-  }
+  if (error) { log("❌ loadSupportRanges:", error.message); return; }
 
   for (const r of (data ?? [])) {
     const tr = document.createElement("tr");
@@ -660,8 +649,7 @@ async function loadSupportRanges() {
   tb.querySelectorAll("[data-del]").forEach(btn => {
     btn.addEventListener("click", async () => {
       const id = btn.getAttribute("data-del");
-      const { error: delErr } = await supabase.from("support_assignments").delete().eq("id", id);
-      if (delErr) log("❌ delete support:", delErr.message);
+      await supabase.from("support_assignments").delete().eq("id", id);
       await loadSupportRanges();
     });
   });
@@ -674,10 +662,7 @@ async function addSupportRange() {
   const start = dtLocalToTimestamp($("supportStart").value);
   const end = dtLocalToTimestamp($("supportEnd").value);
 
-  if (!realOperator || !start || !end) {
-    log("⚠️ Compila Supporto reale + Start + End");
-    return;
-  }
+  if (!realOperator || !start || !end) { log("⚠️ Compila Supporto reale + Start + End"); return; }
 
   const { error } = await supabase.from("support_assignments").insert({
     user_id: currentUser.id,
@@ -687,11 +672,7 @@ async function addSupportRange() {
     end_dt: end,
   });
 
-  if (error) {
-    log("❌ insert support:", error.message);
-    return;
-  }
-
+  if (error) { log("❌ insert support:", error.message); return; }
   await loadSupportRanges();
   log("✅ Support range saved");
 }
@@ -700,12 +681,9 @@ async function addSupportRange() {
 function openActivityModal(startDt, endDt) {
   if (!currentOperator) return;
 
-  pauseClickContext = { operator: currentOperator, start: startDt, end: endDt };
-
   $("activityTitle").textContent = `Attività indiretta — ${currentOperator}`;
   $("activitySubtitle").textContent = `${fmtDT(startDt)} → ${fmtDT(endDt)} (slot ${SLOT_MINUTES}m)`;
 
-  // default form values
   $("activityLabel").value = "";
   $("activityStart").value = dtToLocal(startDt);
   $("activityEnd").value = dtToLocal(endDt);
@@ -716,11 +694,9 @@ function openActivityModal(startDt, endDt) {
 
 function closeActivityModal() {
   $("activityOverlay").style.display = "none";
-  pauseClickContext = null;
 }
 
 function dtToLocal(d) {
-  // yyyy-mm-ddThh:mm
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth()+1).padStart(2,"0");
   const dd = String(d.getDate()).padStart(2,"0");
@@ -732,10 +708,8 @@ function dtToLocal(d) {
 async function loadActivitiesTable() {
   const tb = $("tblActivities").querySelector("tbody");
   tb.innerHTML = "";
-
   if (!currentOperator) return;
 
-  // reload activities
   manualActivities = await fetchManualActivities(currentOperator, currentRange);
 
   for (const a of manualActivities) {
@@ -752,8 +726,7 @@ async function loadActivitiesTable() {
   tb.querySelectorAll("[data-del]").forEach(btn => {
     btn.addEventListener("click", async () => {
       const id = btn.getAttribute("data-del");
-      const { error } = await supabase.from("manual_activity_segments").delete().eq("id", id);
-      if (error) log("❌ delete activity:", error.message);
+      await supabase.from("manual_activity_segments").delete().eq("id", id);
       await loadActivitiesTable();
       rerenderTimeline();
     });
@@ -767,10 +740,7 @@ async function addManualActivity() {
   const start = dtLocalToTimestamp($("activityStart").value);
   const end = dtLocalToTimestamp($("activityEnd").value);
 
-  if (!label || !start || !end) {
-    log("⚠️ Compila Label + Start + End");
-    return;
-  }
+  if (!label || !start || !end) { log("⚠️ Compila Label + Start + End"); return; }
 
   const { error } = await supabase.from("manual_activity_segments").insert({
     user_id: currentUser.id,
@@ -780,10 +750,7 @@ async function addManualActivity() {
     label,
   });
 
-  if (error) {
-    log("❌ insert activity:", error.message);
-    return;
-  }
+  if (error) { log("❌ insert activity:", error.message); return; }
 
   await loadActivitiesTable();
   rerenderTimeline();
@@ -794,15 +761,16 @@ function rerenderTimeline() {
   if (!currentOperator) return;
   const day = $("daySelect").value;
   const shift = $("shiftSelect").value;
-  renderTimelineForShift(currentIntervals, day, shift);
+  if (day && shift) renderTimelineForShift(currentIntervals, day, shift);
 }
 
 // -------------------- Main recompute --------------------
 async function recompute() {
-  setBusy(true, "caricamento eventi...");
+  setBusy(true, "caricamento eventi (paginato)...");
   try {
     currentRange = computeRangeFromUI();
-    cachedEvents = await fetchEvents(currentRange);
+
+    cachedEvents = await fetchEventsAll(currentRange);
     log(`Loaded events: ${cachedEvents.length}`);
 
     const opMap = buildOperatorMap(cachedEvents);
@@ -818,15 +786,15 @@ async function recompute() {
     renderSummary(rows);
     renderKpi(rows);
 
-    // reset drilldown tables (empty)
+    // reset drilldown view
     currentOperator = null;
     $("ddInfo").textContent = "Seleziona un operatore…";
     $("tblBlocks").querySelector("tbody").innerHTML = "";
     $("tblIntervals").querySelector("tbody").innerHTML = "";
     $("timelineRow").innerHTML = "";
-    $("tickStart").textContent = "";
-    $("tickEnd").textContent = "";
-
+    $("timelineTicks").innerHTML = "";
+    $("axisLeft").textContent = "";
+    $("axisRight").textContent = "";
     $("daySelect").innerHTML = "";
   } catch (e) {
     log("❌ recompute error:", e?.message ?? String(e));
@@ -838,12 +806,10 @@ async function recompute() {
 // -------------------- Init --------------------
 (async function init() {
   log("Init overview...");
-
   try {
     currentUser = await ensureAnonymousSession();
     log("✅ Session:", currentUser.id);
 
-    // default endDate = today
     const now = new Date();
     const yyyy = now.getFullYear();
     const mm = String(now.getMonth()+1).padStart(2,"0");
@@ -856,9 +822,9 @@ async function recompute() {
 
     $("btnExportCsv").addEventListener("click", exportIntervalsCsv);
 
-    // shift/day change -> timeline rerender
     $("daySelect").addEventListener("change", rerenderTimeline);
     $("shiftSelect").addEventListener("change", rerenderTimeline);
+    $("btnViewSequence").addEventListener("click", rerenderTimeline);
 
     // support modal
     $("btnCloseSupport").addEventListener("click", closeSupportModal);
@@ -868,12 +834,11 @@ async function recompute() {
       await recompute();
     });
 
-    // manual activity modal
+    // activity modal
     $("btnCloseActivity").addEventListener("click", closeActivityModal);
     $("btnCloseActivity2").addEventListener("click", closeActivityModal);
     $("btnAddActivity").addEventListener("click", addManualActivity);
 
-    // initial load
     await recompute();
   } catch (e) {
     log("❌ init failed:", e?.message ?? String(e));
