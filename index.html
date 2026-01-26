@@ -7,6 +7,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <!-- IMPORTANT: this must be the real shared core file name in your repo -->
   <script src="./app-core.js"></script>
 
   <style>
@@ -14,13 +15,11 @@
       --bg:#0b1220;--card:#111a2e;--border:rgba(255,255,255,.12);--muted:#a9b7d6;--text:#e8eefc;
       --btn:#6ea8fe;--btnText:#09101c;--bad:#ff6b6b;--ok:#2ed573;--warn:#ffc107;
       --soft:rgba(255,255,255,.06);--soft2:rgba(255,255,255,.10);--row:rgba(255,255,255,.04);
-      --ink:#ffffff;
     }
     body[data-theme="light"]{
       --bg:#f6f7fb;--card:#ffffff;--border:rgba(15,23,42,.12);--muted:#475569;--text:#0f172a;
       --btn:#2563eb;--btnText:#ffffff;--bad:#b91c1c;--ok:#15803d;--warn:#a16207;
       --soft:rgba(15,23,42,.05);--soft2:rgba(15,23,42,.08);--row:rgba(15,23,42,.04);
-      --ink:#0f172a;
     }
     body{font-family:system-ui,Segoe UI,Roboto,Arial;margin:0;background:var(--bg);color:var(--text);}
     header{padding:14px 18px;border-bottom:1px solid var(--border);background:color-mix(in srgb, var(--bg) 85%, black 15%);}
@@ -35,17 +34,12 @@
     .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:12px;}
     .title{font-weight:900;font-size:14px;}
     .hint{color:var(--muted);font-size:12px;}
-    .bad{color:var(--bad);font-size:12px;}
+    .bad{color:var(--bad);font-size:12px;white-space:pre-wrap;}
     .ok{color:var(--ok);font-size:12px;}
-    .warn{color:var(--warn);font-size:12px;}
     input,select,button{border-radius:10px;border:1px solid var(--border);background:var(--soft);color:var(--text);padding:10px;}
     button{background:var(--btn);color:var(--btnText);border:0;font-weight:900;cursor:pointer;}
     button.secondary{background:var(--soft2);color:var(--text);border:1px solid var(--border);}
     button.danger{background:var(--bad);color:#fff;border:0;}
-    button.warnBtn{background:var(--warn);color:#111;border:0;}
-    table{width:100%;border-collapse:collapse;margin-top:10px;font-size:12px;}
-    th,td{padding:8px;border-bottom:1px solid var(--border);}
-    th{color:var(--muted);text-align:left;font-weight:800;}
     .row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;}
     .col{display:flex;flex-direction:column;gap:6px;min-width:240px;}
     .pill{display:inline-flex;gap:8px;align-items:center;border:1px solid var(--border);border-radius:999px;padding:6px 10px;background:var(--soft);}
@@ -90,7 +84,6 @@
 <div class="wrap">
   <div class="grid">
 
-    <!-- LEFT -->
     <div>
       <div class="card">
         <div class="title">Import Data</div>
@@ -146,7 +139,7 @@
           <span class="pill" id="issuesPill">Duplicates: —</span>
         </div>
 
-        <div class="hint small" style="margin-top:10px;" id="issuesHint">
+        <div class="hint small" style="margin-top:10px;">
           Key: (ts, kind, category, src_operator, eff_operator, storage_bin, lane, wo_id, self_count, meta).
         </div>
 
@@ -162,11 +155,10 @@
             <button id="deleteDsBtn" class="danger" type="button">Delete</button>
           </div>
         </div>
-        <div class="warn small" style="margin-top:8px;">Note: delete requires Supabase permission (RLS/policies).</div>
+        <div class="hint small" style="margin-top:8px;">Note: delete requires Supabase permission (RLS/policies).</div>
       </div>
     </div>
 
-    <!-- RIGHT -->
     <aside>
       <div class="card">
         <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;">
@@ -214,6 +206,19 @@ function setStatus(t){ $('status').textContent = 'Status: ' + t; }
 function setErr(t){ $('err').textContent = t||''; }
 function setOk(t){ $('ok').textContent = t||''; }
 
+function hardFailIfCoreMissing(){
+  if(!Core){
+    setErr("AppCore is not loaded.\n\nFix:\n1) ensure app-core.js exists in your repo root;\n2) the filename must match exactly (case-sensitive);\n3) make sure it is committed and served by GitHub Pages.\n");
+    throw new Error("AppCore missing");
+  }
+  const needed = ["sb","dayKeyFromDate","laneFromBin","isPickBin","wtCategory","getSelection","setSelection","selectionDayKeys","fetchDatasets","fmtDDMMYYYY","getActiveDatasetId","setActiveDatasetId"];
+  const missing = needed.filter(k => typeof Core[k] === "undefined");
+  if(missing.length){
+    setErr("AppCore loaded but missing functions: " + missing.join(", ") + "\n\nFix: replace app-core.js with the latest version we generated (non-module).");
+    throw new Error("AppCore incomplete");
+  }
+}
+
 function applyTheme(theme){
   document.body.setAttribute('data-theme', theme);
   localStorage.setItem('mc_theme', theme);
@@ -251,7 +256,7 @@ function parseTimeToHMS(t){
     return {h:Math.floor(totalSeconds/3600)%24, min:Math.floor((totalSeconds%3600)/60), s:totalSeconds%60};
   }
   const s=String(t).trim();
-  const m=s.match(/^(\\d{1,2}):(\\d{2})(?::(\\d{2}))?$/);
+  const m=s.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
   if(m) return {h:+m[1],min:+m[2],s:m[3]?+m[3]:0};
   const dt=new Date(s);
   if(!isNaN(dt.getTime())) return {h:dt.getHours(),min:dt.getMinutes(),s:dt.getSeconds()};
@@ -283,6 +288,7 @@ async function insertChunk(table, rows, chunk=1000){
     if(error) throw new Error(error.message);
   }
 }
+
 function updateActivePill(){
   const id = Core.getActiveDatasetId();
   $('activePill').textContent = id ? ('Active dataset: ' + id.slice(0,8) + '…') : 'Active dataset: —';
@@ -304,7 +310,6 @@ function monthKey(dayKey){
 
 async function loadDatasets(){
   const ds = await Core.fetchDatasets();
-  // populate active select and delete select
   $('activeDsSelect').innerHTML = ds.map(d=>`<option value="${d.id}">${d.label}</option>`).join('');
   $('deleteDsSelect').innerHTML = ds.map(d=>`<option value="${d.id}">${d.label} — ${String(d.created_at).slice(0,16).replace('T',' ')}</option>`).join('');
 
@@ -331,7 +336,6 @@ async function renderPeriodList(){
     return;
   }
 
-  // get distinct day_keys from events for this dataset
   const { data, error } = await Core.sb.from('events').select('day_key').eq('dataset_id', datasetId);
   if(error) throw new Error(error.message);
   const dayKeys = Array.from(new Set((data||[]).map(x=>String(x.day_key).slice(0,10)))).sort();
@@ -364,7 +368,6 @@ async function renderPeriodList(){
     return;
   }
 
-  // weeks/months: group dayKeys
   const groups = new Map();
   for(const dk of dayKeys){
     const gk = (mode==='weeks') ? isoWeekKey(dk) : monthKey(dk);
@@ -375,7 +378,6 @@ async function renderPeriodList(){
 
   $('periodHint').textContent = (mode==='weeks') ? 'Weeks' : 'Months';
 
-  // checked if ALL days in group are selected
   function groupChecked(gk){
     const days = groups.get(gk) || [];
     if(!days.length) return false;
@@ -403,7 +405,7 @@ async function renderPeriodList(){
       const days = groups.get(gk) || [];
       const cur = Core.getSelection(datasetId);
       for(const dk of days){
-        if(checked) cur[dk] = {pi:true, wt:true};
+        if(checked) cur[dk] = {pi:true,wt:true};
         else delete cur[dk];
       }
       Core.setSelection(datasetId, cur);
@@ -484,7 +486,6 @@ async function deleteDataset(){
   if(error){ setErr(error.message); return; }
 
   setOk('Dataset deleted.');
-  // update active if needed
   if(Core.getActiveDatasetId() === id) Core.setActiveDatasetId('');
   await loadDatasets();
   await renderPeriodList();
@@ -525,6 +526,7 @@ $('dsLabelFmt').addEventListener('change', ()=>{
 
 $('importBtn').addEventListener('click', async ()=>{
   try{
+    hardFailIfCoreMissing();
     setErr(''); setOk('');
     const piFiles = Array.from($('piFile').files||[]);
     const wtFiles = Array.from($('wtFile').files||[]);
@@ -538,7 +540,6 @@ $('importBtn').addEventListener('click', async ()=>{
     const events=[];
     let minDay=null, maxDay=null;
 
-    // PI
     for(const r of piRows){
       const counter = norm(getField(r, ['Counter']));
       if(!counter) continue;
@@ -569,7 +570,6 @@ $('importBtn').addEventListener('click', async ()=>{
       if(!maxDay || dayKey > maxDay) maxDay=dayKey;
     }
 
-    // WT
     for(const r of wtRows){
       const srcBin = norm(getField(r, ['Source Storage Bin']));
       if(!isNonEmptyBin(srcBin)) continue;
@@ -660,7 +660,6 @@ $('importBtn').addEventListener('click', async ()=>{
     Core.setActiveDatasetId(datasetId);
     updateActivePill();
 
-    // default selection = all days in dataset
     const out={};
     const days = new Set(events.map(e=>e.day_key));
     for(const dk of days) out[dk]={pi:true,wt:true};
@@ -674,7 +673,7 @@ $('importBtn').addEventListener('click', async ()=>{
     await scanDuplicates();
   } catch(e){
     console.error(e);
-    setErr(e.message || String(e));
+    if(!$('err').textContent) setErr(e.message || String(e));
     setStatus('Error');
   }
 });
@@ -682,12 +681,16 @@ $('importBtn').addEventListener('click', async ()=>{
 (async function boot(){
   applyTheme(localStorage.getItem('mc_theme') || 'dark');
   $('dsLabelPreview').textContent = 'Derived from data dates (min→max)';
-  updateActivePill();
-  await loadDatasets();
-  await renderPeriodList();
-  updateSelSummary();
-  // Best-effort scan
-  scanDuplicates().catch(()=>{});
+  try{
+    hardFailIfCoreMissing();
+    updateActivePill();
+    await loadDatasets();
+    await renderPeriodList();
+    updateSelSummary();
+    scanDuplicates().catch(()=>{});
+  }catch(e){
+    // error already shown
+  }
 })();
 </script>
 </body>
