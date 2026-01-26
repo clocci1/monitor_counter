@@ -1,203 +1,375 @@
 <!doctype html>
 <html lang="it">
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Monitor Counter — Overview</title>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-  <script src="./app-core.js"></script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Stock Control - Productivity | Overview</title>
+
   <style>
-    :root{--bg:#0b1220;--card:#111a2e;--border:rgba(255,255,255,.12);--muted:#a9b7d6;--text:#e8eefc;--btn:#6ea8fe;--bad:#ff6b6b;}
-    body{font-family:system-ui,Segoe UI,Roboto,Arial;margin:0;background:var(--bg);color:var(--text);}
-    header{padding:14px 18px;border-bottom:1px solid var(--border);background:rgba(0,0,0,.2);}
-    nav a{color:var(--text);text-decoration:none;margin-right:12px;font-weight:800;}
-    .wrap{max-width:1500px;margin:0 auto;padding:16px 18px;}
-    .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:12px;}
-    .hint{color:var(--muted);font-size:12px;}
-    .bad{color:var(--bad);font-size:12px;}
-    table{width:100%;border-collapse:collapse;margin-top:10px;font-size:12px;}
-    th,td{padding:8px;border-bottom:1px solid var(--border);}
-    th{color:var(--muted);text-align:left;font-weight:800;}
-    .mono{font-family:ui-monospace,Menlo,Consolas,monospace;}
-    .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center;}
-    select,button{border-radius:10px;border:1px solid var(--border);background:rgba(255,255,255,.06);color:var(--text);padding:10px;}
-    button{background:var(--btn);color:var(--bg);border:0;font-weight:900;cursor:pointer;}
-    .bar{height:12px;border-radius:999px;background:rgba(255,255,255,.10);overflow:hidden;}
-    .seg{height:100%;display:inline-block;}
+    :root{
+      --bg:#0b0f14;
+      --panel:rgba(255,255,255,.06);
+      --panel2:rgba(255,255,255,.04);
+      --stroke:rgba(255,255,255,.10);
+      --text:rgba(255,255,255,.92);
+      --muted:rgba(255,255,255,.62);
+      --muted2:rgba(255,255,255,.45);
+      --accent:#7c5cff;
+      --danger:#ff4d6d;
+      --ok:#2dd4bf;
+      --shadow:0 18px 55px rgba(0,0,0,.55);
+      --radius:16px;
+      --radius2:12px;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      min-height:100vh;
+      background:
+        radial-gradient(1000px 500px at 10% -10%, rgba(124,92,255,.35), transparent 60%),
+        radial-gradient(800px 500px at 100% 0%, rgba(45,212,191,.18), transparent 60%),
+        var(--bg);
+      color:var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+    }
+    .wrap{max-width:1300px;margin:0 auto;padding:22px 18px 60px}
+    header{
+      display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:14px
+    }
+    h1{margin:0;font-size:24px}
+    .subtitle{color:var(--muted);font-size:13px;line-height:1.45;max-width:900px;margin-top:6px}
+    .topRight{display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+    .pillBar{
+      display:flex;gap:12px;align-items:center;padding:10px 12px;
+      background:var(--panel);border:1px solid var(--stroke);border-radius:999px;
+      box-shadow:var(--shadow);backdrop-filter:blur(12px)
+    }
+    .dot{width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.25)}
+    .dot.ok{background:var(--ok)} .dot.bad{background:var(--danger)}
+    .pill{display:flex;gap:8px;align-items:center;color:var(--muted);font-size:12px;white-space:nowrap}
+
+    .btn{
+      appearance:none;border:1px solid var(--stroke);
+      background:rgba(255,255,255,.06);color:var(--text);
+      padding:10px 12px;border-radius:999px;cursor:pointer;
+      font-weight:700;font-size:13px;
+      transition:transform .08s ease, background .12s ease, border-color .12s ease
+    }
+    .btn:hover{background:rgba(255,255,255,.10);border-color:rgba(255,255,255,.16)}
+    .btn:active{transform:scale(.98)}
+    .btn.primary{border-color:rgba(124,92,255,.55);background:rgba(124,92,255,.18)}
+    .btn.primary:hover{background:rgba(124,92,255,.24)}
+    .btn.danger{border-color:rgba(255,77,109,.45);background:rgba(255,77,109,.12)}
+    .btn:disabled{opacity:.55;cursor:not-allowed}
+
+    .card{
+      background:linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03));
+      border:1px solid var(--stroke);border-radius:var(--radius);
+      box-shadow:var(--shadow);backdrop-filter:blur(12px);overflow:hidden
+    }
+    .bar{
+      display:flex;align-items:center;justify-content:space-between;gap:12px;
+      padding:14px;border-bottom:1px solid rgba(255,255,255,.08);
+      background:var(--panel2)
+    }
+    .barLeft{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    .barRight{display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:flex-end;color:var(--muted);font-size:12px}
+
+    select,input{
+      background:rgba(0,0,0,.25);
+      border:1px solid rgba(255,255,255,.12);
+      color:var(--text);
+      padding:9px 10px;border-radius:12px;
+      outline:none
+    }
+
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}
+    @media(max-width:1100px){.grid{grid-template-columns:1fr}}
+
+    .panel{
+      background:rgba(255,255,255,.03);
+      border:1px solid rgba(255,255,255,.10);
+      border-radius:var(--radius);
+      overflow:hidden
+    }
+    .panelHeader{
+      padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.08);
+      display:flex;justify-content:space-between;align-items:center;gap:12px
+    }
+    .panelHeader strong{
+      font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.2px
+    }
+
+    table{width:100%;border-collapse:collapse;font-size:12.5px}
+    th,td{padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.08);text-align:left;color:rgba(255,255,255,.86)}
+    th{
+      position:sticky;top:0;
+      background:rgba(10,14,20,.85);backdrop-filter:blur(10px);
+      color:rgba(255,255,255,.75);font-weight:800;letter-spacing:.2px
+    }
+    tr:hover td{background:rgba(255,255,255,.03)}
+    .link{color:#9cc2ff;text-decoration:none;font-weight:800;cursor:pointer}
+
+    pre{
+      margin:0;padding:12px 14px;max-height:220px;overflow:auto;
+      font-size:12px;line-height:1.4;color:rgba(255,255,255,.86)
+    }
+
+    /* Modal */
+    .modalOverlay{
+      position:fixed;inset:0;background:rgba(0,0,0,.55);
+      display:none;align-items:center;justify-content:center;padding:18px;z-index:50
+    }
+    .modal{
+      width:min(980px, 100%);
+      background:rgba(12,16,24,.96);
+      border:1px solid rgba(255,255,255,.12);
+      border-radius:18px;box-shadow:var(--shadow);
+      overflow:hidden
+    }
+    .modalTop{
+      display:flex;align-items:center;justify-content:space-between;gap:12px;
+      padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.08)
+    }
+    .modalTop strong{font-size:16px}
+    .modalBody{padding:16px}
+    .formRow{display:grid;grid-template-columns:1.2fr 1fr 1fr auto;gap:10px;align-items:center}
+    @media(max-width:980px){.formRow{grid-template-columns:1fr}}
+    .small{color:var(--muted);font-size:12px;margin-top:6px}
+    .modalActions{display:flex;gap:10px;justify-content:flex-end;padding:14px 16px;border-top:1px solid rgba(255,255,255,.08);background:var(--panel2)}
+    .mono{font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;}
   </style>
 </head>
-<body>
-<header>
-  <nav>
-    <a href="index.html">Home</a>
-    <a href="overview.html">Overview</a>
-    <a href="charts.html">Charts</a>
-    <a href="score.html">Score</a>
-  </nav>
-</header>
 
-<div class="wrap">
-  <div class="card">
-    <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;">
+<body>
+  <div class="wrap">
+    <header>
       <div>
-        <div style="font-weight:900;">Overview (Base)</div>
-        <div class="hint" id="dsInfo">—</div>
+        <h1>Stock Control - Productivity — Overview</h1>
+        <div class="subtitle">
+          KPI e produttività per operatore. Il tempo viene calcolato come differenza tra un evento e il successivo.
+          Se un intervallo supera 30 minuti viene classificato come <b>Pausa</b>.
+        </div>
       </div>
-      <div class="row">
-        <button id="reloadBtn">Ricarica</button>
+
+      <div class="topRight">
+        <div class="pillBar">
+          <div class="pill"><span id="authDot" class="dot"></span><span id="authStatus">...</span></div>
+          <div class="pill">UID: <span id="userId">-</span></div>
+        </div>
+        <a class="btn" href="./index.html">Import</a>
+        <button id="btnReset" class="btn danger">Reset session</button>
+      </div>
+    </header>
+
+    <!-- FILTER BAR -->
+    <div class="card">
+      <div class="bar">
+        <div class="barLeft">
+          <label style="color:var(--muted);font-size:12px;font-weight:800;">Range</label>
+
+          <select id="rangeType">
+            <option value="days">Days</option>
+            <option value="weeks">Weeks</option>
+            <option value="months">Month</option>
+          </select>
+
+          <input id="rangeValue" type="number" min="1" value="7" style="width:80px" />
+
+          <label style="color:var(--muted);font-size:12px;font-weight:800;">End</label>
+          <input id="endDate" type="date" />
+
+          <button id="btnApply" class="btn primary">Applica</button>
+          <button id="btnRefresh" class="btn">Aggiorna</button>
+        </div>
+
+        <div class="barRight">
+          <span id="busyLabel"></span>
+        </div>
       </div>
     </div>
-    <div id="err" class="bad" style="margin-top:8px;"></div>
+
+    <section class="grid">
+
+      <!-- RIEPILOGO -->
+      <div class="panel">
+        <div class="panelHeader">
+          <strong>Riepilogo (click operatore per drill-down)</strong>
+        </div>
+        <div style="max-height: 420px; overflow:auto;">
+          <table id="tblSummary">
+            <thead>
+              <tr>
+                <th>Supporto</th>
+                <th>Operatore</th>
+                <th>Tot Lavoro</th>
+                <th>PI Pick</th>
+                <th>PI Bulk</th>
+                <th>P2P</th>
+                <th>Clean</th>
+                <th>Pausa</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- KPI -->
+      <div class="panel">
+        <div class="panelHeader">
+          <strong>Overview KPI (per operatore)</strong>
+        </div>
+        <div style="max-height: 420px; overflow:auto;">
+          <table id="tblKpi">
+            <thead>
+              <tr>
+                <th>Operatore</th>
+                <th>Tot Lavoro</th>
+                <th>PI Pick</th>
+                <th>#BIN Pick</th>
+                <th>PI Bulk</th>
+                <th>#BIN Bulk</th>
+                <th>P2P</th>
+                <th>#WO P2P</th>
+                <th>Clean</th>
+                <th>#WO Clean</th>
+                <th>WT Other</th>
+                <th>#WO Other</th>
+                <th>Pausa</th>
+                <th>Self Count</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- DRILLDOWN -->
+    <div class="card" style="margin-top:14px;">
+      <div class="bar">
+        <div class="barLeft">
+          <div style="font-weight:900">Drill-down</div>
+          <div id="ddInfo" class="mono" style="color:var(--muted);font-size:12px;">Seleziona un operatore…</div>
+        </div>
+        <div class="barRight">
+          <button id="btnViewDetail" class="btn primary">Dettaglio</button>
+          <button id="btnViewSequence" class="btn">Sequenza</button>
+          <button id="btnExportCsv" class="btn">Esporta intervalli (CSV)</button>
+        </div>
+      </div>
+
+      <div id="drilldownBody" style="display:none;">
+        <div class="grid" style="margin-top:0;">
+          <div class="panel">
+            <div class="panelHeader">
+              <strong>Sintesi sequenziale (blocchi per categoria)</strong>
+            </div>
+            <div style="max-height: 360px; overflow:auto;">
+              <table id="tblBlocks">
+                <thead>
+                  <tr>
+                    <th>Start</th>
+                    <th>End</th>
+                    <th>Categoria</th>
+                    <th>Durata</th>
+                    <th>#BIN</th>
+                    <th>#WO</th>
+                    <th>Note</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panelHeader">
+              <strong>Dettaglio intervalli</strong>
+            </div>
+            <div style="max-height: 360px; overflow:auto;">
+              <table id="tblIntervals">
+                <thead>
+                  <tr>
+                    <th>Start</th>
+                    <th>End</th>
+                    <th>Categoria</th>
+                    <th>Durata</th>
+                    <th>#BIN</th>
+                    <th>WO</th>
+                    <th>Note</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Sequenza 30m -->
+        <div class="panel" style="margin-top:14px; display:none;" id="seqPanel">
+          <div class="panelHeader">
+            <strong>Sequenza (slot da 30 minuti)</strong>
+          </div>
+          <div id="seqList" style="padding:12px 14px; display:flex; flex-direction:column; gap:10px;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- LOG -->
+    <div class="panel" style="margin-top:14px;">
+      <div class="panelHeader">
+        <strong>Log</strong>
+      </div>
+      <pre id="log"></pre>
+    </div>
   </div>
 
-  <div class="card">
-    <div style="font-weight:900;">Riepilogo per Operatore</div>
-    <div class="hint">Questa è la base: lettura Supabase + selezione giorni + KPI principali. Supporti/indirette li reinseriamo nel prossimo step.</div>
-    <div id="tblWrap"></div>
+  <!-- SUPPORT MODAL -->
+  <div id="supportOverlay" class="modalOverlay">
+    <div class="modal">
+      <div class="modalTop">
+        <div>
+          <strong id="supportTitle">Supporto</strong>
+          <div id="supportSubtitle" class="small"></div>
+        </div>
+        <button id="btnCloseSupport" class="btn">Chiudi</button>
+      </div>
+
+      <div class="modalBody">
+        <div class="formRow">
+          <input id="realOperator" placeholder="Supporto reale (nome operatore) es. M.HAYAT" />
+          <input id="supportStart" type="datetime-local" />
+          <input id="supportEnd" type="datetime-local" />
+          <button id="btnAddSupport" class="btn primary">Aggiungi</button>
+        </div>
+        <div class="small">
+          Inserisci una fascia Start-End durante la quale l’account supporto è stato utilizzato dall’operatore reale.
+        </div>
+
+        <div style="margin-top:14px; max-height:260px; overflow:auto;">
+          <table id="tblSupportRanges">
+            <thead>
+              <tr>
+                <th>Supporto reale</th>
+                <th>Start</th>
+                <th>End</th>
+                <th>Azioni</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="modalActions">
+        <button id="btnRecalc" class="btn primary">OK (Ricalcola)</button>
+      </div>
+    </div>
   </div>
 
-  <div class="card">
-    <div style="font-weight:900;">Timebar (Operatore selezionato)</div>
-    <div class="hint">Seleziona un operatore nella tabella sopra.</div>
-    <div id="timebarWrap" style="margin-top:10px;"></div>
-  </div>
-</div>
-
-<script>
-const Core = window.AppCore;
-const $ = (id)=>document.getElementById(id);
-
-let STATE = { op:null, dayKey:null, opDay:{} };
-
-function setErr(t){ $('err').textContent=t||''; }
-
-function pct(a,b){ return b>0 ? (a/b)*100 : 0; }
-
-function buildTimebar(intervals){
-  if(!intervals || !intervals.length) return '<div class="hint">Nessun intervallo calcolato.</div>';
-  const total = intervals.reduce((s,x)=>s+x.minutes,0);
-  const color = (cat)=>{
-    if(cat==='PAUSA') return 'rgba(255,107,107,.9)';
-    if(cat==='INDIRETTA') return 'rgba(255,193,7,.9)';
-    if(cat==='PI Pick') return 'rgba(110,168,254,.9)';
-    if(cat==='PI Bulk') return 'rgba(156,136,255,.9)';
-    if(cat==='P2P') return 'rgba(46,213,115,.9)';
-    if(cat==='Clean PICK') return 'rgba(0,206,201,.9)';
-    return 'rgba(255,255,255,.35)';
-  };
-  const segs = intervals.map(it=>{
-    const w = (it.minutes/total)*100;
-    return `<span class="seg" title="${it.category} — ${it.minutes.toFixed(1)} min" style="width:${w.toFixed(3)}%;background:${color(it.category)}"></span>`;
-  }).join('');
-  return `<div class="bar">${segs}</div>`;
-}
-
-async function load(){
-  try{
-    setErr('');
-    const datasetId = Core.getActiveDatasetId();
-    if(!datasetId){ $('dsInfo').textContent='Nessun dataset attivo. Vai su Home.'; return; }
-
-    const sel = Core.getSelection(datasetId);
-    const dayKeys = Core.selectionDayKeys(sel);
-    $('dsInfo').textContent = `Dataset attivo: ${datasetId} — Giorni selezionati: ${dayKeys.length ? dayKeys.map(Core.fmtDDMMYYYY).join(', ') : 'nessuno'}`;
-
-    const [events0, supports, indirects, shiftOv] = await Promise.all([
-      Core.fetchEvents(datasetId, dayKeys),
-      Core.fetchSupportRules(datasetId),
-      Core.fetchIndirectRules(datasetId),
-      Core.fetchShiftOverrides(datasetId)
-    ]);
-
-    const events = Core.applySupportRulesToEvents(events0, supports);
-
-    // group events by operator/day
-    const byOpDay = new Map();
-    for(const e of events){
-      const op = e.eff_calc || e.eff_operator || e.src_operator;
-      const dk = e.day_key;
-      const key = op+'|'+dk;
-      if(!byOpDay.has(key)) byOpDay.set(key, []);
-      byOpDay.get(key).push(e);
-    }
-
-    const kpisList = [];
-    const changeList = [];
-
-    for(const [key, ev] of byOpDay.entries()){
-      const [op, dk] = key.split('|');
-      const shiftWin = Core.inferShiftForDay(op, dk, ev, shiftOv);
-      const {intervals, changeCount, changeTime} = Core.buildIntervalsForOpDay(op, dk, ev, shiftWin, indirects);
-      const k = Core.computeKpisForOpDay(op, dk, ev, intervals, shiftWin);
-      kpisList.push(k);
-      changeList.push({op, dayKey:dk, changeCount, changeTime});
-      STATE.opDay[key] = {op, dk, shiftWin, ev, intervals};
-    }
-
-    const agg = Core.aggregateByOperator(kpisList, changeList);
-
-    // table
-    const rows = agg.map(a=>{
-      const tWork = Core.minToHHMM(a.workMin);
-      const tPause = Core.minToHHMM(a.pauseMin);
-      const tInd = Core.minToHHMM(a.indMin);
-      return `<tr data-op="${a.op}">
-        <td class="mono">${a.op}</td>
-        <td style="text-align:center;">${a.dayCount}</td>
-        <td style="text-align:center;">${a.shift}</td>
-        <td>${tWork}</td>
-        <td>${Core.minToHHMM(a.tPiPick)}</td>
-        <td>${Core.minToHHMM(a.tPiBulk)}</td>
-        <td>${Core.minToHHMM(a.tP2P)}</td>
-        <td>${Core.minToHHMM(a.tClean)}</td>
-        <td>${Core.minToHHMM(a.tOther)}</td>
-        <td>${tInd}</td>
-        <td>${tPause}</td>
-        <td style="text-align:right;">${a.piPickBins}</td>
-        <td style="text-align:right;">${a.piBulkBins}</td>
-        <td style="text-align:right;">${a.woP2P}</td>
-        <td style="text-align:right;">${a.woClean}</td>
-        <td style="text-align:right;">${a.woOther}</td>
-        <td style="text-align:right;">${a.changes}</td>
-        <td>${Core.minToHHMM(a.tChanges)}</td>
-      </tr>`;
-    }).join('');
-
-    $('tblWrap').innerHTML = `
-      <table>
-        <thead><tr>
-          <th>Operatore</th><th style="text-align:center;">Giorni</th><th style="text-align:center;">Turno</th>
-          <th>T Lavoro</th><th>PI Pick</th><th>PI Bulk</th><th>P2P</th><th>Clean</th><th>WT Other</th>
-          <th>Indiretto</th><th>Pausa</th>
-          <th style="text-align:right;">Bin Pick</th><th style="text-align:right;">Bin Bulk</th>
-          <th style="text-align:right;">WO P2P</th><th style="text-align:right;">WO Clean</th><th style="text-align:right;">WO Other</th>
-          <th style="text-align:right;">Cambi</th><th>T Cambi</th>
-        </tr></thead>
-        <tbody>${rows || `<tr><td colspan="18" class="hint">Nessun dato (controlla selezione giorni su Home).</td></tr>`}</tbody>
-      </table>
-    `;
-
-    $('tblWrap').querySelectorAll('tr[data-op]').forEach(tr=>{
-      tr.style.cursor='pointer';
-      tr.addEventListener('click', ()=>{
-        const op = tr.getAttribute('data-op');
-        // pick first day in selection
-        const dk = (dayKeys && dayKeys.length) ? dayKeys[0] : null;
-        const key = op+'|'+dk;
-        STATE.op = op; STATE.dayKey = dk;
-        const pack = STATE.opDay[key];
-        $('timebarWrap').innerHTML = pack ? buildTimebar(pack.intervals) : '<div class="hint">Seleziona un giorno specifico (base). Nel prossimo step aggiungiamo filtro giorno qui.</div>';
-      });
-    });
-
-  } catch(e){
-    console.error(e);
-    setErr(e.message||String(e));
-  }
-}
-
-$('reloadBtn').addEventListener('click', load);
-load();
-</script>
+  <script type="module" src="./overview.js"></script>
 </body>
 </html>
