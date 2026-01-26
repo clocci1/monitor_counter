@@ -204,7 +204,40 @@
 
   function buildIntervalsForOpDay(op, dayKey, events, shiftWin, indirectRules) {
     const aS = shiftWin.start, aE = shiftWin.end;
-    const ev = (events || []).slice().sort((a, b) => a.tsObj - b.tsObj);
+    const evRaw = (events || []).slice().sort((a, b) => a.tsObj - b.tsObj);
+
+// Deduplicate markers at identical timestamp to avoid zero-gap WT "src/dest" duplicates affecting transitions
+const ev = [];
+const seen = new Set();
+for (const e of evRaw) {
+  const ts = e && e.tsObj ? e.tsObj.getTime() : 0;
+  const key = [
+    ts,
+    e.kind || "",
+    e.category || "",
+    e.wo_id || "",
+    e.src_operator || "",
+    (e.meta && e.meta.role) ? e.meta.role : ""
+  ].join("|");
+  // Prefer keeping WT src over WT dest if both exist
+  const altKey = [ts, e.kind||"", e.category||"", e.wo_id||"", e.src_operator||""].join("|");
+  if (e.kind === "WT" && e.meta && e.meta.role === "dest") {
+    if (seen.has(altKey + "|src")) continue;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    continue; // by default do not use dest as timing marker
+  }
+  if (e.kind === "WT" && e.meta && e.meta.role === "src") {
+    if (seen.has(altKey + "|src")) continue;
+    seen.add(altKey + "|src");
+    ev.push(e);
+    continue;
+  }
+  if (seen.has(key)) continue;
+  seen.add(key);
+  ev.push(e);
+}
+
 
     const intervals = [];
     let changeCount = 0;
@@ -239,6 +272,26 @@
         srcEvent: cur
       });
     }
+    // Tail interval: allocate time from last event to shift end (so last activity is counted)
+    if (ev.length >= 1) {
+      const last = ev[ev.length - 1];
+      if (last && last.tsObj && !isNaN(last.tsObj.getTime())) {
+        const sT = clampDate(last.tsObj, aS, aE);
+        const eT = aE;
+        const tail = minutesBetween(sT, eT);
+        if (tail > 0) {
+          const tailCat = (tail >= PAUSE_THRESHOLD_MIN) ? "PAUSA" : (last.category || "WT Other");
+          intervals.push({
+            start: sT,
+            end: eT,
+            minutes: tail,
+            category: tailCat,
+            srcEvent: last
+          });
+        }
+      }
+    }
+
 
     // Split PAUSA into INDIRETTA using indirect_rules
     const ind = (indirectRules || [])
@@ -318,7 +371,7 @@
 
     let qtyP2P = 0;
     for (const e of wtEvents) {
-      if (e.category === "P2P") qtyP2P += Number((e.meta && e.meta.act_qty) || 0) || 0;
+      if (e.category === \"P2P\" && e.meta && e.meta.role === \"src\") qtyP2P += Number(e.meta.act_qty || 0) || 0;
     }
 
     return {
