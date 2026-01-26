@@ -1,73 +1,153 @@
-/**
- * CONFIG
- * NB: publishable key OK lato client.
- */
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
 const SUPABASE_URL = "https://wndlmkjhzgqdwsfylvmh.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_sf8tAbDNmRLtCGu9xsesSQ_JWmIyQHI";
 
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
-
+const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 
 // ---------------------------
 // UI helpers
 // ---------------------------
 const $ = (id) => document.getElementById(id);
 const logEl = $("log");
-const authStatusEl = $("authStatus");
-const userIdEl = $("userId");
-const busyLabelEl = $("busyLabel");
 
 function log(...args) {
-  const line = args.map(a => (typeof a === "string" ? a : JSON.stringify(a, null, 2))).join(" ");
+  const line = args
+    .map((a) => (typeof a === "string" ? a : JSON.stringify(a, null, 2)))
+    .join(" ");
   logEl.textContent += line + "\n";
   logEl.scrollTop = logEl.scrollHeight;
 }
 
 function setBusy(isBusy, msg = "") {
-  $("btnImport").disabled = isBusy;
+  $("btnImportAll").disabled = isBusy;
   $("btnImportPI").disabled = isBusy;
   $("btnImportWT").disabled = isBusy;
   $("btnPreview").disabled = isBusy;
   $("btnSignOut").disabled = isBusy;
-  busyLabelEl.textContent = msg;
+  $("btnClearPI").disabled = isBusy;
+  $("btnClearWT").disabled = isBusy;
+  $("filePI").disabled = isBusy;
+  $("fileWT").disabled = isBusy;
+  $("busyLabel").textContent = msg;
+}
+
+function setAuthUI(ok, statusText, userId) {
+  $("authStatus").textContent = statusText;
+  $("userId").textContent = userId ?? "-";
+  const dot = $("authDot");
+  dot.classList.remove("ok", "bad");
+  dot.classList.add(ok ? "ok" : "bad");
+}
+
+// ---------------------------
+// Selected files state (multi-file)
+// ---------------------------
+let selectedPI = [];
+let selectedWT = [];
+
+function humanFileSize(bytes) {
+  const u = ["B", "KB", "MB", "GB"];
+  let n = bytes;
+  let i = 0;
+  while (n >= 1024 && i < u.length - 1) {
+    n /= 1024;
+    i++;
+  }
+  return `${n.toFixed(i === 0 ? 0 : 1)} ${u[i]}`;
+}
+
+function renderFileList(kind) {
+  const listEl = kind === "PI" ? $("listPI") : $("listWT");
+  const arr = kind === "PI" ? selectedPI : selectedWT;
+
+  listEl.innerHTML = "";
+
+  if (arr.length === 0) return;
+
+  arr.forEach((f, idx) => {
+    const li = document.createElement("li");
+    li.className = "fileItem";
+
+    li.innerHTML = `
+      <div class="fileLeft">
+        <div class="fileName">${escapeHtml(f.name)}</div>
+        <div class="fileMeta">${humanFileSize(f.size)}</div>
+      </div>
+      <button class="btn danger" data-kind="${kind}" data-idx="${idx}">Rimuovi</button>
+    `;
+
+    listEl.appendChild(li);
+  });
+
+  // bind remove buttons
+  listEl.querySelectorAll("button[data-idx]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const k = btn.getAttribute("data-kind");
+      const i = Number(btn.getAttribute("data-idx"));
+      if (k === "PI") selectedPI.splice(i, 1);
+      else selectedWT.splice(i, 1);
+      renderFileList(k);
+    });
+  });
+}
+
+function addFiles(kind, files) {
+  const incoming = Array.from(files || []);
+  if (incoming.length === 0) return;
+
+  // Evita doppioni nello "staging" UI (stesso name+size)
+  const key = (f) => `${f.name}__${f.size}`;
+  const existing = new Set((kind === "PI" ? selectedPI : selectedWT).map(key));
+
+  const merged = incoming.filter((f) => !existing.has(key(f)));
+
+  if (kind === "PI") selectedPI = selectedPI.concat(merged);
+  else selectedWT = selectedWT.concat(merged);
+
+  renderFileList(kind);
+}
+
+function clearFiles(kind) {
+  if (kind === "PI") selectedPI = [];
+  else selectedWT = [];
+  renderFileList(kind);
+}
+
+function escapeHtml(str) {
+  return String(str)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
 
 // ---------------------------
 // Auth: anonymous sign-in
 // ---------------------------
 async function ensureAnonymousSession() {
-  authStatusEl.textContent = "checking session...";
+  setAuthUI(false, "checking session...", "-");
   const { data: s } = await supabase.auth.getSession();
 
   if (s?.session?.user) {
-    authStatusEl.textContent = "signed-in";
-    userIdEl.textContent = s.session.user.id;
+    setAuthUI(true, "signed-in (anon)", s.session.user.id);
     return s.session.user;
   }
 
-  authStatusEl.textContent = "signing in anonymously...";
   const { data, error } = await supabase.auth.signInAnonymously();
+  if (error) throw error;
 
-  if (error) {
-    authStatusEl.textContent = "ERROR";
-    log("❌ Anonymous sign-in failed:", error.message);
-    log("Suggerimento: abilita Anonymous Sign-ins in Authentication settings.");
-    throw error;
-  }
-
-  authStatusEl.textContent = "signed-in (anon)";
-  userIdEl.textContent = data.user?.id ?? "-";
-  log("✅ Anonymous session created:", data.user?.id);
+  setAuthUI(true, "signed-in (anon)", data.user?.id);
   return data.user;
 }
 
 async function signOut() {
-  setBusy(true, "signing out...");
+  setBusy(true, "reset session...");
   const { error } = await supabase.auth.signOut();
   if (error) log("❌ signOut error:", error.message);
   else log("✅ signed out");
-  authStatusEl.textContent = "signed-out";
-  userIdEl.textContent = "-";
+  setAuthUI(false, "signed-out", "-");
   setBusy(false, "");
 }
 
@@ -85,13 +165,14 @@ function normHeader(h) {
 
 function normalizeText(v) {
   if (v === null || v === undefined) return null;
-  return String(v).trim();
+  const s = String(v).trim();
+  return s === "" ? null : s;
 }
 
 function normalizeKey(v) {
-  // per ridurre refusi: trim + upper
   if (v === null || v === undefined) return null;
-  return String(v).trim().toUpperCase();
+  const s = String(v).trim().toUpperCase();
+  return s === "" ? null : s;
 }
 
 function pad2(n) {
@@ -100,7 +181,6 @@ function pad2(n) {
 }
 
 function toISODate(d) {
-  // d: Date
   const y = d.getFullYear();
   const m = pad2(d.getMonth() + 1);
   const day = pad2(d.getDate());
@@ -108,7 +188,6 @@ function toISODate(d) {
 }
 
 function toISOTime(d) {
-  // d: Date
   const hh = pad2(d.getHours());
   const mm = pad2(d.getMinutes());
   const ss = pad2(d.getSeconds());
@@ -116,7 +195,6 @@ function toISOTime(d) {
 }
 
 function parseExcelDate(value) {
-  // ritorna YYYY-MM-DD oppure null
   if (value === null || value === undefined || value === "") return null;
 
   if (value instanceof Date && !isNaN(value.getTime())) {
@@ -124,16 +202,14 @@ function parseExcelDate(value) {
   }
 
   if (typeof value === "number") {
-    // Excel serial -> parse_date_code
     const d = XLSX.SSF.parse_date_code(value);
     if (!d) return null;
     const dt = new Date(d.y, d.m - 1, d.d);
     return toISODate(dt);
   }
 
-  // stringa: prova dd/mm/yyyy o yyyy-mm-dd ecc.
   const s = String(value).trim();
-  const m1 = s.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/); // dd/mm/yyyy
+  const m1 = s.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/);
   if (m1) {
     const dd = pad2(m1[1]);
     const mm = pad2(m1[2]);
@@ -141,7 +217,7 @@ function parseExcelDate(value) {
     return `${yyyy}-${mm}-${dd}`;
   }
 
-  const m2 = s.match(/^(\d{4})[\/.-](\d{1,2})[\/.-](\d{1,2})$/); // yyyy-mm-dd
+  const m2 = s.match(/^(\d{4})[\/.-](\d{1,2})[\/.-](\d{1,2})$/);
   if (m2) {
     const yyyy = m2[1];
     const mm = pad2(m2[2]);
@@ -156,7 +232,6 @@ function parseExcelDate(value) {
 }
 
 function parseExcelTime(value) {
-  // ritorna HH:MM:SS oppure null
   if (value === null || value === undefined || value === "") return null;
 
   if (value instanceof Date && !isNaN(value.getTime())) {
@@ -164,23 +239,15 @@ function parseExcelTime(value) {
   }
 
   if (typeof value === "number") {
-    // Excel time fraction
     const d = XLSX.SSF.parse_date_code(value);
     if (!d) return null;
-    const hh = pad2(d.H);
-    const mm = pad2(d.M);
-    const ss = pad2(d.S);
-    return `${hh}:${mm}:${ss}`;
+    return `${pad2(d.H)}:${pad2(d.M)}:${pad2(d.S)}`;
   }
 
   const s = String(value).trim();
-  // hh:mm o hh:mm:ss
   const m = s.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
   if (m) {
-    const hh = pad2(m[1]);
-    const mm = pad2(m[2]);
-    const ss = pad2(m[3] ?? "00");
-    return `${hh}:${mm}:${ss}`;
+    return `${pad2(m[1])}:${pad2(m[2])}:${pad2(m[3] ?? "00")}`;
   }
 
   const parsed = new Date(s);
@@ -192,14 +259,11 @@ function parseExcelTime(value) {
 async function readExcelRows(file) {
   const buf = await file.arrayBuffer();
   const wb = XLSX.read(buf, { type: "array", cellDates: true });
-  const sheetName = wb.SheetNames[0];
-  const sheet = wb.Sheets[sheetName];
-  const rows = XLSX.utils.sheet_to_json(sheet, { defval: null });
-  return rows;
+  const sheet = wb.Sheets[wb.SheetNames[0]];
+  return XLSX.utils.sheet_to_json(sheet, { defval: null });
 }
 
 function buildHeaderIndex(rowObj) {
-  // crea una mappa headerNormalizzato -> headerOriginale
   const map = new Map();
   for (const k of Object.keys(rowObj || {})) {
     map.set(normHeader(k), k);
@@ -208,7 +272,6 @@ function buildHeaderIndex(rowObj) {
 }
 
 function pickField(row, headerIndex, wanted) {
-  // wanted: array di alias normalizzati
   for (const w of wanted) {
     const original = headerIndex.get(w);
     if (original !== undefined) return row[original];
@@ -221,22 +284,21 @@ function pickField(row, headerIndex, wanted) {
 // ---------------------------
 function mapPI(rows, userId, batchId) {
   if (!rows.length) return [];
-
   const headerIndex = buildHeaderIndex(rows[0]);
 
   const out = [];
   for (const r of rows) {
     const warehouseOrder = normalizeKey(pickField(r, headerIndex, ["warehouse order"]));
     const storageBin = normalizeKey(pickField(r, headerIndex, ["storage bin"]));
-
     if (!warehouseOrder || !storageBin) continue;
 
     const countDate = parseExcelDate(pickField(r, headerIndex, ["count date"]));
     const countTime = parseExcelTime(pickField(r, headerIndex, ["count time"]));
     if (!countDate || !countTime) continue;
 
-    const status =
-      normalizeText(pickField(r, headerIndex, ["physiscal inventory status", "physical inventory status"]));
+    const status = normalizeText(
+      pickField(r, headerIndex, ["physiscal inventory status", "physical inventory status"])
+    );
 
     const counter = normalizeText(pickField(r, headerIndex, ["counter"]));
     const createdBy = normalizeText(pickField(r, headerIndex, ["created by"]));
@@ -255,13 +317,7 @@ function mapPI(rows, userId, batchId) {
     });
   }
 
-  // sort temporale
-  out.sort((a, b) => {
-    const ta = Date.parse(`${a.count_date}T${a.count_time}`);
-    const tb = Date.parse(`${b.count_date}T${b.count_time}`);
-    return ta - tb;
-  });
-
+  out.sort((a, b) => Date.parse(`${a.count_date}T${a.count_time}`) - Date.parse(`${b.count_date}T${b.count_time}`));
   return out;
 }
 
@@ -270,14 +326,12 @@ function mapPI(rows, userId, batchId) {
 // ---------------------------
 function mapWT(rows, userId, batchId) {
   if (!rows.length) return [];
-
   const headerIndex = buildHeaderIndex(rows[0]);
 
   const out = [];
   for (const r of rows) {
     const warehouseOrder = normalizeKey(pickField(r, headerIndex, ["warehouse order"]));
-    const procType = normalizeText(pickField(r, headerIndex, ["whse proc type", "whse proc type "]))?.trim();
-
+    const procType = normalizeText(pickField(r, headerIndex, ["whse proc type"]));
     const sourceBin = normalizeKey(pickField(r, headerIndex, ["source storage bin"]));
 
     if (!warehouseOrder || !sourceBin || !procType) continue;
@@ -288,8 +342,7 @@ function mapWT(rows, userId, batchId) {
 
     const createdBy = normalizeText(pickField(r, headerIndex, ["created by"]));
     const confirmedBy = normalizeText(pickField(r, headerIndex, ["confirmed by"]));
-
-    const destBin = normalizeText(pickField(r, headerIndex, ["original dest bin", "original dest bin "]));
+    const destBin = normalizeText(pickField(r, headerIndex, ["original dest bin"]));
 
     out.push({
       user_id: userId,
@@ -306,21 +359,23 @@ function mapWT(rows, userId, batchId) {
     });
   }
 
-  out.sort((a, b) => {
-    const ta = Date.parse(`${a.confirmation_date}T${a.confirmation_time}`);
-    const tb = Date.parse(`${b.confirmation_date}T${b.confirmation_time}`);
-    return ta - tb;
-  });
-
+  out.sort((a, b) => Date.parse(`${a.confirmation_date}T${a.confirmation_time}`) - Date.parse(`${b.confirmation_date}T${b.confirmation_time}`));
   return out;
 }
 
 // ---------------------------
-// Supabase upload + insert
+// Supabase upload + insert + upsert
 // ---------------------------
+function safeFilename(name) {
+  return String(name)
+    .replaceAll(" ", "_")
+    .replaceAll(/[^a-zA-Z0-9._-]/g, "")
+    .slice(0, 70);
+}
+
 async function uploadToStorage(file, userId, batchId, sourceTag) {
   const ext = file.name.toLowerCase().endsWith(".xls") ? "xls" : "xlsx";
-  const path = `${userId}/${batchId}/${sourceTag}.${ext}`;
+  const path = `${userId}/${batchId}/${sourceTag}__${safeFilename(file.name)}.${ext}`;
 
   const { error } = await supabase.storage
     .from("uploads")
@@ -348,72 +403,54 @@ async function insertBatch(batchId, userId, source, originalFilename, storageBuc
 
 async function upsertChunked(tableName, rows, onConflict) {
   const CHUNK = 500;
-  let total = 0;
-
   for (let i = 0; i < rows.length; i += CHUNK) {
     const chunk = rows.slice(i, i + CHUNK);
-
     const { error } = await supabase
       .from(tableName)
       .upsert(chunk, { onConflict, ignoreDuplicates: true });
-
     if (error) throw error;
-    total += chunk.length;
   }
-
-  return total;
 }
 
-async function importPI(file, user) {
+// ---------------------------
+// Import per singolo file (batch per file)
+// ---------------------------
+async function importSinglePI(file, user) {
   const batchId = crypto.randomUUID();
-  log(`\n=== PI import | batch ${batchId} ===`);
-  log("Reading Excel...");
+  log(`\n=== PI import | ${file.name} | batch ${batchId} ===`);
 
   const excelRows = await readExcelRows(file);
-  log(`Excel rows: ${excelRows.length}`);
-
   const mapped = mapPI(excelRows, user.id, batchId);
-  log(`Mapped rows (valid): ${mapped.length}`);
 
-  log("Uploading file to Storage...");
+  log(`Excel rows: ${excelRows.length} | Valid rows: ${mapped.length}`);
+
   const up = await uploadToStorage(file, user.id, batchId, "PI");
-  log("Storage path:", up.path);
-
-  log("Inserting import_batches...");
   await insertBatch(batchId, user.id, "PI", file.name, up.bucket, up.path, mapped.length);
 
-  log("Upserting pi_rows (dedupe by user_id + warehouse_order_key + storage_bin_key)...");
-  const insertedApprox = await upsertChunked("pi_rows", mapped, "user_id,warehouse_order_key,storage_bin_key");
-  log(`Upsert done. Rows processed: ${insertedApprox}`);
+  await upsertChunked("pi_rows", mapped, "user_id,warehouse_order_key,storage_bin_key");
+  log("✅ PI upsert OK (dedupe attiva)");
 }
 
-async function importWT(file, user) {
+async function importSingleWT(file, user) {
   const batchId = crypto.randomUUID();
-  log(`\n=== WT import | batch ${batchId} ===`);
-  log("Reading Excel...");
+  log(`\n=== WT import | ${file.name} | batch ${batchId} ===`);
 
   const excelRows = await readExcelRows(file);
-  log(`Excel rows: ${excelRows.length}`);
-
   const mapped = mapWT(excelRows, user.id, batchId);
-  log(`Mapped rows (valid): ${mapped.length}`);
 
-  log("Uploading file to Storage...");
+  log(`Excel rows: ${excelRows.length} | Valid rows: ${mapped.length}`);
+
   const up = await uploadToStorage(file, user.id, batchId, "WT");
-  log("Storage path:", up.path);
-
-  log("Inserting import_batches...");
   await insertBatch(batchId, user.id, "WT", file.name, up.bucket, up.path, mapped.length);
 
-  log("Upserting wt_rows (dedupe by user_id + warehouse_order_key + source_storage_bin_key)...");
-  const insertedApprox = await upsertChunked("wt_rows", mapped, "user_id,warehouse_order_key,source_storage_bin_key");
-  log(`Upsert done. Rows processed: ${insertedApprox}`);
+  await upsertChunked("wt_rows", mapped, "user_id,warehouse_order_key,source_storage_bin_key");
+  log("✅ WT upsert OK (dedupe attiva)");
 }
 
 // ---------------------------
 // Preview events
 // ---------------------------
-async function loadPreview(user) {
+async function loadPreview() {
   const tbody = $("previewTable").querySelector("tbody");
   tbody.innerHTML = "";
 
@@ -431,13 +468,13 @@ async function loadPreview(user) {
   for (const r of data) {
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td>${r.source ?? ""}</td>
-      <td>${r.event_dt ?? ""}</td>
-      <td>${r.operator_code ?? ""}</td>
-      <td>${r.warehouse_order ?? ""}</td>
-      <td>${r.bin_from ?? ""}</td>
-      <td>${r.bin_to ?? ""}</td>
-      <td>${r.category ?? ""}</td>
+      <td>${escapeHtml(r.source ?? "")}</td>
+      <td>${escapeHtml(r.event_dt ?? "")}</td>
+      <td>${escapeHtml(r.operator_code ?? "")}</td>
+      <td>${escapeHtml(r.warehouse_order ?? "")}</td>
+      <td>${escapeHtml(r.bin_from ?? "")}</td>
+      <td>${escapeHtml(r.bin_to ?? "")}</td>
+      <td>${escapeHtml(r.category ?? "")}</td>
     `;
     tbody.appendChild(tr);
   }
@@ -446,28 +483,61 @@ async function loadPreview(user) {
 }
 
 // ---------------------------
-// Wire UI
+// Drag & drop
+// ---------------------------
+function setupDropzone(kind, dzEl) {
+  const add = (files) => addFiles(kind, files);
+
+  dzEl.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    dzEl.classList.add("dragover");
+  });
+
+  dzEl.addEventListener("dragleave", () => {
+    dzEl.classList.remove("dragover");
+  });
+
+  dzEl.addEventListener("drop", (e) => {
+    e.preventDefault();
+    dzEl.classList.remove("dragover");
+    if (e.dataTransfer?.files?.length) add(e.dataTransfer.files);
+  });
+}
+
+// ---------------------------
+// Init + wiring
 // ---------------------------
 (async function init() {
   log("Init...");
+
   try {
     const user = await ensureAnonymousSession();
-    log("Ready.");
+    log("✅ Session ready:", user.id);
 
-    $("btnImport").addEventListener("click", async () => {
-      const filePI = $("filePI").files?.[0] ?? null;
-      const fileWT = $("fileWT").files?.[0] ?? null;
+    // Multi-select inputs
+    $("filePI").addEventListener("change", (e) => addFiles("PI", e.target.files));
+    $("fileWT").addEventListener("change", (e) => addFiles("WT", e.target.files));
 
-      if (!filePI && !fileWT) {
-        log("⚠️ Seleziona almeno un file (PI o WT).");
+    // Clear buttons
+    $("btnClearPI").addEventListener("click", () => clearFiles("PI"));
+    $("btnClearWT").addEventListener("click", () => clearFiles("WT"));
+
+    // Dropzones
+    setupDropzone("PI", $("dzPI"));
+    setupDropzone("WT", $("dzWT"));
+
+    // Import actions
+    $("btnImportAll").addEventListener("click", async () => {
+      if (selectedPI.length === 0 && selectedWT.length === 0) {
+        log("⚠️ Seleziona almeno un file PI o WT.");
         return;
       }
 
-      setBusy(true, "importing...");
+      setBusy(true, "Import in corso...");
       try {
-        if (filePI) await importPI(filePI, user);
-        if (fileWT) await importWT(fileWT, user);
-        await loadPreview(user);
+        for (const f of selectedPI) await importSinglePI(f, user);
+        for (const f of selectedWT) await importSingleWT(f, user);
+        await loadPreview();
       } catch (e) {
         log("❌ Import error:", e?.message ?? String(e));
       } finally {
@@ -476,12 +546,11 @@ async function loadPreview(user) {
     });
 
     $("btnImportPI").addEventListener("click", async () => {
-      const filePI = $("filePI").files?.[0] ?? null;
-      if (!filePI) return log("⚠️ Seleziona un file PI.");
-      setBusy(true, "importing PI...");
+      if (selectedPI.length === 0) return log("⚠️ Seleziona almeno un file PI.");
+      setBusy(true, "Import PI in corso...");
       try {
-        await importPI(filePI, user);
-        await loadPreview(user);
+        for (const f of selectedPI) await importSinglePI(f, user);
+        await loadPreview();
       } catch (e) {
         log("❌ PI import error:", e?.message ?? String(e));
       } finally {
@@ -490,12 +559,11 @@ async function loadPreview(user) {
     });
 
     $("btnImportWT").addEventListener("click", async () => {
-      const fileWT = $("fileWT").files?.[0] ?? null;
-      if (!fileWT) return log("⚠️ Seleziona un file WT.");
-      setBusy(true, "importing WT...");
+      if (selectedWT.length === 0) return log("⚠️ Seleziona almeno un file WT.");
+      setBusy(true, "Import WT in corso...");
       try {
-        await importWT(fileWT, user);
-        await loadPreview(user);
+        for (const f of selectedWT) await importSingleWT(f, user);
+        await loadPreview();
       } catch (e) {
         log("❌ WT import error:", e?.message ?? String(e));
       } finally {
@@ -504,9 +572,9 @@ async function loadPreview(user) {
     });
 
     $("btnPreview").addEventListener("click", async () => {
-      setBusy(true, "loading preview...");
+      setBusy(true, "Caricamento preview...");
       try {
-        await loadPreview(user);
+        await loadPreview();
       } finally {
         setBusy(false, "");
       }
@@ -514,7 +582,10 @@ async function loadPreview(user) {
 
     $("btnSignOut").addEventListener("click", signOut);
 
+    // First preview
+    await loadPreview();
   } catch (e) {
     log("❌ init failed:", e?.message ?? String(e));
+    setAuthUI(false, "AUTH ERROR", "-");
   }
 })();
