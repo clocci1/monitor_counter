@@ -3,36 +3,28 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Charts</title>
-
+  <title>Monitor Counter — Charts (Base)</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-  <script src="./app-core.js"></script>
-
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.27.0/plotly.min.js"></script>
-
+  <script src="./app-core.js"></script>
   <style>
-    :root{--bg:#0b1220;--card:#111a2e;--border:rgba(255,255,255,.12);--muted:#a9b7d6;--text:#e8eefc;--btn:#6ea8fe;}
+    :root{--bg:#0b1220;--card:#111a2e;--border:rgba(255,255,255,.12);--muted:#a9b7d6;--text:#e8eefc;--btn:#6ea8fe;--bad:#ff6b6b;}
     body{font-family:system-ui,Segoe UI,Roboto,Arial;margin:0;background:var(--bg);color:var(--text);}
-    header{padding:14px 18px;border-bottom:1px solid var(--border);position:sticky;top:0;background:rgba(11,18,32,.92);backdrop-filter:blur(8px);z-index:5}
-    nav a{color:var(--text);text-decoration:none;margin-right:12px;font-weight:900;}
-    nav a.active{color:var(--btn);}
+    header{padding:14px 18px;border-bottom:1px solid var(--border);background:rgba(0,0,0,.2);}
+    nav a{color:var(--text);text-decoration:none;margin-right:12px;font-weight:800;}
     .wrap{max-width:1500px;margin:0 auto;padding:16px 18px;}
-    .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:12px;}
     .hint{color:var(--muted);font-size:12px;}
-    .row{display:grid;grid-template-columns:1fr;gap:12px;}
+    .bad{color:var(--bad);font-size:12px;}
     table{width:100%;border-collapse:collapse;margin-top:10px;font-size:12px;}
-    th,td{padding:8px;border-bottom:1px solid var(--border);vertical-align:top;}
-    th{color:var(--muted);text-align:left;font-weight:900;}
-    .mono{font-variant-numeric:tabular-nums;}
-    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:stretch;}
-    @media(max-width:1100px){.grid2{grid-template-columns:1fr;}}
-    .chartBox{height:360px;}
-    .heatBox{height:520px;}
-    .actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
-    select,button{border-radius:10px;border:1px solid var(--border);background:rgba(255,255,255,.06);color:var(--text);padding:9px 10px;}
-    button{background:var(--btn);border:0;color:var(--bg);font-weight:900;cursor:pointer;}
-    button.secondary{background:rgba(255,255,255,.10);color:var(--text);border:1px solid var(--border);}
+    th,td{padding:8px;border-bottom:1px solid var(--border);}
+    th{color:var(--muted);text-align:left;font-weight:800;}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+    @media(max-width:1100px){.grid{grid-template-columns:1fr;}}
+    canvas{width:100%;height:320px;}
+    .hm{display:grid;gap:1px;background:rgba(255,255,255,.08);border:1px solid var(--border);overflow:auto;}
+    .cell{width:18px;height:16px;background:rgba(110,168,254,0); }
+    .axis{font-size:11px;color:var(--muted);display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:8px 0;}
   </style>
 </head>
 <body>
@@ -40,227 +32,205 @@
   <nav>
     <a href="index.html">Home</a>
     <a href="overview.html">Overview</a>
-    <a class="active" href="charts.html">Charts</a>
+    <a href="charts.html">Charts</a>
     <a href="score.html">Score</a>
   </nav>
 </header>
 
 <div class="wrap">
   <div class="card">
-    <div style="font-weight:900;">Charts & KPI (periodo selezionato)</div>
-    <div class="hint" id="selHint" style="margin-top:6px;"></div>
-    <div class="actions" style="margin-top:10px;">
-      <button id="reloadBtn" class="secondary" type="button">Ricarica</button>
-      <span class="hint">La selezione periodo è definita in Home (giorni/settimane/mesi).</span>
-    </div>
+    <div style="font-weight:900;">Charts (Base)</div>
+    <div class="hint" id="dsInfo">—</div>
+    <div id="err" class="bad" style="margin-top:8px;"></div>
+  </div>
 
+  <div class="card">
+    <div style="font-weight:900;">Tabella KPI (Base)</div>
     <div id="kpiWrap"></div>
   </div>
 
-  <div class="grid2" style="margin-top:12px;">
+  <div class="grid">
     <div class="card">
-      <div style="font-weight:900;">Bin contati — Pick</div>
-      <div class="chartBox"><canvas id="piePick"></canvas></div>
+      <div style="font-weight:900;">Bin Pick vs Bulk (per operatore)</div>
+      <canvas id="barBins"></canvas>
     </div>
     <div class="card">
-      <div style="font-weight:900;">Bin contati — Bulk</div>
-      <div class="chartBox"><canvas id="pieBulk"></canvas></div>
+      <div style="font-weight:900;">Produttività vs Cambi (Base)</div>
+      <div class="hint">Produttività = Bin totali / Ora lavorata (PI bins + WO come proxy). Nel prossimo step definiamo score definitivo.</div>
+      <canvas id="prodChange"></canvas>
     </div>
   </div>
 
-  <div class="card" style="margin-top:12px;">
-    <div style="font-weight:900;">Produttività vs Cambi Task</div>
-    <div class="hint">Produttività proxy: (PI bins/h in PI) + 2×(WO/h in WT)</div>
-    <div class="chartBox"><canvas id="comboChart"></canvas></div>
+  <div class="card">
+    <div style="font-weight:900;">Heatmap PI (conte per corsia e ora)</div>
+    <div class="axis">Y: ore (05-22) — X: corsie 01-50</div>
+    <div id="hmPI"></div>
   </div>
 
-  <div class="card" style="margin-top:12px;">
-    <div style="font-weight:900;">Heatmap — PI (conte per corsia e ora)</div>
-    <div class="hint">Asse X: corsie 01–50 (primi due numeri dello Storage Bin). Asse Y: ore 05–22.</div>
-    <div id="heatPI" class="heatBox"></div>
+  <div class="card">
+    <div style="font-weight:900;">Heatmap WT (task per corsia e ora)</div>
+    <div class="axis">Y: ore (05-22) — X: corsie 01-50</div>
+    <div id="hmWT"></div>
   </div>
-
-  <div class="card" style="margin-top:12px;">
-    <div style="font-weight:900;">Heatmap — Task (WT per corsia e ora)</div>
-    <div class="hint">Derivata da Source Bin (e per P2P anche Dest Bin se presente).</div>
-    <div id="heatWT" class="heatBox"></div>
-  </div>
-
-  <div class="hint" id="err" style="margin-top:12px;color:#ff6b6b;"></div>
 </div>
 
 <script>
-  const Core = window.AppCore;
-  const $ = (id)=>document.getElementById(id);
-  let chartPiePick=null, chartPieBulk=null, chartCombo=null;
+const Core = window.AppCore;
+const $ = (id)=>document.getElementById(id);
+function setErr(t){ $('err').textContent=t||''; }
 
-  function setErr(t){ $("err").textContent = t||""; }
-  function setSelHint(dayKeys){
-    if(!dayKeys.length){ $("selHint").textContent = "Nessun periodo selezionato. Vai su Home e seleziona almeno un giorno/settimana/mese."; return; }
-    $("selHint").textContent = `Giorni inclusi: ${dayKeys.length} (${Core.fmtDDMMYYYY(dayKeys[0])} → ${Core.fmtDDMMYYYY(dayKeys[dayKeys.length-1])})`;
+function hmBuild(container, counts){
+  const hours = [];
+  for(let h=5; h<=22; h++) hours.push(h);
+  const lanes = [];
+  for(let l=1; l<=50; l++) lanes.push(l);
+  let max=0;
+  for(const h of hours) for(const l of lanes) max = Math.max(max, counts.get(h+'|'+l)||0);
+
+  const grid = document.createElement('div');
+  grid.className = 'hm';
+  grid.style.gridTemplateColumns = `repeat(${lanes.length}, 18px)`;
+  for(const h of hours){
+    for(const l of lanes){
+      const v = counts.get(h+'|'+l)||0;
+      const a = max ? (v/max) : 0;
+      const cell = document.createElement('div');
+      cell.className='cell';
+      cell.style.background = `rgba(110,168,254,${(0.85*a).toFixed(3)})`;
+      cell.title = `${String(h).padStart(2,'0')}:00 — corsia ${String(l).padStart(2,'0')} = ${v}`;
+      grid.appendChild(cell);
+    }
   }
+  container.innerHTML='';
+  container.appendChild(grid);
+}
 
-  function renderKpiTable(rows, dayKeys, perOpDay){
-    const wrap = $("kpiWrap");
-    wrap.innerHTML = "";
-    if(!rows.length){
-      wrap.innerHTML = `<div class="hint">Nessun dato per il periodo selezionato.</div>`;
-      return;
+async function load(){
+  try{
+    setErr('');
+    const datasetId = Core.getActiveDatasetId();
+    if(!datasetId){ $('dsInfo').textContent='Nessun dataset attivo. Vai su Home.'; return; }
+    const dayKeys = Core.selectionDayKeys(Core.getSelection(datasetId));
+    $('dsInfo').textContent = `Dataset attivo: ${datasetId} — Giorni selezionati: ${dayKeys.length}`;
+
+    const [events0, supports, indirects, shiftOv] = await Promise.all([
+      Core.fetchEvents(datasetId, dayKeys),
+      Core.fetchSupportRules(datasetId),
+      Core.fetchIndirectRules(datasetId),
+      Core.fetchShiftOverrides(datasetId)
+    ]);
+    const events = Core.applySupportRulesToEvents(events0, supports);
+
+    // KPI calc
+    const byOpDay = new Map();
+    for(const e of events){
+      const op = e.eff_calc || e.eff_operator || e.src_operator;
+      const dk = e.day_key;
+      const key = op+'|'+dk;
+      if(!byOpDay.has(key)) byOpDay.set(key, []);
+      byOpDay.get(key).push(e);
     }
 
-    // Turno: se su più giorni -> se tutti uguali mostra quello, altrimenti "MIX"
-    function shiftLabel(op){
-      const dm = perOpDay.get(op);
-      if(!dm) return "";
-      const codes = [];
-      for(const dk of dayKeys){
-        const d=dm.get(dk);
-        if(d) codes.push(d.shift.code);
-      }
-      const uniq = Array.from(new Set(codes));
-      return uniq.length===1 ? uniq[0] : "MIX";
+    const kpisList=[], changeList=[];
+    for(const [key, ev] of byOpDay.entries()){
+      const [op, dk] = key.split('|');
+      const shiftWin = Core.inferShiftForDay(op, dk, ev, shiftOv);
+      const {intervals, changeCount, changeTime} = Core.buildIntervalsForOpDay(op, dk, ev, shiftWin, indirects);
+      const k = Core.computeKpisForOpDay(op, dk, ev, intervals, shiftWin);
+      kpisList.push(k);
+      changeList.push({op, dayKey:dk, changeCount, changeTime});
     }
+    const agg = Core.aggregateByOperator(kpisList, changeList);
 
-    const table=document.createElement("table");
-    table.innerHTML = `
-      <thead>
-        <tr>
-          <th>Operatore</th>
-          <th>Giorni</th>
-          <th>Turno</th>
-          <th class="mono">T Lavoro</th>
-          <th class="mono">PI Pick (T)</th>
-          <th class="mono">PI Bulk (T)</th>
-          <th class="mono">P2P (T)</th>
-          <th class="mono">Clean (T)</th>
-          <th class="mono">WT Other (T)</th>
-          <th class="mono">Indiretto</th>
-          <th class="mono">Pausa</th>
-          <th>Bin Pick</th>
-          <th>Bin Bulk</th>
-          <th>WO P2P</th>
-          <th>WO Clean</th>
-          <th>WO Other</th>
-          <th>Cambi</th>
-          <th class="mono">T Target</th>
-          <th class="mono">Delta</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
+    // KPI table (requested columns base)
+    const rows = agg.map(a=>`
+      <tr>
+        <td>${a.op}</td>
+        <td style="text-align:center;">${a.dayCount}</td>
+        <td style="text-align:center;">${a.shift}</td>
+        <td>${Core.minToHHMM(a.workMin)}</td>
+        <td>${Core.minToHHMM(a.tPiPick)}</td>
+        <td>${Core.minToHHMM(a.tPiBulk)}</td>
+        <td>${Core.minToHHMM(a.tP2P)}</td>
+        <td>${Core.minToHHMM(a.tClean)}</td>
+        <td>${Core.minToHHMM(a.tOther)}</td>
+        <td>${Core.minToHHMM(a.indMin)}</td>
+        <td>${Core.minToHHMM(a.pauseMin)}</td>
+        <td style="text-align:right;">${a.piPickBins}</td>
+        <td style="text-align:right;">${a.piBulkBins}</td>
+        <td style="text-align:right;">${a.woP2P}</td>
+        <td style="text-align:right;">${a.woClean}</td>
+        <td style="text-align:right;">${a.woOther}</td>
+        <td style="text-align:right;">${a.changes}</td>
+        <td>${Core.minToHHMM(a.tChanges)}</td>
+      </tr>`).join('');
+
+    $('kpiWrap').innerHTML = `
+      <table>
+        <thead><tr>
+          <th>Operatore</th><th style="text-align:center;">Giorni</th><th style="text-align:center;">Turno</th>
+          <th>T Lavoro</th><th>PI Pick (T)</th><th>PI Bulk (T)</th><th>P2P (T)</th><th>Clean (T)</th><th>WT Other (T)</th>
+          <th>Indiretto</th><th>Pausa</th>
+          <th style="text-align:right;">Bin Pick</th><th style="text-align:right;">Bin Bulk</th>
+          <th style="text-align:right;">WO P2P</th><th style="text-align:right;">WO Clean</th><th style="text-align:right;">WO Other</th>
+          <th style="text-align:right;">Cambi</th><th>T Cambi</th>
+        </tr></thead>
+        <tbody>${rows||`<tr><td colspan="18" class="hint">Nessun dato.</td></tr>`}</tbody>
+      </table>
     `;
-    const tb = table.querySelector("tbody");
 
-    for(const r of rows){
-      const tr=document.createElement("tr");
-      const delta = (r.actualMin - r.targetMin);
-      tr.innerHTML = `
-        <td>${r.operator}</td>
-        <td class="mono">${r.dayCount}</td>
-        <td class="mono">${shiftLabel(r.operator)}</td>
-        <td class="mono">${Core.minToHHMM(r.actualMin)}</td>
+    // Chart bins
+    const labels = agg.map(a=>a.op);
+    const pick = agg.map(a=>a.piPickBins);
+    const bulk = agg.map(a=>a.piBulkBins);
 
-        <td class="mono">${Core.minToHHMM(r.minPiPick)}</td>
-        <td class="mono">${Core.minToHHMM(r.minPiBulk)}</td>
-        <td class="mono">${Core.minToHHMM(r.minP2P)}</td>
-        <td class="mono">${Core.minToHHMM(r.minClean)}</td>
-        <td class="mono">${Core.minToHHMM(r.minOther)}</td>
-        <td class="mono">${Core.minToHHMM(r.minIndirect)}</td>
-        <td class="mono">${Core.minToHHMM(r.minPause)}</td>
-
-        <td class="mono">${r.piPickBins}</td>
-        <td class="mono">${r.piBulkBins}</td>
-        <td class="mono">${r.woP2P}</td>
-        <td class="mono">${r.woClean}</td>
-        <td class="mono">${r.woOther}</td>
-        <td class="mono">${r.switchCount}</td>
-
-        <td class="mono">${Core.minToHHMM(r.targetMin)}</td>
-        <td class="mono">${(delta>=0?"+":"") + Core.minToHHMM(Math.abs(delta))}</td>
-      `;
-      tb.appendChild(tr);
-    }
-    wrap.appendChild(table);
-  }
-
-  function renderPieCharts(rows){
-    const d = Core.buildPieData(rows);
-    if(chartPiePick) chartPiePick.destroy();
-    if(chartPieBulk) chartPieBulk.destroy();
-
-    chartPiePick = new Chart(document.getElementById("piePick"), {
-      type:"doughnut",
-      data:{ labels:d.labels, datasets:[{ data:d.pick }] },
-      options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:"bottom" } } }
+    new Chart(document.getElementById('barBins'), {
+      type:'bar',
+      data:{ labels, datasets:[
+        {label:'Pick bins', data:pick},
+        {label:'Bulk bins', data:bulk}
+      ]},
+      options:{responsive:true, scales:{x:{stacked:true}, y:{stacked:true, beginAtZero:true}}}
     });
-    chartPieBulk = new Chart(document.getElementById("pieBulk"), {
-      type:"doughnut",
-      data:{ labels:d.labels, datasets:[{ data:d.bulk }] },
-      options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:"bottom" } } }
-    });
-  }
 
-  function renderComboChart(rows){
-    const d = Core.buildProdVsSwitch(rows);
-    if(chartCombo) chartCombo.destroy();
-    chartCombo = new Chart(document.getElementById("comboChart"), {
-      data:{
-        labels: d.labels,
-        datasets:[
-          { type:"bar", label:"Produttività", data:d.prod, yAxisID:"y" },
-          { type:"line", label:"Cambi Task", data:d.switches, yAxisID:"y1" }
-        ]
-      },
-      options:{
-        responsive:true, maintainAspectRatio:false,
-        scales:{
-          y:{ beginAtZero:true, title:{ display:true, text:"Produttività" } },
-          y1:{ beginAtZero:true, position:"right", grid:{ drawOnChartArea:false }, title:{ display:true, text:"Cambi" } }
-        },
-        plugins:{ legend:{ position:"bottom" } }
+    // Productivity vs changes
+    const prod = agg.map(a=>{
+      const hours = (a.workMin||0)/60;
+      const volume = (a.piPickBins+a.piBulkBins) + (a.woP2P+a.woClean+a.woOther);
+      return hours>0 ? (volume/hours) : 0;
+    });
+    const changes = agg.map(a=>a.changes);
+
+    new Chart(document.getElementById('prodChange'), {
+      type:'bar',
+      data:{labels, datasets:[{label:'Produttività (proxy)', data:prod},{label:'Cambi task', data:changes}]},
+      options:{responsive:true, scales:{y:{beginAtZero:true}}}
+    });
+
+    // Heatmaps
+    const hmPI = new Map();
+    const hmWT = new Map();
+    for(const e of events){
+      if(!e.lane || !e.tsObj) continue;
+      const h = e.tsObj.getHours();
+      if(h<5 || h>22) continue;
+      const key = h+'|'+e.lane;
+      if(e.kind==='PI'){
+        hmPI.set(key, (hmPI.get(key)||0)+1);
       }
-    });
-  }
-
-  function renderHeat(divId, heat){
-    const data=[{ type:"heatmap", x:heat.x, y:heat.y, z:heat.z, hoverongaps:false }];
-    const layout={
-      margin:{l:50,r:10,t:10,b:40},
-      xaxis:{ title:"Corsia (01–50)", tickangle:-45, automargin:true },
-      yaxis:{ title:"Ora", automargin:true },
-      height:520
-    };
-    Plotly.newPlot(divId, data, layout, {displayModeBar:false, responsive:true});
-  }
-
-  async function run(){
-    try{
-      setErr("");
-      const sel = Core.getSelection();
-      const res = await Core.computeAggregatesForSelection(sel);
-      setSelHint(res.dayKeys);
-
-      renderKpiTable(res.rows, res.dayKeys, res.perOpDay);
-      renderPieCharts(res.rows);
-      renderComboChart(res.rows);
-
-      // heatmaps use raw events filtered
-      const evRaw = await Core.fetchEvents(res.dayKeys);
-      const ev = Core.filterEventsBySelection(evRaw, sel);
-
-      const heatPI = Core.buildHeatAisleHour(ev, "PI");
-      const heatWT = Core.buildHeatAisleHour(ev, "WT");
-
-      renderHeat("heatPI", heatPI);
-      renderHeat("heatWT", heatWT);
-
-    }catch(e){
-      console.error(e);
-      setErr(e.message || String(e));
+      if(e.kind==='WT'){
+        hmWT.set(key, (hmWT.get(key)||0)+1);
+      }
     }
-  }
+    hmBuild(document.getElementById('hmPI'), hmPI);
+    hmBuild(document.getElementById('hmWT'), hmWT);
 
-  $("reloadBtn").addEventListener("click", run);
-  run();
+  } catch(e){
+    console.error(e);
+    setErr(e.message||String(e));
+  }
+}
+load();
 </script>
 </body>
 </html>

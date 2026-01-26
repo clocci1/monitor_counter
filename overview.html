@@ -3,695 +3,201 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Overview</title>
-
+  <title>Monitor Counter — Overview</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
   <script src="./app-core.js"></script>
-
   <style>
-    :root{
-      --bg:#0b1220;--card:#111a2e;--border:rgba(255,255,255,.12);--muted:#a9b7d6;--text:#e8eefc;--btn:#6ea8fe;
-      --bad:#ff6b6b;--ok:#5eead4;
-      --pipick:#22c55e; --pibulk:#16a34a;
-      --p2p:#60a5fa; --clean:#a78bfa; --other:#94a3b8;
-      --pause:#f59e0b; --indirect:#f472b6; --mix:#e5e7eb;
-    }
+    :root{--bg:#0b1220;--card:#111a2e;--border:rgba(255,255,255,.12);--muted:#a9b7d6;--text:#e8eefc;--btn:#6ea8fe;--bad:#ff6b6b;}
     body{font-family:system-ui,Segoe UI,Roboto,Arial;margin:0;background:var(--bg);color:var(--text);}
-    header{padding:14px 18px;border-bottom:1px solid var(--border);position:sticky;top:0;background:rgba(11,18,32,.92);backdrop-filter:blur(8px);z-index:5}
-    nav a{color:var(--text);text-decoration:none;margin-right:12px;font-weight:900;}
-    nav a.active{color:var(--btn);}
-    .wrap{max-width:1600px;margin:0 auto;padding:16px 18px;}
-    .layout{display:grid;grid-template-columns: 1.1fr 0.9fr; gap:12px; align-items:start;}
-    @media(max-width:1200px){.layout{grid-template-columns:1fr;}}
-    .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;}
+    header{padding:14px 18px;border-bottom:1px solid var(--border);background:rgba(0,0,0,.2);}
+    nav a{color:var(--text);text-decoration:none;margin-right:12px;font-weight:800;}
+    .wrap{max-width:1500px;margin:0 auto;padding:16px 18px;}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:12px;}
     .hint{color:var(--muted);font-size:12px;}
-    .bad{color:var(--bad);}
-    .ok{color:var(--ok);font-weight:900;}
+    .bad{color:var(--bad);font-size:12px;}
     table{width:100%;border-collapse:collapse;margin-top:10px;font-size:12px;}
-    th,td{padding:8px;border-bottom:1px solid var(--border);vertical-align:top;}
-    th{color:var(--muted);text-align:left;font-weight:900;}
-    .mono{font-variant-numeric:tabular-nums;}
-    button{border-radius:10px;border:1px solid var(--border);background:rgba(255,255,255,.10);color:var(--text);padding:8px 10px;cursor:pointer;font-weight:900;}
-    button.primary{background:var(--btn);border:0;color:var(--bg);}
-    button.ghost{background:transparent;}
-    .actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
-    .pill{display:inline-flex;gap:8px;align-items:center;border:1px solid var(--border);border-radius:999px;padding:6px 10px;background:rgba(255,255,255,.06);font-size:12px;}
-    .tabs{display:flex;gap:8px;align-items:center;margin-top:10px;}
-    .tabs button{padding:7px 10px;}
-    .tabs button.active{background:rgba(110,168,254,.25);border-color:rgba(110,168,254,.45);}
-    .barRow{display:flex;gap:6px;align-items:center;margin-top:10px;}
-    .barLabel{min-width:90px;color:var(--muted);font-size:12px;}
-    .bar{flex:1;display:grid;grid-template-columns:repeat(34, 1fr);gap:2px;}
-    .slot{height:18px;border-radius:3px;opacity:.95;cursor:default;}
-    .slot.pause{cursor:pointer;outline:1px dashed rgba(245,158,11,.45);}
-    .legend{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;}
-    .leg{display:inline-flex;gap:6px;align-items:center;font-size:12px;color:var(--muted);}
-    .sw{width:14px;height:10px;border-radius:2px;border:1px solid var(--border);}
-    .hidden{display:none;}
-    /* Modal */
-    .overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;z-index:50;padding:16px;}
-    .modal{width:min(920px,100%);background:var(--card);border:1px solid var(--border);border-radius:14px;overflow:hidden;}
-    .modalHead{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:12px 14px;border-bottom:1px solid var(--border);}
-    .modalBody{padding:14px;}
-    .grid{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:10px;align-items:end;}
-    @media(max-width:900px){.grid{grid-template-columns:1fr;}}
-    input,select,textarea{border-radius:10px;border:1px solid var(--border);background:rgba(255,255,255,.06);color:var(--text);padding:9px 10px;}
-    textarea{min-height:80px;}
+    th,td{padding:8px;border-bottom:1px solid var(--border);}
+    th{color:var(--muted);text-align:left;font-weight:800;}
+    .mono{font-family:ui-monospace,Menlo,Consolas,monospace;}
+    .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center;}
+    select,button{border-radius:10px;border:1px solid var(--border);background:rgba(255,255,255,.06);color:var(--text);padding:10px;}
+    button{background:var(--btn);color:var(--bg);border:0;font-weight:900;cursor:pointer;}
+    .bar{height:12px;border-radius:999px;background:rgba(255,255,255,.10);overflow:hidden;}
+    .seg{height:100%;display:inline-block;}
   </style>
 </head>
 <body>
 <header>
   <nav>
     <a href="index.html">Home</a>
-    <a class="active" href="overview.html">Overview</a>
+    <a href="overview.html">Overview</a>
     <a href="charts.html">Charts</a>
     <a href="score.html">Score</a>
   </nav>
 </header>
 
 <div class="wrap">
-  <div class="layout">
-    <div class="card">
-      <div style="font-weight:900;">Riepilogo (periodo selezionato)</div>
-      <div class="hint" id="selHint" style="margin-top:6px;"></div>
-      <div class="actions" style="margin-top:10px;">
-        <button id="reloadBtn" class="primary" type="button">Ricalcola</button>
-        <span class="pill"><span class="hint">Modalità:</span> <span id="modeLbl" class="mono"></span></span>
-        <span class="hint">Selezione periodo definita in Home.</span>
-      </div>
-
-      <div id="summaryWrap"></div>
-    </div>
-
-    <div class="card">
-      <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;">
-        <div>
-          <div style="font-weight:900;">Dettaglio operatore</div>
-          <div class="hint">Clicca un operatore dal riepilogo per fare drill-down. Le pause (blocchi gialli) sono cliccabili per inserire “Indiretta”.</div>
-        </div>
-        <button id="clearFocusBtn" class="ghost" type="button">Chiudi</button>
-      </div>
-
-      <div id="focusEmpty" class="hint" style="margin-top:10px;">Nessun operatore selezionato.</div>
-
-      <div id="focusArea" class="hidden">
-        <div class="tabs">
-          <button id="tabSynth" class="active" type="button">Sintesi</button>
-          <button id="tabDetail" type="button">Dettaglio</button>
-          <button id="tabSupport" type="button">Supporti</button>
-        </div>
-
-        <div id="synthView">
-          <div id="barsWrap"></div>
-          <div class="legend">
-            <span class="leg"><span class="sw" style="background:var(--pipick);"></span>PI Pick</span>
-            <span class="leg"><span class="sw" style="background:var(--pibulk);"></span>PI Bulk</span>
-            <span class="leg"><span class="sw" style="background:var(--p2p);"></span>P2P</span>
-            <span class="leg"><span class="sw" style="background:var(--clean);"></span>Clean PICK</span>
-            <span class="leg"><span class="sw" style="background:var(--other);"></span>WT Other</span>
-            <span class="leg"><span class="sw" style="background:var(--indirect);"></span>Indiretta</span>
-            <span class="leg"><span class="sw" style="background:var(--pause);"></span>Pausa</span>
-            <span class="leg"><span class="sw" style="background:var(--mix);"></span>Misto</span>
-          </div>
-          <div class="hint" style="margin-top:8px;">Asse: 05:00 → 22:00 (slot da 30 minuti). Se in uno slot coesistono più attività, viene marcato “Misto”.</div>
-        </div>
-
-        <div id="detailView" class="hidden">
-          <div id="timelineWrap"></div>
-        </div>
-
-        <div id="supportView" class="hidden">
-          <div class="hint">I supporti servono per “splittare” l’uso di un account su altri operatori reali, in una fascia oraria. Le regole sono salvate in localStorage (browser) e ricalcolano tutte le pagine.</div>
-          <div style="margin-top:10px;">
-            <button id="openSupportBtn" type="button">Gestisci supporti</button>
-          </div>
-          <div id="supportQuickWrap" style="margin-top:10px;"></div>
-        </div>
-      </div>
-
-      <div id="err" class="hint bad" style="margin-top:12px;"></div>
-    </div>
-  </div>
-</div>
-
-<!-- SUPPORT MODAL -->
-<div id="supportOverlay" class="overlay">
-  <div class="modal">
-    <div class="modalHead">
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;">
       <div>
-        <div style="font-weight:900;">Supporto account — <span id="supportSrcLbl" class="mono"></span></div>
-        <div class="hint">Inserisci una o più fasce orarie in cui l’account è stato usato da un altro operatore reale.</div>
+        <div style="font-weight:900;">Overview (Base)</div>
+        <div class="hint" id="dsInfo">—</div>
       </div>
-      <button id="supportClose" type="button">Chiudi</button>
-    </div>
-    <div class="modalBody">
-      <div class="grid">
-        <div>
-          <label class="hint">Supporto reale (operatore)</label>
-          <input id="supportReal" type="text" placeholder="Es. M.HAYAT" />
-        </div>
-        <div>
-          <label class="hint">Start</label>
-          <input id="supportStart" type="datetime-local"/>
-        </div>
-        <div>
-          <label class="hint">End</label>
-          <input id="supportEnd" type="datetime-local"/>
-        </div>
-        <div>
-          <button id="supportAdd" class="primary" type="button">Aggiungi</button>
-        </div>
-      </div>
-
-      <div id="supportList" style="margin-top:12px;"></div>
-
-      <div class="actions" style="margin-top:12px;justify-content:flex-end;">
-        <button id="supportClear" type="button">Svuota</button>
-        <button id="supportSave" class="primary" type="button">Salva & Ricalcola</button>
+      <div class="row">
+        <button id="reloadBtn">Ricarica</button>
       </div>
     </div>
+    <div id="err" class="bad" style="margin-top:8px;"></div>
   </div>
-</div>
 
-<!-- INDIRECT MODAL -->
-<div id="indOverlay" class="overlay">
-  <div class="modal">
-    <div class="modalHead">
-      <div>
-        <div style="font-weight:900;">Attività indiretta — <span id="indLbl" class="mono"></span></div>
-        <div class="hint">Questa fascia riduce la “Pausa” nel calcolo e viene mostrata come “Indiretta”.</div>
-      </div>
-      <button id="indClose" type="button">Chiudi</button>
-    </div>
-    <div class="modalBody">
-      <div class="grid">
-        <div>
-          <label class="hint">Start</label>
-          <input id="indStart" type="datetime-local"/>
-        </div>
-        <div>
-          <label class="hint">End</label>
-          <input id="indEnd" type="datetime-local"/>
-        </div>
-        <div>
-          <label class="hint">Turno override (quel giorno)</label>
-          <select id="indShift">
-            <option value="AUTO">AUTO</option>
-            <option value="AM">AM 05-13</option>
-            <option value="C">C 08-16</option>
-            <option value="PM">PM 14-22</option>
-          </select>
-        </div>
-        <div>
-          <button id="indAdd" class="primary" type="button">Salva</button>
-        </div>
-      </div>
-      <div style="margin-top:10px;">
-        <label class="hint">Descrizione</label>
-        <textarea id="indDesc" placeholder="Es. Indiretta: rifornimenti, pulizie, training, meeting..."></textarea>
-      </div>
-    </div>
+  <div class="card">
+    <div style="font-weight:900;">Riepilogo per Operatore</div>
+    <div class="hint">Questa è la base: lettura Supabase + selezione giorni + KPI principali. Supporti/indirette li reinseriamo nel prossimo step.</div>
+    <div id="tblWrap"></div>
+  </div>
+
+  <div class="card">
+    <div style="font-weight:900;">Timebar (Operatore selezionato)</div>
+    <div class="hint">Seleziona un operatore nella tabella sopra.</div>
+    <div id="timebarWrap" style="margin-top:10px;"></div>
   </div>
 </div>
 
 <script>
-  const Core = window.AppCore;
-  const $ = (id)=>document.getElementById(id);
+const Core = window.AppCore;
+const $ = (id)=>document.getElementById(id);
 
-  let state = {
-    res: null,
-    focusOp: null,
-    focusDayKeys: [],
-    focusMode: "synth",
-    supportSrc: null,
-    pendingPauseSlot: null // {op, dayKey, start, end}
+let STATE = { op:null, dayKey:null, opDay:{} };
+
+function setErr(t){ $('err').textContent=t||''; }
+
+function pct(a,b){ return b>0 ? (a/b)*100 : 0; }
+
+function buildTimebar(intervals){
+  if(!intervals || !intervals.length) return '<div class="hint">Nessun intervallo calcolato.</div>';
+  const total = intervals.reduce((s,x)=>s+x.minutes,0);
+  const color = (cat)=>{
+    if(cat==='PAUSA') return 'rgba(255,107,107,.9)';
+    if(cat==='INDIRETTA') return 'rgba(255,193,7,.9)';
+    if(cat==='PI Pick') return 'rgba(110,168,254,.9)';
+    if(cat==='PI Bulk') return 'rgba(156,136,255,.9)';
+    if(cat==='P2P') return 'rgba(46,213,115,.9)';
+    if(cat==='Clean PICK') return 'rgba(0,206,201,.9)';
+    return 'rgba(255,255,255,.35)';
   };
+  const segs = intervals.map(it=>{
+    const w = (it.minutes/total)*100;
+    return `<span class="seg" title="${it.category} — ${it.minutes.toFixed(1)} min" style="width:${w.toFixed(3)}%;background:${color(it.category)}"></span>`;
+  }).join('');
+  return `<div class="bar">${segs}</div>`;
+}
 
-  function setErr(t){ $("err").textContent = t||""; }
-  function setSelHint(dayKeys){
-    const sel = Core.getSelection();
-    $("modeLbl").textContent = sel.mode || "day";
-    if(!dayKeys.length){ $("selHint").textContent = "Nessun periodo selezionato. Vai su Home e seleziona almeno un giorno/settimana/mese."; return; }
-    $("selHint").textContent = `Giorni inclusi: ${dayKeys.length} (${Core.fmtDDMMYYYY(dayKeys[0])} → ${Core.fmtDDMMYYYY(dayKeys[dayKeys.length-1])})`;
-  }
+async function load(){
+  try{
+    setErr('');
+    const datasetId = Core.getActiveDatasetId();
+    if(!datasetId){ $('dsInfo').textContent='Nessun dataset attivo. Vai su Home.'; return; }
 
-  function showFocus(op){
-    state.focusOp = op;
-    $("focusEmpty").classList.add("hidden");
-    $("focusArea").classList.remove("hidden");
-    renderFocus();
-  }
-  function clearFocus(){
-    state.focusOp = null;
-    $("focusEmpty").classList.remove("hidden");
-    $("focusArea").classList.add("hidden");
-    $("barsWrap").innerHTML="";
-    $("timelineWrap").innerHTML="";
-    $("supportQuickWrap").innerHTML="";
-  }
+    const sel = Core.getSelection(datasetId);
+    const dayKeys = Core.selectionDayKeys(sel);
+    $('dsInfo').textContent = `Dataset attivo: ${datasetId} — Giorni selezionati: ${dayKeys.length ? dayKeys.map(Core.fmtDDMMYYYY).join(', ') : 'nessuno'}`;
 
-  function setTab(mode){
-    state.focusMode = mode;
-    $("tabSynth").classList.toggle("active", mode==="synth");
-    $("tabDetail").classList.toggle("active", mode==="detail");
-    $("tabSupport").classList.toggle("active", mode==="support");
-    $("synthView").classList.toggle("hidden", mode!=="synth");
-    $("detailView").classList.toggle("hidden", mode!=="detail");
-    $("supportView").classList.toggle("hidden", mode!=="support");
-    renderFocus();
-  }
-  $("tabSynth").addEventListener("click", ()=>setTab("synth"));
-  $("tabDetail").addEventListener("click", ()=>setTab("detail"));
-  $("tabSupport").addEventListener("click", ()=>setTab("support"));
-  $("clearFocusBtn").addEventListener("click", clearFocus);
+    const [events0, supports, indirects, shiftOv] = await Promise.all([
+      Core.fetchEvents(datasetId, dayKeys),
+      Core.fetchSupportRules(datasetId),
+      Core.fetchIndirectRules(datasetId),
+      Core.fetchShiftOverrides(datasetId)
+    ]);
 
-  function catClass(cat){
-    if(cat==="PI Pick") return "pipick";
-    if(cat==="PI Bulk") return "pibulk";
-    if(cat==="P2P") return "p2p";
-    if(cat==="Clean PICK") return "clean";
-    if(cat==="WT Other") return "other";
-    if(cat==="INDIRETTA") return "indirect";
-    if(cat==="PAUSA") return "pause";
-    return "other";
-  }
-  function catColor(cat){
-    if(cat==="PI Pick") return "var(--pipick)";
-    if(cat==="PI Bulk") return "var(--pibulk)";
-    if(cat==="P2P") return "var(--p2p)";
-    if(cat==="Clean PICK") return "var(--clean)";
-    if(cat==="WT Other") return "var(--other)";
-    if(cat==="INDIRETTA") return "var(--indirect)";
-    if(cat==="PAUSA") return "var(--pause)";
-    return "var(--other)";
-  }
+    const events = Core.applySupportRulesToEvents(events0, supports);
 
-  function slotRanges(dayKey){
-    // 05:00 to 22:00 in 30min slots => 34 slots
-    const base = new Date(dayKey+"T00:00:00");
-    const slots=[];
-    for(let i=0;i<34;i++){
-      const start = new Date(base.getFullYear(),base.getMonth(),base.getDate(),5,0,0);
-      start.setMinutes(start.getMinutes()+i*30);
-      const end = new Date(start.getTime()+30*60000);
-      slots.push({start,end});
-    }
-    return slots;
-  }
-
-  function dominantCategory(intervals, start, end){
-    const weights=new Map();
-    for(const it of intervals){
-      const s=Math.max(start.getTime(), it.start.getTime());
-      const e=Math.min(end.getTime(), it.end.getTime());
-      if(e<=s) continue;
-      const m=(e-s)/60000;
-      weights.set(it.category, (weights.get(it.category)||0)+m);
-    }
-    const cats=Array.from(weights.entries()).sort((a,b)=>b[1]-a[1]);
-    if(!cats.length) return null;
-    if(cats.length>=2 && cats[0][1] < 25 && cats[1][1] > 5) return "MIX";
-    // if second is non-trivial and within 10 minutes
-    if(cats.length>=2 && (cats[1][1]/(cats[0][1]+cats[1][1]))>0.35) return "MIX";
-    return cats[0][0];
-  }
-
-  function renderSummary(res){
-    const wrap=$("summaryWrap");
-    wrap.innerHTML="";
-    if(!res.rows.length){
-      wrap.innerHTML = `<div class="hint">Nessun dato. Seleziona un periodo in Home e assicurati di aver importato PI/WT.</div>`;
-      return;
+    // group events by operator/day
+    const byOpDay = new Map();
+    for(const e of events){
+      const op = e.eff_calc || e.eff_operator || e.src_operator;
+      const dk = e.day_key;
+      const key = op+'|'+dk;
+      if(!byOpDay.has(key)) byOpDay.set(key, []);
+      byOpDay.get(key).push(e);
     }
 
-    const table=document.createElement("table");
-    table.innerHTML=`
-      <thead>
-        <tr>
-          <th>Operatore</th>
-          <th>Giorni</th>
-          <th class="mono">T Lavoro</th>
-          <th class="mono">PI Pick</th>
-          <th class="mono">PI Bulk</th>
-          <th class="mono">P2P</th>
-          <th class="mono">Clean</th>
-          <th class="mono">WT Other</th>
-          <th class="mono">Indiretto</th>
-          <th class="mono">Pausa</th>
-          <th>Bin Pick</th>
-          <th>Bin Bulk</th>
-          <th>WO</th>
-          <th>Self Count</th>
-          <th>Cambi</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody></tbody>
+    const kpisList = [];
+    const changeList = [];
+
+    for(const [key, ev] of byOpDay.entries()){
+      const [op, dk] = key.split('|');
+      const shiftWin = Core.inferShiftForDay(op, dk, ev, shiftOv);
+      const {intervals, changeCount, changeTime} = Core.buildIntervalsForOpDay(op, dk, ev, shiftWin, indirects);
+      const k = Core.computeKpisForOpDay(op, dk, ev, intervals, shiftWin);
+      kpisList.push(k);
+      changeList.push({op, dayKey:dk, changeCount, changeTime});
+      STATE.opDay[key] = {op, dk, shiftWin, ev, intervals};
+    }
+
+    const agg = Core.aggregateByOperator(kpisList, changeList);
+
+    // table
+    const rows = agg.map(a=>{
+      const tWork = Core.minToHHMM(a.workMin);
+      const tPause = Core.minToHHMM(a.pauseMin);
+      const tInd = Core.minToHHMM(a.indMin);
+      return `<tr data-op="${a.op}">
+        <td class="mono">${a.op}</td>
+        <td style="text-align:center;">${a.dayCount}</td>
+        <td style="text-align:center;">${a.shift}</td>
+        <td>${tWork}</td>
+        <td>${Core.minToHHMM(a.tPiPick)}</td>
+        <td>${Core.minToHHMM(a.tPiBulk)}</td>
+        <td>${Core.minToHHMM(a.tP2P)}</td>
+        <td>${Core.minToHHMM(a.tClean)}</td>
+        <td>${Core.minToHHMM(a.tOther)}</td>
+        <td>${tInd}</td>
+        <td>${tPause}</td>
+        <td style="text-align:right;">${a.piPickBins}</td>
+        <td style="text-align:right;">${a.piBulkBins}</td>
+        <td style="text-align:right;">${a.woP2P}</td>
+        <td style="text-align:right;">${a.woClean}</td>
+        <td style="text-align:right;">${a.woOther}</td>
+        <td style="text-align:right;">${a.changes}</td>
+        <td>${Core.minToHHMM(a.tChanges)}</td>
+      </tr>`;
+    }).join('');
+
+    $('tblWrap').innerHTML = `
+      <table>
+        <thead><tr>
+          <th>Operatore</th><th style="text-align:center;">Giorni</th><th style="text-align:center;">Turno</th>
+          <th>T Lavoro</th><th>PI Pick</th><th>PI Bulk</th><th>P2P</th><th>Clean</th><th>WT Other</th>
+          <th>Indiretto</th><th>Pausa</th>
+          <th style="text-align:right;">Bin Pick</th><th style="text-align:right;">Bin Bulk</th>
+          <th style="text-align:right;">WO P2P</th><th style="text-align:right;">WO Clean</th><th style="text-align:right;">WO Other</th>
+          <th style="text-align:right;">Cambi</th><th>T Cambi</th>
+        </tr></thead>
+        <tbody>${rows || `<tr><td colspan="18" class="hint">Nessun dato (controlla selezione giorni su Home).</td></tr>`}</tbody>
+      </table>
     `;
-    const tb=table.querySelector("tbody");
-    for(const r of res.rows){
-      const woTot = r.woP2P + r.woClean + r.woOther;
-      const tr=document.createElement("tr");
-      tr.innerHTML=`
-        <td><button class="ghost" data-op="${r.operator}" type="button">${r.operator}</button></td>
-        <td class="mono">${r.dayCount}</td>
-        <td class="mono">${Core.minToHHMM(r.actualMin)}</td>
-        <td class="mono">${Core.minToHHMM(r.minPiPick)}</td>
-        <td class="mono">${Core.minToHHMM(r.minPiBulk)}</td>
-        <td class="mono">${Core.minToHHMM(r.minP2P)}</td>
-        <td class="mono">${Core.minToHHMM(r.minClean)}</td>
-        <td class="mono">${Core.minToHHMM(r.minOther)}</td>
-        <td class="mono">${Core.minToHHMM(r.minIndirect)}</td>
-        <td class="mono">${Core.minToHHMM(r.minPause)}</td>
-        <td class="mono">${r.piPickBins}</td>
-        <td class="mono">${r.piBulkBins}</td>
-        <td class="mono">${woTot}</td>
-        <td class="mono">${r.selfCount}</td>
-        <td class="mono">${r.switchCount}</td>
-        <td><button data-support="${r.operator}" type="button">Supporto?</button></td>
-      `;
-      tb.appendChild(tr);
-    }
-    wrap.appendChild(table);
 
-    wrap.querySelectorAll('button[data-op]').forEach(b=>{
-      b.addEventListener("click", ()=>showFocus(b.getAttribute("data-op")));
-    });
-    wrap.querySelectorAll('button[data-support]').forEach(b=>{
-      b.addEventListener("click", ()=>{
-        state.supportSrc = b.getAttribute("data-support");
-        openSupportModal(state.supportSrc);
+    $('tblWrap').querySelectorAll('tr[data-op]').forEach(tr=>{
+      tr.style.cursor='pointer';
+      tr.addEventListener('click', ()=>{
+        const op = tr.getAttribute('data-op');
+        // pick first day in selection
+        const dk = (dayKeys && dayKeys.length) ? dayKeys[0] : null;
+        const key = op+'|'+dk;
+        STATE.op = op; STATE.dayKey = dk;
+        const pack = STATE.opDay[key];
+        $('timebarWrap').innerHTML = pack ? buildTimebar(pack.intervals) : '<div class="hint">Seleziona un giorno specifico (base). Nel prossimo step aggiungiamo filtro giorno qui.</div>';
       });
     });
+
+  } catch(e){
+    console.error(e);
+    setErr(e.message||String(e));
   }
+}
 
-  function renderFocus(){
-    const res=state.res;
-    const op=state.focusOp;
-    if(!res || !op) return;
-
-    if(state.focusMode==="synth"){
-      renderBars(res, op);
-    }else if(state.focusMode==="detail"){
-      renderTimeline(res, op);
-    }else{
-      renderSupportQuick(op);
-    }
-  }
-
-  function renderBars(res, op){
-    const wrap=$("barsWrap");
-    wrap.innerHTML="";
-
-    const dm = res.perOpDay.get(op);
-    if(!dm){ wrap.innerHTML=`<div class="hint">Nessun evento per ${op} nel periodo.</div>`; return; }
-
-    // show max 5 days if multi
-    const days = res.dayKeys.filter(dk=>dm.has(dk));
-    const shown = days.slice(0,5);
-
-    for(const dk of shown){
-      const d = dm.get(dk);
-      const slots=slotRanges(dk);
-      const row=document.createElement("div");
-      row.className="barRow";
-      row.innerHTML = `<div class="barLabel mono">${Core.fmtDDMMYYYY(dk)} <span class="hint">${d.shift.code}</span></div><div class="bar"></div>`;
-      const bar=row.querySelector(".bar");
-      for(let i=0;i<slots.length;i++){
-        const s=slots[i];
-        const cat = dominantCategory(d.intervals, s.start, s.end) || "PAUSA";
-        const div=document.createElement("div");
-        div.className="slot "+catClass(cat).toLowerCase();
-        div.style.background = (cat==="MIX") ? "var(--mix)" : catColor(cat);
-        if(cat==="PAUSA"){
-          div.classList.add("pause");
-          div.title="Clicca per inserire Indiretta (in questa mezz'ora)";
-          div.addEventListener("click", ()=>{
-            openIndirectModal(op, dk, s.start, s.end);
-          });
-        }else{
-          div.title = cat;
-        }
-        bar.appendChild(div);
-      }
-      wrap.appendChild(row);
-    }
-
-    if(days.length>shown.length){
-      const more=document.createElement("div");
-      more.className="hint";
-      more.style.marginTop="8px";
-      more.textContent=`Mostro ${shown.length} giorni su ${days.length}. (Limite per evitare eccesso di barre in UI)`;
-      wrap.appendChild(more);
-    }
-  }
-
-  function renderTimeline(res, op){
-    const wrap=$("timelineWrap");
-    wrap.innerHTML="";
-    const dm = res.perOpDay.get(op);
-    if(!dm){ wrap.innerHTML=`<div class="hint">Nessun evento per ${op} nel periodo.</div>`; return; }
-
-    const rows=[];
-    for(const dk of res.dayKeys){
-      const d=dm.get(dk);
-      if(!d) continue;
-      for(const it of d.intervals){
-        rows.push({ dk, shift:d.shift.code, ...it });
-      }
-    }
-    rows.sort((a,b)=>a.start-b.start);
-
-    const table=document.createElement("table");
-    table.innerHTML=`
-      <thead>
-        <tr>
-          <th>Giorno</th>
-          <th>Turno</th>
-          <th>Start</th>
-          <th>End</th>
-          <th>Categoria</th>
-          <th class="mono">Durata</th>
-          <th>Note</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    `;
-    const tb=table.querySelector("tbody");
-    const pad=n=>String(n).padStart(2,'0');
-    const fmt=(d)=>`${pad(d.getHours())}:${pad(d.getMinutes())}`;
-
-    for(const r of rows){
-      const tr=document.createElement("tr");
-      tr.innerHTML=`
-        <td class="mono">${Core.fmtDDMMYYYY(r.dk)}</td>
-        <td class="mono">${r.shift}</td>
-        <td class="mono">${fmt(r.start)}</td>
-        <td class="mono">${fmt(r.end)}</td>
-        <td>${r.category}</td>
-        <td class="mono">${Core.minToHHMM(r.minutes)}</td>
-        <td class="hint">${r.note||""}</td>
-      `;
-      tb.appendChild(tr);
-    }
-    wrap.appendChild(table);
-  }
-
-  // =============== SUPPORT MODAL ===============
-  function openSupportModal(srcOp){
-    $("supportSrcLbl").textContent = srcOp;
-    $("supportOverlay").style.display="flex";
-    renderSupportList(srcOp);
-  }
-  function closeSupportModal(){ $("supportOverlay").style.display="none"; }
-  $("supportClose").addEventListener("click", closeSupportModal);
-
-  function renderSupportList(srcOp){
-    const rules = Core.getSupportRules();
-    const arr = (rules[srcOp]||[]).slice().sort((a,b)=>String(a.start).localeCompare(String(b.start)));
-    if(!arr.length){
-      $("supportList").innerHTML = `<div class="hint">Nessuna fascia inserita.</div>`;
-      return;
-    }
-    const table=document.createElement("table");
-    table.innerHTML=`
-      <thead><tr><th>Supporto reale</th><th>Start</th><th>End</th><th></th></tr></thead>
-      <tbody></tbody>
-    `;
-    const tb=table.querySelector("tbody");
-    for(let i=0;i<arr.length;i++){
-      const r=arr[i];
-      const tr=document.createElement("tr");
-      tr.innerHTML=`
-        <td class="mono">${r.realOp}</td>
-        <td class="mono">${String(r.start).replace("T"," ").slice(0,16)}</td>
-        <td class="mono">${String(r.end).replace("T"," ").slice(0,16)}</td>
-        <td><button data-del="${i}" type="button">Rimuovi</button></td>
-      `;
-      tb.appendChild(tr);
-    }
-    table.querySelectorAll("button[data-del]").forEach(b=>{
-      b.addEventListener("click", ()=>{
-        const idx=parseInt(b.getAttribute("data-del"),10);
-        const rules2=Core.getSupportRules();
-        const arr2=(rules2[srcOp]||[]).slice();
-        arr2.splice(idx,1);
-        rules2[srcOp]=arr2;
-        Core.setSupportRules(rules2);
-        renderSupportList(srcOp);
-      });
-    });
-    $("supportList").innerHTML="";
-    $("supportList").appendChild(table);
-  }
-
-  $("supportAdd").addEventListener("click", ()=>{
-    const src = state.supportSrc;
-    const real = ($("supportReal").value||"").trim();
-    const start = $("supportStart").value;
-    const end = $("supportEnd").value;
-    if(!src || !real || !start || !end) return;
-    if(new Date(end) <= new Date(start)) return;
-
-    const rules=Core.getSupportRules();
-    rules[src] = rules[src] || [];
-    rules[src].push({ realOp: real, start, end });
-    Core.setSupportRules(rules);
-
-    $("supportReal").value="";
-    $("supportStart").value="";
-    $("supportEnd").value="";
-    renderSupportList(src);
-  });
-
-  $("supportClear").addEventListener("click", ()=>{
-    const src=state.supportSrc;
-    if(!src) return;
-    const rules=Core.getSupportRules();
-    delete rules[src];
-    Core.setSupportRules(rules);
-    renderSupportList(src);
-  });
-
-  $("supportSave").addEventListener("click", async ()=>{
-    closeSupportModal();
-    await run();
-    if(state.focusOp) renderFocus();
-  });
-
-  function renderSupportQuick(op){
-    const wrap=$("supportQuickWrap");
-    const rules=Core.getSupportRules();
-    const arr=(rules[op]||[]);
-    if(!arr.length){
-      wrap.innerHTML = `<div class="hint">Nessuna regola di supporto per questo account.</div>`;
-      return;
-    }
-    const table=document.createElement("table");
-    table.innerHTML=`
-      <thead><tr><th>Supporto reale</th><th>Start</th><th>End</th></tr></thead>
-      <tbody></tbody>
-    `;
-    const tb=table.querySelector("tbody");
-    for(const r of arr){
-      const tr=document.createElement("tr");
-      tr.innerHTML=`
-        <td class="mono">${r.realOp}</td>
-        <td class="mono">${String(r.start).replace("T"," ").slice(0,16)}</td>
-        <td class="mono">${String(r.end).replace("T"," ").slice(0,16)}</td>
-      `;
-      tb.appendChild(tr);
-    }
-    wrap.innerHTML="";
-    wrap.appendChild(table);
-  }
-
-  $("openSupportBtn").addEventListener("click", ()=>{
-    if(!state.focusOp) return;
-    state.supportSrc = state.focusOp;
-    openSupportModal(state.focusOp);
-  });
-
-  // =============== INDIRECT MODAL ===============
-  function openIndirectModal(op, dayKey, start, end){
-    state.pendingPauseSlot = { op, dayKey, start, end };
-    $("indLbl").textContent = `${op} — ${Core.fmtDDMMYYYY(dayKey)}`;
-    $("indStart").value = start.toISOString().slice(0,16);
-    $("indEnd").value = end.toISOString().slice(0,16);
-    $("indDesc").value = "";
-    const ov = Core.getShiftOverride();
-    const cur = ov?.[op]?.[dayKey] || "AUTO";
-    $("indShift").value = cur;
-    $("indOverlay").style.display="flex";
-  }
-  function closeIndirectModal(){ $("indOverlay").style.display="none"; state.pendingPauseSlot=null; }
-  $("indClose").addEventListener("click", closeIndirectModal);
-
-  $("indAdd").addEventListener("click", async ()=>{
-    const p = state.pendingPauseSlot;
-    if(!p) return;
-    const start = $("indStart").value;
-    const end = $("indEnd").value;
-    if(!start || !end || new Date(end)<=new Date(start)) return;
-    const desc = ($("indDesc").value||"").trim();
-    const shift = $("indShift").value || "AUTO";
-
-    const ind = Core.getIndirectRules();
-    ind[p.op] = ind[p.op] || {};
-    ind[p.op][p.dayKey] = ind[p.op][p.dayKey] || [];
-    ind[p.op][p.dayKey].push({ start, end, desc });
-    Core.setIndirectRules(ind);
-
-    const ov = Core.getShiftOverride();
-    ov[p.op] = ov[p.op] || {};
-    ov[p.op][p.dayKey] = shift;
-    Core.setShiftOverride(ov);
-
-    closeIndirectModal();
-    await run();
-    if(state.focusOp) renderFocus();
-  });
-
-  // =============== MAIN RUN ===============
-  async function run(){
-    try{
-      setErr("");
-      const sel = Core.getSelection();
-
-      // In week/month mode: per semplicità includiamo PI+WT per i dayKeys espansi,
-      // e se non ci sono check day-level impostiamo true.
-      if(sel.mode!=="day"){
-        const ds = await Core.fetchDatasets();
-        const allDayKeys = ds.map(d=>d.day_key).filter(Boolean).sort();
-        const expanded = Core.expandSelectionToDayKeys(sel, allDayKeys);
-        sel.days = sel.days || {};
-        for(const dk of expanded){
-          if(!sel.days[dk]) sel.days[dk] = { pi:true, wt:true };
-        }
-        Core.setSelection(sel);
-      }
-
-      const res = await Core.computeAggregatesForSelection(sel);
-      state.res = res;
-      setSelHint(res.dayKeys);
-      renderSummary(res);
-
-      if(state.focusOp){
-        // se l'op non esiste più nel periodo, chiudi
-        const exists = res.rows.some(r=>r.operator===state.focusOp);
-        if(!exists) clearFocus();
-        else renderFocus();
-      }
-
-    }catch(e){
-      console.error(e);
-      setErr(e.message||String(e));
-    }
-  }
-
-  $("reloadBtn").addEventListener("click", run);
-  run();
+$('reloadBtn').addEventListener('click', load);
+load();
 </script>
-
 </body>
 </html>
