@@ -2,21 +2,34 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const SUPABASE_URL = "https://wndlmkjhzgqdwsfylvmh.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_sf8tAbDNmRLtCGu9xsesSQ_JWmIyQHI";
-
 const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 
 const $ = (id) => document.getElementById(id);
 const logEl = $("log");
 
-const PAUSE_THRESHOLD_SEC = 30 * 60;   // > 30 min => pausa
-const SLOT_MINUTES = 30;               // sequenza 30m
+const PAUSE_THRESHOLD_SEC = 30 * 60; // > 30 min => pausa
+const SLOT_MINUTES = 30;
 
+// shift definitions
+const SHIFTS = {
+  AM: { start: "05:00", end: "13:00" },
+  C:  { start: "08:00", end: "16:00" },
+  OM: { start: "14:00", end: "22:00" },
+};
+
+// state
 let currentUser = null;
-let cachedEvents = [];                 // events in range (effective view)
+let cachedEvents = [];
 let currentRange = { start: null, end: null };
+
 let currentOperator = null;
-let currentIntervals = [];             // raw intervals
-let currentBlocks = [];                // grouped blocks
+let currentIntervals = [];
+let currentBlocks = [];
+let operatorDayList = [];
+
+let supportAccountOpen = null;
+let manualActivities = []; // loaded for current operator & range
+let pauseClickContext = null; // { operator, start, end }
 
 function log(...args) {
   const line = args.map(a => (typeof a === "string" ? a : JSON.stringify(a, null, 2))).join(" ");
@@ -28,7 +41,6 @@ function setBusy(isBusy, msg="") {
   $("btnApply").disabled = isBusy;
   $("btnRefresh").disabled = isBusy;
   $("btnReset").disabled = isBusy;
-  $("btnViewDetail").disabled = isBusy;
   $("btnViewSequence").disabled = isBusy;
   $("btnExportCsv").disabled = isBusy;
   $("busyLabel").textContent = msg;
@@ -77,6 +89,26 @@ function uniq(arr) {
   return Array.from(new Set(arr));
 }
 
+function categoryToRowClass(cat) {
+  if (cat === "PI Pick") return "row-pick";
+  if (cat === "PI Bulk") return "row-bulk";
+  if (cat === "P2P") return "row-p2p";
+  if (cat === "CLP") return "row-clp";
+  if (cat === "PAUSA") return "row-pause";
+  return "row-mix";
+}
+
+function categoryToCssBg(cat) {
+  // must match CSS variables
+  if (cat === "PI Pick") return "var(--c-pick)";
+  if (cat === "PI Bulk") return "var(--c-bulk)";
+  if (cat === "P2P") return "var(--c-p2p)";
+  if (cat === "CLP") return "var(--c-clp)";
+  if (cat === "PAUSA") return "var(--c-pause)";
+  return "var(--c-mix)";
+}
+
+// -------------------- Auth --------------------
 async function ensureAnonymousSession() {
   setAuthUI(false, "checking session...", "-");
   const { data: s } = await supabase.auth.getSession();
@@ -94,48 +126,40 @@ async function resetSession() {
   setBusy(true, "reset session...");
   const { error } = await supabase.auth.signOut();
   if (error) log("❌ signOut:", error.message);
-  else log("✅ signed out");
   setAuthUI(false, "signed-out", "-");
   setBusy(false, "");
   location.reload();
 }
 
-// ---------------------------------------------
-// Range selection: Days/Weeks/Month + End date
-// ---------------------------------------------
+// -------------------- Range selection --------------------
 function computeRangeFromUI() {
   const type = $("rangeType").value;
   const val = Math.max(1, Number($("rangeValue").value || 1));
-  const endDate = $("endDate").value; // yyyy-mm-dd
+  const endDate = $("endDate").value;
 
   const end = endDate ? new Date(`${endDate}T23:59:59`) : new Date();
   let days = val;
-
   if (type === "weeks") days = val * 7;
   if (type === "months") days = val * 30;
 
-  const start = new Date(end.getTime() - (days * 24 * 3600 * 1000));
+  const start = new Date(end.getTime() - days * 24 * 3600 * 1000);
   start.setHours(0,0,0,0);
-
   return { start, end };
 }
 
 function rangeToFilter(range) {
-  // PostgREST accetta ISO string
   const start = fmtDT(range.start).replace(" ", "T");
   const end = fmtDT(range.end).replace(" ", "T");
   return { start, end };
 }
 
-// ---------------------------------------------
-// Fetch events in range (effective view)
-// ---------------------------------------------
+// -------------------- Fetch --------------------
 async function fetchEvents(range) {
   const { start, end } = rangeToFilter(range);
 
   const { data, error } = await supabase
     .from("v_operator_events_effective")
-    .select("source,event_dt,operator_code,operator_original,warehouse_order,bin_from,bin_to,category,created_by,counter")
+    .select("source,event_dt,operator_code,operator_original,warehouse_order,category,created_by,counter")
     .gte("event_dt", start)
     .lte("event_dt", end)
     .order("operator_code", { ascending: true })
@@ -145,33 +169,42 @@ async function fetchEvents(range) {
   return data ?? [];
 }
 
-// ---------------------------------------------
-// Category mapping for time analysis
-// (WT Other = Pick Mvmt IPL)
-// ---------------------------------------------
+async function fetchManualActivities(operator, range) {
+  const { start, end } = rangeToFilter(range);
+
+  const { data, error } = await supabase
+    .from("manual_activity_segments")
+    .select("id,operator_code,start_dt,end_dt,label,color")
+    .eq("operator_code", operator)
+    .gte("start_dt", start)
+    .lte("end_dt", end)
+    .order("start_dt", { ascending: true });
+
+  if (error) throw error;
+  return data ?? [];
+}
+
+// -------------------- Category mapping --------------------
 function mapCatForUI(ev) {
   if (ev.source === "PI") {
     if (ev.category === "Pick") return "PI Pick";
     if (ev.category === "Bulk") return "PI Bulk";
-    return "PI Other";
+    return "PI Pick"; // fallback: se "Altro" lo trattiamo come pick per ora
   }
   // WT
   if (ev.category === "Pick to Pick") return "P2P";
-  if (ev.category === "Clean Pick") return "Clean PICK";
-  return "WT Other";
+  if (ev.category === "Clean Pick") return "CLP";
+  return "CLP"; // fallback
 }
 
-// ---------------------------------------------
-// Build raw intervals per operator:
-// duration between event[i] and event[i+1] is assigned to NEXT event category.
+// -------------------- Intervals logic --------------------
+// Duration between event[i] and event[i+1] is assigned to NEXT event category.
 // If duration > 30 min => PAUSA.
-// ---------------------------------------------
 function buildIntervalsForOperator(events) {
   const out = [];
   for (let i = 0; i < events.length - 1; i++) {
     const a = events[i];
     const b = events[i + 1];
-
     const da = parseDT(a.event_dt);
     const db = parseDT(b.event_dt);
     if (!da || !db) continue;
@@ -179,7 +212,7 @@ function buildIntervalsForOperator(events) {
     const dtSec = Math.floor((db.getTime() - da.getTime()) / 1000);
     if (dtSec <= 0) continue;
 
-    let cat = mapCatForUI(b); // NEXT event category
+    let cat = mapCatForUI(b);
     if (dtSec > PAUSE_THRESHOLD_SEC) cat = "PAUSA";
 
     out.push({
@@ -187,15 +220,12 @@ function buildIntervalsForOperator(events) {
       end: db,
       sec: dtSec,
       category: cat,
-
-      // per dettaglio: legamiamo al "next event"
       nextEvent: b,
     });
   }
   return out;
 }
 
-// Group consecutive intervals with same category (blocks)
 function groupBlocks(intervals) {
   const blocks = [];
   let cur = null;
@@ -207,49 +237,33 @@ function groupBlocks(intervals) {
         start: it.start,
         end: it.end,
         sec: it.sec,
-        endEvents: [it.nextEvent],
       };
       blocks.push(cur);
     } else {
       cur.end = it.end;
       cur.sec += it.sec;
-      cur.endEvents.push(it.nextEvent);
     }
   }
   return blocks;
 }
 
-// ---------------------------------------------
-// Aggregations per operator
-// ---------------------------------------------
+// -------------------- Aggregations --------------------
 function computeOperatorStats(opEvents) {
   const intervals = buildIntervalsForOperator(opEvents);
 
-  const time = {
-    work: 0,
-    pause: 0,
-    piPick: 0,
-    piBulk: 0,
-    p2p: 0,
-    clean: 0,
-    wtOther: 0,
-  };
-
+  const time = { work: 0, pause: 0, pick: 0, bulk: 0, p2p: 0, clp: 0 };
   for (const it of intervals) {
     if (it.category === "PAUSA") {
       time.pause += it.sec;
       continue;
     }
     time.work += it.sec;
-
-    if (it.category === "PI Pick") time.piPick += it.sec;
-    else if (it.category === "PI Bulk") time.piBulk += it.sec;
+    if (it.category === "PI Pick") time.pick += it.sec;
+    else if (it.category === "PI Bulk") time.bulk += it.sec;
     else if (it.category === "P2P") time.p2p += it.sec;
-    else if (it.category === "Clean PICK") time.clean += it.sec;
-    else if (it.category === "WT Other") time.wtOther += it.sec;
+    else if (it.category === "CLP") time.clp += it.sec;
   }
 
-  // Counts from events (not intervals)
   const piPickBins = opEvents.filter(e => e.source === "PI" && e.category === "Pick").length;
   const piBulkBins = opEvents.filter(e => e.source === "PI" && e.category === "Bulk").length;
 
@@ -261,23 +275,10 @@ function computeOperatorStats(opEvents) {
   }).length;
 
   const woP2P = uniq(opEvents.filter(e => e.source === "WT" && e.category === "Pick to Pick").map(e => e.warehouse_order)).length;
-  const woClean = uniq(opEvents.filter(e => e.source === "WT" && e.category === "Clean Pick").map(e => e.warehouse_order)).length;
-  const woOther = uniq(opEvents.filter(e => e.source === "WT" && e.category === "Pick Mvmt IPL").map(e => e.warehouse_order)).length;
+  const woCLP = uniq(opEvents.filter(e => e.source === "WT" && e.category === "Clean Pick").map(e => e.warehouse_order)).length;
 
-  // Support flag: se almeno un evento ha operator_original != operator_code
   const hasSupportRemap = opEvents.some(e => (e.operator_original ?? "") !== (e.operator_code ?? ""));
-
-  return {
-    time,
-    piPickBins,
-    piBulkBins,
-    selfCount,
-    woP2P,
-    woClean,
-    woOther,
-    intervalsCount: intervals.length,
-    hasSupportRemap,
-  };
+  return { time, piPickBins, piBulkBins, selfCount, woP2P, woCLP, hasSupportRemap };
 }
 
 function buildOperatorMap(events) {
@@ -290,39 +291,30 @@ function buildOperatorMap(events) {
   return map;
 }
 
-// ---------------------------------------------
-// Render tables
-// ---------------------------------------------
+// -------------------- Render: Summary + KPI --------------------
 function renderSummary(rows) {
   const tb = $("tblSummary").querySelector("tbody");
   tb.innerHTML = "";
 
   for (const r of rows) {
     const tr = document.createElement("tr");
-
     tr.innerHTML = `
-      <td>
-        <button class="btn ${r.hasSupportRemap ? "primary" : ""}" data-support="${escapeHtml(r.operator)}">
-          Supporto
-        </button>
-      </td>
+      <td><button class="btn ${r.hasSupportRemap ? "primary" : ""}" data-support="${escapeHtml(r.operator)}">Supporto</button></td>
       <td><span class="link" data-op="${escapeHtml(r.operator)}">${escapeHtml(r.operator)}</span></td>
       <td class="mono">${secToHHMM(r.time.work)}</td>
-      <td class="mono">${secToHHMM(r.time.piPick)}</td>
-      <td class="mono">${secToHHMM(r.time.piBulk)}</td>
+      <td class="mono">${secToHHMM(r.time.pick)}</td>
+      <td class="mono">${secToHHMM(r.time.bulk)}</td>
       <td class="mono">${secToHHMM(r.time.p2p)}</td>
-      <td class="mono">${secToHHMM(r.time.clean)}</td>
+      <td class="mono">${secToHHMM(r.time.clp)}</td>
       <td class="mono">${secToHHMM(r.time.pause)}</td>
     `;
     tb.appendChild(tr);
   }
 
-  // click operator -> drilldown
   tb.querySelectorAll("[data-op]").forEach(el => {
     el.addEventListener("click", () => openDrilldown(el.getAttribute("data-op")));
   });
 
-  // support button -> modal
   tb.querySelectorAll("[data-support]").forEach(btn => {
     btn.addEventListener("click", () => openSupportModal(btn.getAttribute("data-support")));
   });
@@ -338,20 +330,17 @@ function renderKpi(rows) {
       <td><span class="link" data-op="${escapeHtml(r.operator)}">${escapeHtml(r.operator)}</span></td>
       <td class="mono">${secToHHMM(r.time.work)}</td>
 
-      <td class="mono">${secToHHMM(r.time.piPick)}</td>
+      <td class="mono">${secToHHMM(r.time.pick)}</td>
       <td class="mono">${r.piPickBins}</td>
 
-      <td class="mono">${secToHHMM(r.time.piBulk)}</td>
+      <td class="mono">${secToHHMM(r.time.bulk)}</td>
       <td class="mono">${r.piBulkBins}</td>
 
       <td class="mono">${secToHHMM(r.time.p2p)}</td>
       <td class="mono">${r.woP2P}</td>
 
-      <td class="mono">${secToHHMM(r.time.clean)}</td>
-      <td class="mono">${r.woClean}</td>
-
-      <td class="mono">${secToHHMM(r.time.wtOther)}</td>
-      <td class="mono">${r.woOther}</td>
+      <td class="mono">${secToHHMM(r.time.clp)}</td>
+      <td class="mono">${r.woCLP}</td>
 
       <td class="mono">${secToHHMM(r.time.pause)}</td>
       <td class="mono">${r.selfCount}</td>
@@ -364,30 +353,25 @@ function renderKpi(rows) {
   });
 }
 
-// ---------------------------------------------
-// Drilldown render
-// ---------------------------------------------
+// -------------------- Render: blocks + intervals --------------------
 function renderBlocks(blocks) {
   const tb = $("tblBlocks").querySelector("tbody");
   tb.innerHTML = "";
 
+  let prev = null;
   for (const b of blocks) {
-    const endEvents = b.endEvents || [];
-    const bins = endEvents.filter(e => e.source === "PI").length;
-    const wos = uniq(endEvents.filter(e => e.source === "WT").map(e => e.warehouse_order)).length;
-
-    // Note basilare: puoi arricchirla dopo
-    const note = (b.category === "PAUSA") ? `Gap > 30 min` : "";
-
     const tr = document.createElement("tr");
+    tr.className = categoryToRowClass(b.category);
+
+    const changeText = prev ? `${prev} → ${b.category}` : "—";
+    prev = b.category;
+
     tr.innerHTML = `
       <td class="mono">${escapeHtml(fmtDT(b.start))}</td>
       <td class="mono">${escapeHtml(fmtDT(b.end))}</td>
       <td>${escapeHtml(b.category)}</td>
       <td class="mono">${secToHHMM(b.sec)}</td>
-      <td class="mono">${bins}</td>
-      <td class="mono">${wos}</td>
-      <td>${escapeHtml(note)}</td>
+      <td class="mono">${escapeHtml(changeText)}</td>
     `;
     tb.appendChild(tr);
   }
@@ -398,94 +382,159 @@ function renderIntervals(intervals) {
   tb.innerHTML = "";
 
   for (const it of intervals) {
-    const e = it.nextEvent;
-    const bins = e?.source === "PI" ? 1 : 0;
-    const wo = e?.source === "WT" ? (e.warehouse_order ?? "") : "";
-
-    const note = (it.category === "PAUSA") ? "Gap > 30 min" : "";
-
+    const wo = it.nextEvent?.warehouse_order ?? "";
     const tr = document.createElement("tr");
+    tr.className = categoryToRowClass(it.category);
+
     tr.innerHTML = `
       <td class="mono">${escapeHtml(fmtDT(it.start))}</td>
       <td class="mono">${escapeHtml(fmtDT(it.end))}</td>
       <td>${escapeHtml(it.category)}</td>
       <td class="mono">${secToHHMM(it.sec)}</td>
-      <td class="mono">${bins}</td>
       <td class="mono">${escapeHtml(wo)}</td>
-      <td>${escapeHtml(note)}</td>
     `;
     tb.appendChild(tr);
   }
 }
 
-function renderSequence30m(intervals, range) {
-  const wrap = $("seqList");
-  wrap.innerHTML = "";
+// -------------------- Day + shift helpers --------------------
+function dayKey(d) {
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth()+1).padStart(2,"0");
+  const dd = String(d.getDate()).padStart(2,"0");
+  return `${yyyy}-${mm}-${dd}`;
+}
 
-  const colors = {
-    "PI Pick": "rgba(91,140,255,.60)",
-    "PI Bulk": "rgba(91,140,255,.35)",
-    "P2P": "rgba(60,210,140,.55)",
-    "Clean PICK": "rgba(50,160,255,.25)",
-    "WT Other": "rgba(90,120,255,.20)",
-    "PAUSA": "rgba(220,75,85,.60)",
-    "MIX": "rgba(255,255,255,.12)",
-  };
+function parseTimeToDay(day, hhmm) {
+  const [hh, mm] = hhmm.split(":").map(Number);
+  const d = new Date(`${day}T00:00:00`);
+  d.setHours(hh, mm, 0, 0);
+  return d;
+}
 
-  const slotMs = SLOT_MINUTES * 60 * 1000;
-  let t = new Date(range.start.getTime());
-  const end = range.end;
+function buildDayListForOperator(opEvents) {
+  const days = uniq(opEvents.map(e => dayKey(parseDT(e.event_dt)))).sort();
+  return days;
+}
 
-  while (t < end) {
-    const slotStart = new Date(t.getTime());
-    const slotEnd = new Date(Math.min(t.getTime() + slotMs, end.getTime()));
+function chooseDefaultDayShift(intervals, days) {
+  // pick day with max "work" seconds (non pause)
+  let bestDay = days[0] ?? null;
+  let bestSec = -1;
 
-    // overlap durations per category
-    const acc = new Map();
+  for (const day of days) {
+    const dayStart = new Date(`${day}T00:00:00`);
+    const dayEnd = new Date(`${day}T23:59:59`);
+
+    let sec = 0;
     for (const it of intervals) {
       const a = it.start.getTime();
       const b = it.end.getTime();
-      const s = slotStart.getTime();
-      const e = slotEnd.getTime();
+      const s = dayStart.getTime();
+      const e = dayEnd.getTime();
       const overlap = Math.max(0, Math.min(b, e) - Math.max(a, s));
+      if (overlap > 0 && it.category !== "PAUSA") sec += overlap/1000;
+    }
+
+    if (sec > bestSec) {
+      bestSec = sec;
+      bestDay = day;
+    }
+  }
+
+  // choose shift with max overlap
+  let bestShift = "AM";
+  let bestShiftSec = -1;
+
+  for (const shiftKey of Object.keys(SHIFTS)) {
+    const sh = SHIFTS[shiftKey];
+    const shStart = parseTimeToDay(bestDay, sh.start);
+    const shEnd = parseTimeToDay(bestDay, sh.end);
+
+    let sec = 0;
+    for (const it of intervals) {
+      const overlap = Math.max(0, Math.min(it.end, shEnd) - Math.max(it.start, shStart));
+      if (overlap > 0 && it.category !== "PAUSA") sec += overlap/1000;
+    }
+    if (sec > bestShiftSec) {
+      bestShiftSec = sec;
+      bestShift = shiftKey;
+    }
+  }
+
+  return { day: bestDay, shift: bestShift };
+}
+
+// -------------------- Timeline single row --------------------
+function slotLabel(start, end) {
+  return `${fmtDT(start).slice(11,16)}–${fmtDT(end).slice(11,16)}`;
+}
+
+function findManualActivityForSlot(slotStart, slotEnd) {
+  // if any manual activity overlaps this slot, return its label
+  for (const a of manualActivities) {
+    const as = parseDT(a.start_dt);
+    const ae = parseDT(a.end_dt);
+    if (!as || !ae) continue;
+    const overlap = Math.max(0, Math.min(ae, slotEnd) - Math.max(as, slotStart));
+    if (overlap > 0) return a;
+  }
+  return null;
+}
+
+function renderTimelineForShift(intervals, day, shiftKey) {
+  const sh = SHIFTS[shiftKey];
+  const shiftStart = parseTimeToDay(day, sh.start);
+  const shiftEnd = parseTimeToDay(day, sh.end);
+
+  $("tickStart").textContent = `${day} ${sh.start}`;
+  $("tickEnd").textContent = `${day} ${sh.end}`;
+
+  const row = $("timelineRow");
+  row.innerHTML = "";
+
+  const slotMs = SLOT_MINUTES * 60 * 1000;
+  for (let t = new Date(shiftStart.getTime()); t < shiftEnd; t = new Date(t.getTime() + slotMs)) {
+    const slotStart = new Date(t.getTime());
+    const slotEnd = new Date(Math.min(t.getTime() + slotMs, shiftEnd.getTime()));
+
+    // compute overlap by category from intervals
+    const acc = new Map();
+    for (const it of intervals) {
+      const overlap = Math.max(0, Math.min(it.end, slotEnd) - Math.max(it.start, slotStart));
       if (overlap <= 0) continue;
       acc.set(it.category, (acc.get(it.category) || 0) + overlap);
     }
 
     const cats = Array.from(acc.keys());
-    let label = "—";
-    let bg = colors["MIX"];
+    let cat = "—";
+    if (cats.length === 0) cat = "—";
+    else if (cats.length === 1) cat = cats[0];
+    else cat = "MIX";
 
-    if (cats.length === 0) {
-      label = "—";
-      bg = "rgba(255,255,255,.06)";
-    } else if (cats.length === 1) {
-      label = cats[0];
-      bg = colors[label] || colors["MIX"];
-    } else {
-      // mixed
-      label = "MIX";
-      bg = colors["MIX"];
-    }
+    // manual overlay: if pause and manual exists => show manual label but keep pause category logic
+    let displayCat = cat;
+    const manual = findManualActivityForSlot(slotStart, slotEnd);
+    if (manual && cat === "PAUSA") displayCat = manual.label || "INDIRECT";
 
-    const row = document.createElement("div");
-    row.style.display = "grid";
-    row.style.gridTemplateColumns = "120px 1fr 60px";
-    row.style.gap = "10px";
-    row.style.alignItems = "center";
+    const seg = document.createElement("div");
+    seg.className = "seg";
+    seg.style.background = categoryToCssBg(cat === "MIX" ? "MIX" : cat);
 
-    row.innerHTML = `
-      <div class="mono" style="color:rgba(255,255,255,.70)">${escapeHtml(fmtDT(slotStart).slice(11,16))}–${escapeHtml(fmtDT(slotEnd).slice(11,16))}</div>
-      <div style="height:14px;border-radius:999px;border:1px solid rgba(255,255,255,.10);background:${bg}"></div>
-      <div class="mono" style="text-align:right;color:rgba(255,255,255,.55)">${SLOT_MINUTES}m</div>
-    `;
+    seg.title = `${slotLabel(slotStart, slotEnd)} | ${displayCat}`;
 
-    wrap.appendChild(row);
-    t = new Date(t.getTime() + slotMs);
+    // click only pause => add manual activity
+    seg.addEventListener("click", () => {
+      if (cat !== "PAUSA") return;
+      openActivityModal(slotStart, slotEnd);
+    });
+
+    row.appendChild(seg);
   }
 }
 
-function openDrilldown(operator) {
+// -------------------- Drilldown --------------------
+async function openDrilldown(operator) {
   currentOperator = operator;
 
   const opEvents = cachedEvents.filter(e => e.operator_code === operator);
@@ -494,22 +543,41 @@ function openDrilldown(operator) {
   currentIntervals = buildIntervalsForOperator(opEvents);
   currentBlocks = groupBlocks(currentIntervals);
 
-  // changes
-  let changes = 0;
-  for (let i=1; i<currentBlocks.length; i++) {
-    if (currentBlocks[i].category !== currentBlocks[i-1].category) changes++;
-  }
+  operatorDayList = buildDayListForOperator(opEvents);
+  fillDaySelect(operatorDayList);
 
-  $("drilldownBody").style.display = "block";
+  const { day, shift } = chooseDefaultDayShift(currentIntervals, operatorDayList);
+  $("daySelect").value = day ?? "";
+  $("shiftSelect").value = shift ?? "AM";
+
+  // load manual activities for operator
+  manualActivities = await fetchManualActivities(operator, currentRange);
+
+  const changes = Math.max(0, currentBlocks.length - 1);
   $("ddInfo").textContent = `Operatore: ${operator} | Intervalli: ${currentIntervals.length} | Cambi: ${changes}`;
 
   renderBlocks(currentBlocks);
   renderIntervals(currentIntervals);
 
-  // default view detail
-  $("seqPanel").style.display = "none";
+  renderTimelineForShift(
+    currentIntervals,
+    $("daySelect").value,
+    $("shiftSelect").value
+  );
 }
 
+function fillDaySelect(days) {
+  const sel = $("daySelect");
+  sel.innerHTML = "";
+  for (const d of days) {
+    const opt = document.createElement("option");
+    opt.value = d;
+    opt.textContent = d;
+    sel.appendChild(opt);
+  }
+}
+
+// -------------------- CSV Export --------------------
 function exportIntervalsCsv() {
   if (!currentOperator || currentIntervals.length === 0) return;
 
@@ -524,7 +592,7 @@ function exportIntervalsCsv() {
       fmtDT(it.end),
       it.category,
       secToHHMM(it.sec),
-      String(wo).replaceAll(",", " ")
+      String(wo).replaceAll(",", " "),
     ].join(","));
   }
 
@@ -537,16 +605,12 @@ function exportIntervalsCsv() {
   URL.revokeObjectURL(url);
 }
 
-// ---------------------------------------------
-// Support modal (insert/delete ranges)
-// ---------------------------------------------
-let supportAccountOpen = null;
-
+// -------------------- Support modal --------------------
 function openSupportModal(supportAccount) {
   supportAccountOpen = supportAccount;
 
   $("supportTitle").textContent = `Supporto account: ${supportAccount}`;
-  $("supportSubtitle").textContent = `Inserisci fasce Start-End per attribuire attività a supporti reali.`;
+  $("supportSubtitle").textContent = `Assegna fasce Start-End a un operatore reale.`;
 
   $("realOperator").value = "";
   $("supportStart").value = "";
@@ -562,7 +626,6 @@ function closeSupportModal() {
 }
 
 function dtLocalToTimestamp(val) {
-  // val = "YYYY-MM-DDTHH:mm"
   if (!val) return null;
   return val.replace("T", " ") + ":00";
 }
@@ -570,7 +633,6 @@ function dtLocalToTimestamp(val) {
 async function loadSupportRanges() {
   const tb = $("tblSupportRanges").querySelector("tbody");
   tb.innerHTML = "";
-
   if (!supportAccountOpen) return;
 
   const { data, error } = await supabase
@@ -599,7 +661,7 @@ async function loadSupportRanges() {
     btn.addEventListener("click", async () => {
       const id = btn.getAttribute("data-del");
       const { error: delErr } = await supabase.from("support_assignments").delete().eq("id", id);
-      if (delErr) log("❌ delete support range:", delErr.message);
+      if (delErr) log("❌ delete support:", delErr.message);
       await loadSupportRanges();
     });
   });
@@ -626,7 +688,7 @@ async function addSupportRange() {
   });
 
   if (error) {
-    log("❌ insert support range:", error.message);
+    log("❌ insert support:", error.message);
     return;
   }
 
@@ -634,15 +696,113 @@ async function addSupportRange() {
   log("✅ Support range saved");
 }
 
-// ---------------------------------------------
-// Main: load + compute
-// ---------------------------------------------
+// -------------------- Manual Activity Modal (click pausa) --------------------
+function openActivityModal(startDt, endDt) {
+  if (!currentOperator) return;
+
+  pauseClickContext = { operator: currentOperator, start: startDt, end: endDt };
+
+  $("activityTitle").textContent = `Attività indiretta — ${currentOperator}`;
+  $("activitySubtitle").textContent = `${fmtDT(startDt)} → ${fmtDT(endDt)} (slot ${SLOT_MINUTES}m)`;
+
+  // default form values
+  $("activityLabel").value = "";
+  $("activityStart").value = dtToLocal(startDt);
+  $("activityEnd").value = dtToLocal(endDt);
+
+  $("activityOverlay").style.display = "flex";
+  loadActivitiesTable();
+}
+
+function closeActivityModal() {
+  $("activityOverlay").style.display = "none";
+  pauseClickContext = null;
+}
+
+function dtToLocal(d) {
+  // yyyy-mm-ddThh:mm
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth()+1).padStart(2,"0");
+  const dd = String(d.getDate()).padStart(2,"0");
+  const hh = String(d.getHours()).padStart(2,"0");
+  const mi = String(d.getMinutes()).padStart(2,"0");
+  return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
+}
+
+async function loadActivitiesTable() {
+  const tb = $("tblActivities").querySelector("tbody");
+  tb.innerHTML = "";
+
+  if (!currentOperator) return;
+
+  // reload activities
+  manualActivities = await fetchManualActivities(currentOperator, currentRange);
+
+  for (const a of manualActivities) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(a.label)}</td>
+      <td class="mono">${escapeHtml(String(a.start_dt))}</td>
+      <td class="mono">${escapeHtml(String(a.end_dt))}</td>
+      <td><button class="btn danger" data-del="${a.id}">Elimina</button></td>
+    `;
+    tb.appendChild(tr);
+  }
+
+  tb.querySelectorAll("[data-del]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const id = btn.getAttribute("data-del");
+      const { error } = await supabase.from("manual_activity_segments").delete().eq("id", id);
+      if (error) log("❌ delete activity:", error.message);
+      await loadActivitiesTable();
+      rerenderTimeline();
+    });
+  });
+}
+
+async function addManualActivity() {
+  if (!currentOperator) return;
+
+  const label = $("activityLabel").value.trim();
+  const start = dtLocalToTimestamp($("activityStart").value);
+  const end = dtLocalToTimestamp($("activityEnd").value);
+
+  if (!label || !start || !end) {
+    log("⚠️ Compila Label + Start + End");
+    return;
+  }
+
+  const { error } = await supabase.from("manual_activity_segments").insert({
+    user_id: currentUser.id,
+    operator_code: currentOperator,
+    start_dt: start,
+    end_dt: end,
+    label,
+  });
+
+  if (error) {
+    log("❌ insert activity:", error.message);
+    return;
+  }
+
+  await loadActivitiesTable();
+  rerenderTimeline();
+  log("✅ Activity saved");
+}
+
+function rerenderTimeline() {
+  if (!currentOperator) return;
+  const day = $("daySelect").value;
+  const shift = $("shiftSelect").value;
+  renderTimelineForShift(currentIntervals, day, shift);
+}
+
+// -------------------- Main recompute --------------------
 async function recompute() {
   setBusy(true, "caricamento eventi...");
   try {
     currentRange = computeRangeFromUI();
     cachedEvents = await fetchEvents(currentRange);
-
     log(`Loaded events: ${cachedEvents.length}`);
 
     const opMap = buildOperatorMap(cachedEvents);
@@ -653,16 +813,21 @@ async function recompute() {
       rows.push({ operator, ...stats });
     }
 
-    // sort by work time desc
     rows.sort((a,b) => b.time.work - a.time.work);
 
     renderSummary(rows);
     renderKpi(rows);
 
-    // reset drilldown
+    // reset drilldown tables (empty)
     currentOperator = null;
-    $("drilldownBody").style.display = "none";
     $("ddInfo").textContent = "Seleziona un operatore…";
+    $("tblBlocks").querySelector("tbody").innerHTML = "";
+    $("tblIntervals").querySelector("tbody").innerHTML = "";
+    $("timelineRow").innerHTML = "";
+    $("tickStart").textContent = "";
+    $("tickEnd").textContent = "";
+
+    $("daySelect").innerHTML = "";
   } catch (e) {
     log("❌ recompute error:", e?.message ?? String(e));
   } finally {
@@ -670,9 +835,7 @@ async function recompute() {
   }
 }
 
-// ---------------------------------------------
-// Init
-// ---------------------------------------------
+// -------------------- Init --------------------
 (async function init() {
   log("Init overview...");
 
@@ -691,21 +854,11 @@ async function recompute() {
     $("btnRefresh").addEventListener("click", recompute);
     $("btnReset").addEventListener("click", resetSession);
 
-    $("btnViewDetail").addEventListener("click", () => {
-      $("seqPanel").style.display = "none";
-      $("btnViewDetail").classList.add("primary");
-      $("btnViewSequence").classList.remove("primary");
-    });
-
-    $("btnViewSequence").addEventListener("click", () => {
-      if (!currentOperator) return;
-      $("seqPanel").style.display = "block";
-      $("btnViewSequence").classList.add("primary");
-      $("btnViewDetail").classList.remove("primary");
-      renderSequence30m(currentIntervals, currentRange);
-    });
-
     $("btnExportCsv").addEventListener("click", exportIntervalsCsv);
+
+    // shift/day change -> timeline rerender
+    $("daySelect").addEventListener("change", rerenderTimeline);
+    $("shiftSelect").addEventListener("change", rerenderTimeline);
 
     // support modal
     $("btnCloseSupport").addEventListener("click", closeSupportModal);
@@ -715,7 +868,12 @@ async function recompute() {
       await recompute();
     });
 
-    // first load
+    // manual activity modal
+    $("btnCloseActivity").addEventListener("click", closeActivityModal);
+    $("btnCloseActivity2").addEventListener("click", closeActivityModal);
+    $("btnAddActivity").addEventListener("click", addManualActivity);
+
+    // initial load
     await recompute();
   } catch (e) {
     log("❌ init failed:", e?.message ?? String(e));
