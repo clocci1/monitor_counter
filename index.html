@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="it">
+<html lang="en">
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
@@ -10,128 +10,203 @@
   <script src="./app-core.js"></script>
 
   <style>
-    :root{--bg:#0b1220;--card:#111a2e;--border:rgba(255,255,255,.12);--muted:#a9b7d6;--text:#e8eefc;--btn:#6ea8fe;--bad:#ff6b6b;}
+    :root{
+      --bg:#0b1220;--card:#111a2e;--border:rgba(255,255,255,.12);--muted:#a9b7d6;--text:#e8eefc;
+      --btn:#6ea8fe;--btnText:#09101c;--bad:#ff6b6b;--ok:#2ed573;
+      --soft:rgba(255,255,255,.06);--soft2:rgba(255,255,255,.10);
+    }
+    body[data-theme="light"]{
+      --bg:#f6f7fb;--card:#ffffff;--border:rgba(15,23,42,.12);--muted:#475569;--text:#0f172a;
+      --btn:#2563eb;--btnText:#ffffff;--bad:#b91c1c;--ok:#15803d;
+      --soft:rgba(15,23,42,.05);--soft2:rgba(15,23,42,.08);
+    }
     body{font-family:system-ui,Segoe UI,Roboto,Arial;margin:0;background:var(--bg);color:var(--text);}
-    header{padding:14px 18px;border-bottom:1px solid var(--border);background:rgba(0,0,0,.2);}
+    header{padding:14px 18px;border-bottom:1px solid var(--border);background:color-mix(in srgb, var(--bg) 85%, black 15%);}
+    body[data-theme="light"] header{background:color-mix(in srgb, var(--bg) 92%, black 8%);}
+    nav{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;}
     nav a{color:var(--text);text-decoration:none;margin-right:12px;font-weight:800;}
+    .nav-left{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+    .nav-right{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
     .wrap{max-width:1500px;margin:0 auto;padding:16px 18px;}
     .grid{display:grid;grid-template-columns:1fr 520px;gap:12px;align-items:start;}
     @media(max-width:1200px){.grid{grid-template-columns:1fr;}}
     .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:12px;}
+    .title{font-weight:900;font-size:14px;}
     .hint{color:var(--muted);font-size:12px;}
     .bad{color:var(--bad);font-size:12px;}
-    input,select,button{border-radius:10px;border:1px solid var(--border);background:rgba(255,255,255,.06);color:var(--text);padding:10px;}
-    button{background:var(--btn);color:var(--bg);border:0;font-weight:900;cursor:pointer;}
-    button.secondary{background:rgba(255,255,255,.10);color:var(--text);border:1px solid var(--border);}
+    .ok{color:var(--ok);font-size:12px;}
+    input,select,button{border-radius:10px;border:1px solid var(--border);background:var(--soft);color:var(--text);padding:10px;}
+    button{background:var(--btn);color:var(--btnText);border:0;font-weight:900;cursor:pointer;}
+    button.secondary{background:var(--soft2);color:var(--text);border:1px solid var(--border);}
+    button.danger{background:var(--bad);color:#fff;border:0;}
     table{width:100%;border-collapse:collapse;margin-top:10px;font-size:12px;}
     th,td{padding:8px;border-bottom:1px solid var(--border);}
     th{color:var(--muted);text-align:left;font-weight:800;}
     .row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;}
     .col{display:flex;flex-direction:column;gap:6px;min-width:240px;}
-    .pill{display:inline-flex;gap:8px;align-items:center;border:1px solid var(--border);border-radius:999px;padding:6px 10px;background:rgba(255,255,255,.06);}
+    .pill{display:inline-flex;gap:8px;align-items:center;border:1px solid var(--border);border-radius:999px;padding:6px 10px;background:var(--soft);}
     .mono{font-family:ui-monospace,Menlo,Consolas,monospace;}
+    .drop{
+      border:1px dashed var(--border);border-radius:12px;padding:14px;background:color-mix(in srgb, var(--soft) 80%, transparent 20%);
+      display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;
+    }
+    .drop strong{font-size:13px;}
+    .footer{padding:16px 18px;color:var(--muted);text-align:center;font-size:12px;}
+    .small{font-size:11px;}
   </style>
 </head>
 <body>
 <header>
   <nav>
-    <a href="index.html">Home</a>
-    <a href="overview.html">Overview</a>
-    <a href="charts.html">Charts</a>
-    <a href="score.html">Score</a>
+    <div class="nav-left">
+      <a href="index.html">Home</a>
+      <a href="overview.html">Overview</a>
+      <a href="charts.html">Charts</a>
+      <a href="score.html">Score</a>
+    </div>
+    <div class="nav-right">
+      <span class="pill" id="activePill">Active dataset: —</span>
+      <button id="themeBtn" class="secondary" type="button">Toggle Theme</button>
+    </div>
   </nav>
 </header>
 
 <div class="wrap">
   <div class="grid">
+
+    <!-- LEFT -->
     <div>
       <div class="card">
-        <div style="font-weight:900;">Import PI + WT su Supabase</div>
-        <div class="hint">Se l'import fallisce con “permission denied”, devi disattivare RLS o aggiungere policy INSERT su datasets/events.</div>
+        <div class="title">Import Data</div>
+        <div class="hint">Insert the file(s) in the dedicated area.</div>
 
-        <div class="row" style="margin-top:10px;">
-          <div class="col">
-            <label class="hint">PI (xlsx) — multi-file</label>
-            <input id="piFile" type="file" accept=".xlsx,.xls" multiple>
+        <div class="row" style="margin-top:12px;">
+          <div class="col" style="min-width:360px;flex:1;">
+            <div class="drop">
+              <div>
+                <strong>PI</strong>
+                <div class="hint small">Excel (.xlsx / .xls)</div>
+              </div>
+              <input id="piFile" type="file" accept=".xlsx,.xls" multiple>
+            </div>
           </div>
-          <div class="col">
-            <label class="hint">WT (xlsx) — multi-file</label>
-            <input id="wtFile" type="file" accept=".xlsx,.xls" multiple>
-          </div>
-          <div class="col" style="min-width:260px;">
-            <label class="hint">Etichetta dataset</label>
-            <input id="dsLabel" placeholder="es: 21-01 (AM)">
-          </div>
-          <div class="col" style="min-width:200px;">
-            <button id="importBtn" type="button">Importa</button>
+          <div class="col" style="min-width:360px;flex:1;">
+            <div class="drop">
+              <div>
+                <strong>WT</strong>
+                <div class="hint small">Excel (.xlsx / .xls)</div>
+              </div>
+              <input id="wtFile" type="file" accept=".xlsx,.xls" multiple>
+            </div>
           </div>
         </div>
 
-        <div id="status" class="hint" style="margin-top:10px;">Stato: —</div>
+        <div class="row" style="margin-top:12px;align-items:flex-end;">
+          <div class="col" style="min-width:260px;">
+            <label class="hint">Dataset label</label>
+            <select id="dsLabelFmt">
+              <option value="dd-mm" selected>dd-mm</option>
+              <option value="dd-mm-yy">dd-mm-yy</option>
+            </select>
+            <div class="hint">Selected: <span class="mono" id="dsLabelPreview">—</span></div>
+          </div>
+          <div class="col" style="min-width:220px;">
+            <button id="importBtn" type="button">Import</button>
+          </div>
+        </div>
+
+        <div id="status" class="hint" style="margin-top:10px;">Status: —</div>
         <div id="err" class="bad" style="margin-top:6px;"></div>
+        <div id="ok" class="ok" style="margin-top:6px;"></div>
       </div>
 
       <div class="card">
-        <div style="font-weight:900;">Dataset attivo</div>
-        <div class="row" style="margin-top:10px;">
-          <div class="col" style="min-width:420px;">
-            <label class="hint">Seleziona dataset</label>
-            <select id="dsSelect"></select>
-          </div>
-          <div class="col" style="min-width:200px;">
-            <button id="setActiveBtn" class="secondary" type="button">Imposta attivo</button>
-          </div>
+        <div class="title">Dataset Issues</div>
+        <div class="hint">Detects potential duplicates inside the active dataset. Use “Fix issues” to remove duplicates (keeps the first occurrence).</div>
+
+        <div class="row" style="margin-top:10px;align-items:center;">
+          <button id="scanIssuesBtn" class="secondary" type="button">Scan</button>
+          <button id="fixIssuesBtn" class="danger" type="button">Fix issues</button>
+          <span class="pill" id="issuesPill">Duplicates: —</span>
         </div>
-        <div class="hint" id="activeInfo" style="margin-top:8px;">—</div>
+
+        <div class="hint" style="margin-top:10px;" id="issuesHint">Tip: duplicates are checked on (ts, kind, category, src_operator, eff_operator, storage_bin, lane, wo_id, self_count, meta).</div>
       </div>
     </div>
 
+    <!-- RIGHT -->
     <aside>
       <div class="card">
         <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;">
           <div>
-            <div style="font-weight:900;">Dataset presenti</div>
-            <div class="hint">Selezione salvata per dataset (localStorage).</div>
+            <div class="title">Dataset Filter</div>
+            <div class="hint">This filter will be replicated in all pages.</div>
           </div>
-          <span id="selSummary" class="pill">0 selezionati</span>
+          <span id="selSummary" class="pill">0 selected</span>
         </div>
 
         <div class="row" style="margin-top:10px;">
           <div class="col" style="min-width:220px;">
-            <label class="hint">Vista</label>
+            <label class="hint">View</label>
             <select id="selMode">
-              <option value="days" selected>Giorni</option>
-              <option value="weeks">Settimane</option>
-              <option value="months">Mesi</option>
-            </select>
-          </div>
-          <div class="col" style="min-width:220px;">
-            <label class="hint">Includi</label>
-            <select id="selApply">
-              <option value="both" selected>PI + WT</option>
-              <option value="pi">Solo PI</option>
-              <option value="wt">Solo WT</option>
+              <option value="days" selected>Days</option>
+              <option value="weeks">Weeks</option>
+              <option value="months">Months</option>
             </select>
           </div>
         </div>
+
+        <div class="hint" style="margin-top:10px;">Datasets</div>
+        <div id="dsList" style="margin-top:8px;"></div>
 
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
-          <button id="selAllBtn" class="secondary" type="button">Tutti</button>
-          <button id="sel7Btn" class="secondary" type="button">Ultimi 7</button>
-          <button id="clearSelBtn" class="secondary" type="button">Reset</button>
+          <button id="dsAllBtn" class="secondary" type="button">Select all</button>
+          <button id="dsNoneBtn" class="secondary" type="button">Clear</button>
         </div>
-
-        <div id="dsDaysWrap" style="margin-top:10px;"></div>
       </div>
     </aside>
   </div>
 </div>
 
+<div class="footer">Developed by Cristian Locci</div>
+
 <script>
 const Core = window.AppCore;
 const $ = (id)=>document.getElementById(id);
-function setStatus(t){ $('status').textContent = 'Stato: ' + t; }
+
+const KEY_SELECTED_DATASETS = "mc_selected_dataset_ids_v1";
+
+function setStatus(t){ $('status').textContent = 'Status: ' + t; }
 function setErr(t){ $('err').textContent = t||''; }
+function setOk(t){ $('ok').textContent = t||''; }
+
+function getTodayLabel(fmt){
+  const d = new Date();
+  const dd = String(d.getDate()).padStart(2,'0');
+  const mm = String(d.getMonth()+1).padStart(2,'0');
+  const yy = String(d.getFullYear()).slice(-2);
+  return fmt === 'dd-mm-yy' ? `${dd}-${mm}-${yy}` : `${dd}-${mm}`;
+}
+
+function applyTheme(theme){
+  document.body.setAttribute('data-theme', theme);
+  localStorage.setItem('mc_theme', theme);
+}
+function toggleTheme(){
+  const cur = localStorage.getItem('mc_theme') || 'dark';
+  applyTheme(cur === 'dark' ? 'light' : 'dark');
+}
+
+function getSelectedDatasets(){
+  try{
+    const raw = localStorage.getItem(KEY_SELECTED_DATASETS);
+    return raw ? JSON.parse(raw) : [];
+  }catch{ return []; }
+}
+function setSelectedDatasets(ids){
+  localStorage.setItem(KEY_SELECTED_DATASETS, JSON.stringify(ids||[]));
+  $('selSummary').textContent = (ids||[]).length + ' selected';
+}
 
 async function readFirstSheet(file){
   const ab = await file.arrayBuffer();
@@ -139,7 +214,6 @@ async function readFirstSheet(file){
   const ws = wb.Sheets[wb.SheetNames[0]];
   return XLSX.utils.sheet_to_json(ws, {defval:''});
 }
-
 function norm(v){ return (v===null||v===undefined)?'':String(v).trim(); }
 function getField(row, names){
   for(const n of names){ if(Object.prototype.hasOwnProperty.call(row,n)) return row[n]; }
@@ -162,7 +236,7 @@ function parseTimeToHMS(t){
     return {h:Math.floor(totalSeconds/3600)%24, min:Math.floor((totalSeconds%3600)/60), s:totalSeconds%60};
   }
   const s=String(t).trim();
-  const m=s.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  const m=s.match(/^(\\d{1,2}):(\\d{2})(?::(\\d{2}))?$/);
   if(m) return {h:+m[1],min:+m[2],s:m[3]?+m[3]:0};
   const dt=new Date(s);
   if(!isNaN(dt.getTime())) return {h:dt.getHours(),min:dt.getMinutes(),s:dt.getSeconds()};
@@ -176,8 +250,6 @@ function combineDateTime(dateVal, timeVal){
   return isNaN(dt.getTime()) ? null : dt;
 }
 
-function piCategory(bin){ return Core.isPickBin(bin) ? 'PI Pick' : 'PI Bulk'; }
-
 async function insertChunk(table, rows, chunk=1000){
   for(let i=0;i<rows.length;i+=chunk){
     const part = rows.slice(i, i+chunk);
@@ -186,192 +258,163 @@ async function insertChunk(table, rows, chunk=1000){
   }
 }
 
-async function loadDatasetsUI(){
-  const ds = await Core.fetchDatasets();
-  const sel = $('dsSelect');
-  sel.innerHTML = ds.map(d=>`<option value="${d.id}">${d.label} — ${String(d.created_at).slice(0,16).replace('T',' ')}</option>`).join('');
-  const active = Core.getActiveDatasetId();
-  if(active && ds.some(x=>x.id===active)) sel.value = active;
-  updateActiveInfo(ds);
-  await renderSelection();
-}
-
-function updateActiveInfo(datasets){
-  const active = Core.getActiveDatasetId();
-  const d = (datasets||[]).find(x=>x.id===active);
-  $('activeInfo').textContent = d ? `Attivo: ${d.label} (ID: ${d.id})` : 'Nessun dataset attivo.';
-}
-
-function isoWeekKey(dayKey){
-  const d = new Date(dayKey+"T00:00:00");
-  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
-  const dayNum = date.getUTCDay() || 7;
-  date.setUTCDate(date.getUTCDate() + 4 - dayNum);
-  const yearStart = new Date(Date.UTC(date.getUTCFullYear(),0,1));
-  const weekNo = Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
-  return `${date.getUTCFullYear()}-W${String(weekNo).padStart(2,'0')}`;
-}
-function monthKey(dayKey){
-  const d = new Date(dayKey+"T00:00:00");
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-}
-
-function updateSelSummary(){
+function updateActivePill(){
   const id = Core.getActiveDatasetId();
-  if(!id){ $('selSummary').textContent='0 selezionati'; return; }
-  const keys = Core.selectionDayKeys(Core.getSelection(id));
-  $('selSummary').textContent = keys.length + ' selezionati';
+  $('activePill').textContent = id ? ('Active dataset: ' + id.slice(0,8) + '…') : 'Active dataset: —';
 }
 
-async function renderSelection(){
-  const active = Core.getActiveDatasetId();
-  const wrap = $('dsDaysWrap');
-  if(!active){ wrap.innerHTML = '<div class="hint">Imposta un dataset attivo.</div>'; return; }
+async function renderDatasetList(){
+  const datasets = await Core.fetchDatasets();
+  const selected = new Set(getSelectedDatasets());
 
-  const { data, error } = await Core.sb.from('events').select('day_key').eq('dataset_id', active);
-  if(error) throw new Error(error.message);
-
-  const dayKeys = Array.from(new Set((data||[]).map(x=>String(x.day_key).slice(0,10)))).sort().reverse();
-
-  const mode = $('selMode').value;
-  const apply = $('selApply').value;
-  const selObj = Core.getSelection(active);
-
-  if(mode==='days'){
-    wrap.innerHTML = `
-      <table>
-        <thead><tr><th>Giorno</th><th style="text-align:center;">PI</th><th style="text-align:center;">WT</th></tr></thead>
-        <tbody>
-          ${dayKeys.map(dk=>{
-            const s=selObj[dk]||{pi:false,wt:false};
-            return `<tr>
-              <td class="mono">${Core.fmtDDMMYYYY(dk)}</td>
-              <td style="text-align:center;"><input type="checkbox" data-day="${dk}" data-kind="pi" ${s.pi?'checked':''}></td>
-              <td style="text-align:center;"><input type="checkbox" data-day="${dk}" data-kind="wt" ${s.wt?'checked':''}></td>
-            </tr>`;
-          }).join('')}
-        </tbody>
-      </table>
-    `;
-    wrap.querySelectorAll('input[type="checkbox"]').forEach(ch=>{
-      ch.addEventListener('change', ()=>{
-        const dk = ch.getAttribute('data-day');
-        const kind = ch.getAttribute('data-kind');
-        const sel2 = Core.getSelection(active);
-        sel2[dk]=sel2[dk]||{pi:false,wt:false};
-        sel2[dk][kind]=ch.checked;
-        if(!sel2[dk].pi && !sel2[dk].wt) delete sel2[dk];
-        Core.setSelection(active, sel2);
-        updateSelSummary();
-      });
-    });
-    updateSelSummary();
-    return;
+  // default: if none selected, select all
+  if(selected.size === 0 && datasets.length){
+    for(const d of datasets) selected.add(d.id);
+    setSelectedDatasets(Array.from(selected));
+  }else{
+    $('selSummary').textContent = selected.size + ' selected';
   }
 
-  const groups = new Map();
-  for(const dk of dayKeys){
-    const gk = (mode==='weeks') ? isoWeekKey(dk) : monthKey(dk);
-    if(!groups.has(gk)) groups.set(gk, []);
-    groups.get(gk).push(dk);
-  }
-  const groupKeys = Array.from(groups.keys()).sort().reverse();
-
-  wrap.innerHTML = groupKeys.map(gk=>{
-    const days = groups.get(gk).slice().sort();
+  const html = datasets.map(d=>{
+    const checked = selected.has(d.id) ? 'checked' : '';
+    const label = `${d.label}`;
+    const when = String(d.created_at).slice(0,16).replace('T',' ');
     return `
-      <div style="border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:10px;margin-bottom:10px;background:rgba(255,255,255,.03);">
-        <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center;">
-          <div>
-            <div style="font-weight:900;">${mode==='weeks' ? 'Settimana ' + gk : 'Mese ' + gk}</div>
-            <div class="hint">Giorni: ${days.length} (${Core.fmtDDMMYYYY(days[0])} → ${Core.fmtDDMMYYYY(days[days.length-1])})</div>
-          </div>
-          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
-            <label class="pill"><span class="hint">PI</span><input type="checkbox" data-group="${gk}" data-gkind="pi"></label>
-            <label class="pill"><span class="hint">WT</span><input type="checkbox" data-group="${gk}" data-gkind="wt"></label>
-          </div>
-        </div>
-      </div>
+      <label class="pill" style="display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:8px;">
+        <span>
+          <span style="font-weight:900;">${label}</span>
+          <span class="hint" style="margin-left:8px;">${when}</span>
+        </span>
+        <input type="checkbox" data-dsid="${d.id}" ${checked}>
+      </label>
     `;
   }).join('');
 
-  wrap.querySelectorAll('input[data-group]').forEach(ch=>{
+  $('dsList').innerHTML = html || '<div class="hint">No datasets found.</div>';
+
+  $('dsList').querySelectorAll('input[type="checkbox"][data-dsid]').forEach(ch=>{
     ch.addEventListener('change', ()=>{
-      const gk = ch.getAttribute('data-group');
-      const kind = ch.getAttribute('data-gkind');
-      const checked = ch.checked;
-      const days = groups.get(gk) || [];
-      const sel2 = Core.getSelection(active);
-      for(const dk of days){
-        sel2[dk]=sel2[dk]||{pi:false,wt:false};
-        if(kind==='pi') sel2[dk].pi = checked && (apply==='both' || apply==='pi');
-        if(kind==='wt') sel2[dk].wt = checked && (apply==='both' || apply==='wt');
-        if(!sel2[dk].pi && !sel2[dk].wt) delete sel2[dk];
+      const id = ch.getAttribute('data-dsid');
+      const sel = new Set(getSelectedDatasets());
+      if(ch.checked) sel.add(id); else sel.delete(id);
+      setSelectedDatasets(Array.from(sel));
+      // keep active dataset as most recent selected (simple rule)
+      if(sel.size){
+        const pick = datasets.find(x=>sel.has(x.id)); // datasets are already sorted desc
+        if(pick) Core.setActiveDatasetId(pick.id);
       }
-      Core.setSelection(active, sel2);
-      updateSelSummary();
+      updateActivePill();
     });
   });
-  updateSelSummary();
+
+  // ensure an active dataset exists
+  const active = Core.getActiveDatasetId();
+  if(!active && datasets.length){
+    Core.setActiveDatasetId(datasets[0].id);
+  }
+  updateActivePill();
 }
 
-$('selMode').addEventListener('change', ()=>loadDatasetsUI().catch(e=>setErr(e.message)));
-$('selApply').addEventListener('change', ()=>loadDatasetsUI().catch(e=>setErr(e.message)));
+async function scanDuplicates(){
+  const datasetId = Core.getActiveDatasetId();
+  if(!datasetId){ $('issuesPill').textContent='Duplicates: —'; return; }
 
-$('setActiveBtn').addEventListener('click', ()=>{
-  Core.setActiveDatasetId($('dsSelect').value);
-  loadDatasetsUI().catch(e=>setErr(e.message));
+  setErr(''); setOk('');
+  $('issuesPill').textContent = 'Duplicates: scanning…';
+
+  const { data, error } = await Core.sb
+    .from('events')
+    .select('id, ts, kind, category, src_operator, eff_operator, storage_bin, lane, wo_id, self_count, meta')
+    .eq('dataset_id', datasetId)
+    .order('id', {ascending:true});
+
+  if(error){ setErr(error.message); $('issuesPill').textContent='Duplicates: error'; return; }
+
+  const seen = new Map();
+  let dupCount = 0;
+  for(const e of (data||[])){
+    const key = [
+      e.ts, e.kind, e.category, e.src_operator, e.eff_operator,
+      e.storage_bin||'', e.lane||'', e.wo_id||'', e.self_count ? '1':'0',
+      JSON.stringify(e.meta||{})
+    ].join('|');
+    if(seen.has(key)) dupCount++;
+    else seen.set(key, e.id);
+  }
+  $('issuesPill').textContent = 'Duplicates: ' + dupCount;
+  return { data, dupCount };
+}
+
+async function fixDuplicates(){
+  const datasetId = Core.getActiveDatasetId();
+  if(!datasetId) return;
+
+  const scan = await scanDuplicates();
+  if(!scan || !scan.dupCount){ setOk('No duplicates found.'); return; }
+
+  if(!confirm(`This will delete ${scan.dupCount} duplicate rows in the active dataset. Continue?`)) return;
+
+  const { data } = scan;
+  const seen = new Set();
+  const toDelete = [];
+  for(const e of data){
+    const key = [
+      e.ts, e.kind, e.category, e.src_operator, e.eff_operator,
+      e.storage_bin||'', e.lane||'', e.wo_id||'', e.self_count ? '1':'0',
+      JSON.stringify(e.meta||{})
+    ].join('|');
+    if(seen.has(key)) toDelete.push(e.id);
+    else seen.add(key);
+  }
+
+  // delete in chunks
+  for(let i=0;i<toDelete.length;i+=500){
+    const part = toDelete.slice(i,i+500);
+    const { error } = await Core.sb.from('events').delete().in('id', part);
+    if(error){ setErr(error.message); return; }
+  }
+  setOk(`Deleted ${toDelete.length} duplicates.`);
+  await scanDuplicates();
+}
+
+$('themeBtn').addEventListener('click', toggleTheme);
+
+$('dsAllBtn').addEventListener('click', async ()=>{
+  const datasets = await Core.fetchDatasets();
+  const ids = datasets.map(d=>d.id);
+  setSelectedDatasets(ids);
+  if(ids[0]) Core.setActiveDatasetId(ids[0]);
+  await renderDatasetList();
 });
 
-$('clearSelBtn').addEventListener('click', async ()=>{
-  const id=Core.getActiveDatasetId(); if(!id) return;
-  Core.setSelection(id, {});
-  updateSelSummary();
-  await loadDatasetsUI();
+$('dsNoneBtn').addEventListener('click', async ()=>{
+  setSelectedDatasets([]);
+  await renderDatasetList();
 });
 
-$('selAllBtn').addEventListener('click', async ()=>{
-  try{
-    const id=Core.getActiveDatasetId(); if(!id) return;
-    const { data, error } = await Core.sb.from('events').select('day_key').eq('dataset_id', id);
-    if(error) throw new Error(error.message);
-    const days = Array.from(new Set((data||[]).map(x=>String(x.day_key).slice(0,10))));
-    const out={}; for(const dk of days) out[dk]={pi:true,wt:true};
-    Core.setSelection(id, out);
-    updateSelSummary();
-    await loadDatasetsUI();
-  } catch(e){ setErr(e.message); }
-});
+$('scanIssuesBtn').addEventListener('click', ()=>scanDuplicates().catch(e=>setErr(e.message)));
+$('fixIssuesBtn').addEventListener('click', ()=>fixDuplicates().catch(e=>setErr(e.message)));
 
-$('sel7Btn').addEventListener('click', async ()=>{
-  try{
-    const id=Core.getActiveDatasetId(); if(!id) return;
-    const { data, error } = await Core.sb.from('events').select('day_key').eq('dataset_id', id);
-    if(error) throw new Error(error.message);
-    const days = Array.from(new Set((data||[]).map(x=>String(x.day_key).slice(0,10)))).sort().reverse().slice(0,7);
-    const out={}; for(const dk of days) out[dk]={pi:true,wt:true};
-    Core.setSelection(id, out);
-    updateSelSummary();
-    await loadDatasetsUI();
-  } catch(e){ setErr(e.message); }
+$('dsLabelFmt').addEventListener('change', ()=>{
+  $('dsLabelPreview').textContent = getTodayLabel($('dsLabelFmt').value);
 });
 
 $('importBtn').addEventListener('click', async ()=>{
   try{
-    setErr('');
+    setErr(''); setOk('');
     const piFiles = Array.from($('piFile').files||[]);
     const wtFiles = Array.from($('wtFile').files||[]);
-    const label = ( $('dsLabel').value || '' ).trim() || ('Import ' + new Date().toISOString().slice(0,16).replace('T',' '));
-    if(!piFiles.length || !wtFiles.length){ setErr('Carica PI e WT.'); return; }
+    const label = getTodayLabel($('dsLabelFmt').value);
+    if(!piFiles.length || !wtFiles.length){ setErr('Please upload both PI and WT files.'); return; }
 
-    setStatus('Lettura Excel…');
+    setStatus('Reading Excel…');
     let piRows=[]; for(const f of piFiles) piRows.push(...await readFirstSheet(f));
     let wtRows=[]; for(const f of wtFiles) wtRows.push(...await readFirstSheet(f));
 
     const events=[];
     let minDay=null, maxDay=null;
 
-    // PI mapping from your sample header
+    // PI
     for(const r of piRows){
       const counter = norm(getField(r, ['Counter']));
       if(!counter) continue;
@@ -402,7 +445,7 @@ $('importBtn').addEventListener('click', async ()=>{
       if(!maxDay || dayKey > maxDay) maxDay=dayKey;
     }
 
-    // WT mapping from your sample header
+    // WT
     for(const r of wtRows){
       const srcBin = norm(getField(r, ['Source Storage Bin']));
       if(!isNonEmptyBin(srcBin)) continue;
@@ -419,7 +462,6 @@ $('importBtn').addEventListener('click', async ()=>{
       const srcOp = confirmedBy || createdBy;
       if(!srcOp) continue;
 
-      // Use Confirmation Date/Time if present, else Created On/At
       const dt = combineDateTime(
         getField(r, ['Confirmation Date','Created On']),
         getField(r, ['Confirmation Time','Created At'])
@@ -451,7 +493,7 @@ $('importBtn').addEventListener('click', async ()=>{
         meta: Object.assign({ role:'src' }, baseMeta)
       });
 
-      // For P2P: also add dest event to support heatmap distance/aisle
+      // For P2P: add destination event (heatmap / distance)
       if(cat==='P2P' && isNonEmptyBin(destBin)){
         events.push({
           dataset_id: null,
@@ -473,9 +515,9 @@ $('importBtn').addEventListener('click', async ()=>{
       if(!maxDay || dayKey > maxDay) maxDay=dayKey;
     }
 
-    if(!events.length){ setErr('Nessun evento generato.'); return; }
+    if(!events.length){ setErr('No events generated. Check file headers.'); return; }
 
-    setStatus('Creazione dataset…');
+    setStatus('Creating dataset…');
     const { data: ds, error: dsErr } = await Core.sb
       .from('datasets')
       .insert([{ label, start_date:minDay, end_date:maxDay, notes:null }])
@@ -486,33 +528,34 @@ $('importBtn').addEventListener('click', async ()=>{
     const datasetId = ds.id;
     for(const e of events) e.dataset_id = datasetId;
 
-    setStatus('Inserimento eventi… (' + events.length + ')');
+    setStatus('Inserting events… (' + events.length + ')');
     await insertChunk('events', events, 1000);
 
     Core.setActiveDatasetId(datasetId);
+    updateActivePill();
 
-    const out={};
-    for(const e of events) out[e.day_key] = {pi:true, wt:true};
-    Core.setSelection(datasetId, out);
+    // auto-select the dataset
+    const sel = new Set(getSelectedDatasets());
+    sel.add(datasetId);
+    setSelectedDatasets(Array.from(sel));
 
-    setStatus('Completato.');
-    await loadDatasetsUI();
+    setStatus('Done.');
+    setOk('Import completed successfully.');
+    await renderDatasetList();
+    await scanDuplicates();
   } catch(e){
     console.error(e);
     setErr(e.message || String(e));
-    setStatus('Errore');
+    setStatus('Error');
   }
 });
 
-(async function boot(){
-  try{
-    setStatus('Caricamento…');
-    await loadDatasetsUI();
-    setStatus('Pronto.');
-  } catch(e){
-    setErr(e.message);
-    setStatus('Errore');
-  }
+(function boot(){
+  // theme
+  applyTheme(localStorage.getItem('mc_theme') || 'dark');
+  $('dsLabelPreview').textContent = getTodayLabel($('dsLabelFmt').value);
+  updateActivePill();
+  renderDatasetList().catch(e=>setErr(e.message));
 })();
 </script>
 </body>
