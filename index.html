@@ -3,98 +3,495 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Upload PI + WT | Productivity Analyzer</title>
-
-  <style>
-    :root { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
-    body { margin: 24px; max-width: 1100px; }
-    h1 { margin-bottom: 8px; }
-    .muted { color: #666; font-size: 14px; }
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
-    .card { border: 1px solid #ddd; border-radius: 10px; padding: 16px; }
-    .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-    label { font-weight: 600; display: block; margin-bottom: 8px; }
-    input[type="file"] { width: 100%; }
-    button { padding: 10px 14px; border-radius: 8px; border: 1px solid #ccc; background: #fafafa; cursor: pointer; }
-    button.primary { background: #111; color: #fff; border-color: #111; }
-    button:disabled { opacity: .6; cursor: not-allowed; }
-    pre { background: #0b0f14; color: #e6edf3; padding: 12px; border-radius: 10px; overflow: auto; max-height: 280px; }
-    table { width: 100%; border-collapse: collapse; margin-top: 14px; }
-    th, td { border-bottom: 1px solid #eee; padding: 8px; text-align: left; font-size: 13px; }
-    th { background: #fafafa; position: sticky; top: 0; }
-  </style>
+  <title>Stock Control - Productivity</title>
 
   <!-- SheetJS (XLSX) -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+  <style>
+    :root{
+      --bg: #0b0f14;
+      --panel: rgba(255,255,255,.06);
+      --panel2: rgba(255,255,255,.04);
+      --stroke: rgba(255,255,255,.10);
+      --text: rgba(255,255,255,.92);
+      --muted: rgba(255,255,255,.62);
+      --muted2: rgba(255,255,255,.45);
+      --accent: #7c5cff;
+      --danger: #ff4d6d;
+      --ok: #2dd4bf;
+      --shadow: 0 18px 55px rgba(0,0,0,.55);
+      --radius: 16px;
+      --radius2: 12px;
+    }
+
+    *{ box-sizing: border-box; }
+    body{
+      margin:0;
+      min-height: 100vh;
+      background:
+        radial-gradient(1000px 500px at 10% -10%, rgba(124,92,255,.35), transparent 60%),
+        radial-gradient(800px 500px at 100% 0%, rgba(45,212,191,.18), transparent 60%),
+        var(--bg);
+      color: var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+    }
+
+    .wrap{
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 28px 18px 60px;
+    }
+
+    header{
+      display:flex;
+      align-items:flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+
+    .title{
+      display:flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    h1{
+      margin:0;
+      font-size: 28px;
+      letter-spacing: .2px;
+    }
+
+    .subtitle{
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.4;
+      max-width: 820px;
+    }
+
+    .statusbar{
+      display:flex;
+      gap: 14px;
+      align-items: center;
+      padding: 10px 12px;
+      background: var(--panel);
+      border: 1px solid var(--stroke);
+      border-radius: 999px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      white-space: nowrap;
+    }
+
+    .pill{
+      display:flex;
+      gap: 8px;
+      align-items: center;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .dot{
+      width:8px;height:8px;border-radius:50%;
+      background: rgba(255,255,255,.25);
+    }
+    .dot.ok{ background: var(--ok); }
+    .dot.bad{ background: var(--danger); }
+
+    .btn{
+      appearance: none;
+      border: 1px solid var(--stroke);
+      background: rgba(255,255,255,.06);
+      color: var(--text);
+      padding: 10px 12px;
+      border-radius: 999px;
+      cursor:pointer;
+      font-weight: 600;
+      font-size: 13px;
+      transition: transform .08s ease, background .12s ease, border-color .12s ease;
+    }
+    .btn:hover{
+      background: rgba(255,255,255,.10);
+      border-color: rgba(255,255,255,.16);
+    }
+    .btn:active{ transform: scale(.98); }
+    .btn.primary{
+      border-color: rgba(124,92,255,.55);
+      background: rgba(124,92,255,.18);
+    }
+    .btn.primary:hover{
+      background: rgba(124,92,255,.24);
+    }
+    .btn.danger{
+      border-color: rgba(255,77,109,.45);
+      background: rgba(255,77,109,.12);
+    }
+    .btn:disabled{
+      cursor: not-allowed;
+      opacity: .55;
+    }
+
+    .grid{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      margin-top: 14px;
+    }
+    @media (max-width: 980px){
+      .grid{ grid-template-columns: 1fr; }
+      header{ flex-direction: column; align-items: stretch; }
+      .statusbar{ justify-content: space-between; }
+    }
+
+    .card{
+      background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03));
+      border: 1px solid var(--stroke);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      overflow: hidden;
+    }
+
+    .cardHead{
+      display:flex;
+      align-items:center;
+      justify-content: space-between;
+      padding: 16px 16px 10px;
+      gap: 10px;
+    }
+
+    .cardTitle{
+      display:flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .cardTitle strong{
+      font-size: 15px;
+      letter-spacing: .2px;
+    }
+
+    .cardTitle span{
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .cardBody{
+      padding: 0 16px 16px;
+    }
+
+    .dropzone{
+      border: 1px dashed rgba(255,255,255,.22);
+      background: rgba(255,255,255,.03);
+      border-radius: var(--radius2);
+      padding: 16px;
+      min-height: 132px;
+      display:flex;
+      flex-direction: column;
+      gap: 10px;
+      justify-content: center;
+      transition: border-color .12s ease, background .12s ease;
+    }
+
+    .dropzone.dragover{
+      border-color: rgba(124,92,255,.85);
+      background: rgba(124,92,255,.10);
+    }
+
+    .dropMain{
+      display:flex;
+      align-items:flex-start;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .dropText{
+      display:flex;
+      flex-direction: column;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.35;
+      max-width: 520px;
+    }
+
+    .hint{
+      color: var(--muted2);
+      font-size: 12px;
+    }
+
+    .fileInput{
+      display:none;
+    }
+
+    .fileList{
+      margin: 10px 0 0;
+      padding: 0;
+      list-style: none;
+      display:flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .fileItem{
+      display:flex;
+      align-items:center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px 10px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,.10);
+      background: rgba(0,0,0,.20);
+    }
+
+    .fileLeft{
+      display:flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+    }
+    .fileName{
+      font-size: 13px;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 540px;
+    }
+    .fileMeta{
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .actionsBar{
+      margin-top: 14px;
+      padding: 14px;
+      display:flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      background: var(--panel2);
+      border-top: 1px solid rgba(255,255,255,.08);
+    }
+
+    .actionsLeft{
+      display:flex;
+      gap: 10px;
+      align-items:center;
+      flex-wrap: wrap;
+    }
+
+    .actionsRight{
+      display:flex;
+      gap: 10px;
+      align-items:center;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .twoCol{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      margin-top: 14px;
+    }
+    @media (max-width: 980px){
+      .twoCol{ grid-template-columns: 1fr; }
+    }
+
+    .panel{
+      background: rgba(255,255,255,.03);
+      border: 1px solid rgba(255,255,255,.10);
+      border-radius: var(--radius);
+      overflow:hidden;
+    }
+
+    .panelHeader{
+      padding: 14px 16px 10px;
+      border-bottom: 1px solid rgba(255,255,255,.08);
+      display:flex;
+      align-items:center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .panelHeader strong{
+      font-size: 13px;
+      color: var(--muted);
+      letter-spacing: .2px;
+      text-transform: uppercase;
+    }
+
+    pre{
+      margin:0;
+      padding: 14px 16px;
+      max-height: 260px;
+      overflow:auto;
+      font-size: 12px;
+      line-height: 1.4;
+      color: rgba(255,255,255,.86);
+    }
+
+    table{
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12.5px;
+    }
+    th, td{
+      padding: 10px 12px;
+      border-bottom: 1px solid rgba(255,255,255,.08);
+      text-align: left;
+      color: rgba(255,255,255,.86);
+    }
+    th{
+      position: sticky;
+      top:0;
+      background: rgba(10,14,20,.85);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      color: rgba(255,255,255,.75);
+      font-weight: 700;
+      letter-spacing: .2px;
+    }
+
+    .smallNote{
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+  </style>
 </head>
 
 <body>
-  <h1>Productivity Analyzer</h1>
-  <div class="muted">
-    Carica PI + WT, importiamo le righe in Supabase senza duplicati, già pronte per timeline & filtri.
-  </div>
+  <div class="wrap">
 
-  <div class="card" style="margin-top:16px;">
-    <div class="row">
-      <div><b>Auth status:</b> <span id="authStatus">...</span></div>
-      <div><b>User:</b> <span id="userId">-</span></div>
-      <button id="btnPreview">Preview ultimi eventi</button>
-      <button id="btnSignOut">Sign out (anon)</button>
-    </div>
-  </div>
+    <header>
+      <div class="title">
+        <h1>Stock Control - Productivity</h1>
+        <div class="subtitle">
+          Carica PI e WT in una o più tranche. Anche se importi lo stesso file due volte, il database evita i duplicati
+          e mantiene un dataset pulito grazie a vincoli unici su Warehouse Order + Bin.
+        </div>
+      </div>
 
-  <div class="grid">
-    <div class="card">
-      <label>File PI (.xlsx)</label>
-      <input id="filePI" type="file" accept=".xlsx,.xls" />
-      <div class="muted" style="margin-top:8px;">
-        Colonne richieste: Warehouse Order, Storage Bin, Physiscal Inventory Status, Count Date, Count Time, Counter, Created By
+      <div class="statusbar">
+        <div class="pill"><span id="authDot" class="dot"></span> <span id="authStatus">...</span></div>
+        <div class="pill">UID: <span id="userId">-</span></div>
+        <button id="btnSignOut" class="btn danger" title="Crea una nuova sessione anonima al refresh">Reset session</button>
+      </div>
+    </header>
+
+    <section class="grid">
+
+      <!-- PI -->
+      <div class="card">
+        <div class="cardHead">
+          <div class="cardTitle">
+            <strong>Import PI</strong>
+            <span>Conte: Pick / Bulk / Altro (calcolato da Storage Bin)</span>
+          </div>
+          <label class="btn" for="filePI">Seleziona file</label>
+          <input id="filePI" class="fileInput" type="file" accept=".xlsx,.xls" multiple />
+        </div>
+
+        <div class="cardBody">
+          <div id="dzPI" class="dropzone">
+            <div class="dropMain">
+              <div class="dropText">
+                <div>Trascina qui uno o più file PI.</div>
+                <div class="hint">Puoi importare più file dello stesso giorno o giorni diversi: l’UI resta identica, il dataset rimane pulito (no doppioni).</div>
+              </div>
+              <button id="btnClearPI" class="btn danger">Svuota</button>
+            </div>
+            <ul id="listPI" class="fileList"></ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- WT -->
+      <div class="card">
+        <div class="cardHead">
+          <div class="cardTitle">
+            <strong>Import WT</strong>
+            <span>Task: Clean Pick / Pick to Pick / Pick Mvmt IPL (calcolato da Proc. Type)</span>
+          </div>
+          <label class="btn" for="fileWT">Seleziona file</label>
+          <input id="fileWT" class="fileInput" type="file" accept=".xlsx,.xls" multiple />
+        </div>
+
+        <div class="cardBody">
+          <div id="dzWT" class="dropzone">
+            <div class="dropMain">
+              <div class="dropText">
+                <div>Trascina qui uno o più file WT.</div>
+                <div class="hint">Puoi importare in tranche: la deduplica DB evita dati doppi su Warehouse Order + Source Storage Bin.</div>
+              </div>
+              <button id="btnClearWT" class="btn danger">Svuota</button>
+            </div>
+            <ul id="listWT" class="fileList"></ul>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <div class="card" style="margin-top:14px;">
+      <div class="actionsBar">
+        <div class="actionsLeft">
+          <button id="btnImportAll" class="btn primary">Importa tutto</button>
+          <button id="btnImportPI" class="btn">Importa solo PI</button>
+          <button id="btnImportWT" class="btn">Importa solo WT</button>
+          <button id="btnPreview" class="btn">Aggiorna preview</button>
+        </div>
+        <div class="actionsRight">
+          <span id="busyLabel"></span>
+        </div>
       </div>
     </div>
 
-    <div class="card">
-      <label>File WT (.xlsx)</label>
-      <input id="fileWT" type="file" accept=".xlsx,.xls" />
-      <div class="muted" style="margin-top:8px;">
-        Colonne richieste: Warehouse Order, Whse Proc. Type, Created By, Confirmation Date, Confirmation Time, Confirmed By, Source Storage Bin, Original Dest. Bin
+    <section class="twoCol">
+      <div class="panel">
+        <div class="panelHeader">
+          <strong>Log</strong>
+        </div>
+        <pre id="log"></pre>
       </div>
+
+      <div class="panel">
+        <div class="panelHeader">
+          <strong>Preview ultimi 50 eventi</strong>
+        </div>
+        <div style="max-height: 320px; overflow:auto;">
+          <table id="previewTable">
+            <thead>
+              <tr>
+                <th>source</th>
+                <th>event_dt</th>
+                <th>operator</th>
+                <th>warehouse_order</th>
+                <th>bin_from</th>
+                <th>bin_to</th>
+                <th>category</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <div class="smallNote">
+      Nota: l’import è “processuale” e non vincolato a 1 file = 1 giorno. Puoi caricare più file dello stesso periodo o con più date interne.
+      I duplicati non entrano, perché PI e WT hanno indici unici lato database.
     </div>
+
   </div>
 
-  <div class="card" style="margin-top:16px;">
-    <div class="row">
-      <button class="primary" id="btnImport">Importa PI + WT</button>
-      <button id="btnImportPI">Importa solo PI</button>
-      <button id="btnImportWT">Importa solo WT</button>
-      <span class="muted" id="busyLabel"></span>
-    </div>
-  </div>
-
-  <div class="card" style="margin-top:16px;">
-    <label>Log</label>
-    <pre id="log"></pre>
-  </div>
-
-  <div class="card" style="margin-top:16px;">
-    <label>Preview (ultimi 50 eventi)</label>
-    <div style="overflow:auto; max-height: 360px;">
-      <table id="previewTable">
-        <thead>
-          <tr>
-            <th>source</th>
-            <th>event_dt</th>
-            <th>operator_code</th>
-            <th>warehouse_order</th>
-            <th>bin_from</th>
-            <th>bin_to</th>
-            <th>category</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
-    </div>
-  </div>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script type="module" src="./script.js"></script>
 </body>
 </html>
