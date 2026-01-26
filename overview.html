@@ -20,7 +20,16 @@
       --shadow:0 18px 55px rgba(0,0,0,.55);
       --radius:16px;
       --radius2:12px;
+
+      /* Activity colors */
+      --c-pick: rgba(91,140,255,.55);     /* azzurro */
+      --c-bulk: rgba(47,86,255,.55);      /* blu */
+      --c-p2p:  rgba(45,212,191,.55);     /* verde */
+      --c-clp:  rgba(14,166,94,.55);      /* verde scuro */
+      --c-pause:rgba(255,77,109,.60);     /* rosso */
+      --c-mix:  rgba(255,255,255,.14);
     }
+
     *{box-sizing:border-box}
     body{
       margin:0;
@@ -32,12 +41,10 @@
       color:var(--text);
       font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
     }
-    .wrap{max-width:1300px;margin:0 auto;padding:22px 18px 60px}
-    header{
-      display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:14px
-    }
-    h1{margin:0;font-size:24px}
-    .subtitle{color:var(--muted);font-size:13px;line-height:1.45;max-width:900px;margin-top:6px}
+    .wrap{max-width:1550px;margin:0 auto;padding:20px 16px 60px}
+    header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px}
+    h1{margin:0;font-size:22px}
+    .subtitle{color:var(--muted);font-size:13px;line-height:1.45;max-width:980px;margin-top:6px}
     .topRight{display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
     .pillBar{
       display:flex;gap:12px;align-items:center;padding:10px 12px;
@@ -52,7 +59,7 @@
       appearance:none;border:1px solid var(--stroke);
       background:rgba(255,255,255,.06);color:var(--text);
       padding:10px 12px;border-radius:999px;cursor:pointer;
-      font-weight:700;font-size:13px;
+      font-weight:800;font-size:13px;
       transition:transform .08s ease, background .12s ease, border-color .12s ease
     }
     .btn:hover{background:rgba(255,255,255,.10);border-color:rgba(255,255,255,.16)}
@@ -69,7 +76,7 @@
     }
     .bar{
       display:flex;align-items:center;justify-content:space-between;gap:12px;
-      padding:14px;border-bottom:1px solid rgba(255,255,255,.08);
+      padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.08);
       background:var(--panel2)
     }
     .barLeft{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
@@ -82,10 +89,17 @@
       padding:9px 10px;border-radius:12px;
       outline:none
     }
+    .mono{font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;}
 
-    .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}
-    @media(max-width:1100px){.grid{grid-template-columns:1fr}}
-
+    /* 4 columns layout */
+    .grid4{
+      display:grid;
+      grid-template-columns: repeat(4, minmax(320px, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+      overflow-x: auto;
+      padding-bottom: 6px;
+    }
     .panel{
       background:rgba(255,255,255,.03);
       border:1px solid rgba(255,255,255,.10);
@@ -93,29 +107,80 @@
       overflow:hidden
     }
     .panelHeader{
-      padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.08);
-      display:flex;justify-content:space-between;align-items:center;gap:12px
+      padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.08);
+      display:flex;justify-content:space-between;align-items:center;gap:10px
     }
     .panelHeader strong{
       font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.2px
     }
 
     table{width:100%;border-collapse:collapse;font-size:12.5px}
-    th,td{padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.08);text-align:left;color:rgba(255,255,255,.86)}
+    th,td{padding:9px 10px;border-bottom:1px solid rgba(255,255,255,.08);text-align:left;color:rgba(255,255,255,.86)}
     th{
       position:sticky;top:0;
       background:rgba(10,14,20,.85);backdrop-filter:blur(10px);
-      color:rgba(255,255,255,.75);font-weight:800;letter-spacing:.2px
+      color:rgba(255,255,255,.75);font-weight:900;letter-spacing:.2px
     }
     tr:hover td{background:rgba(255,255,255,.03)}
-    .link{color:#9cc2ff;text-decoration:none;font-weight:800;cursor:pointer}
+    .link{color:#9cc2ff;text-decoration:none;font-weight:900;cursor:pointer}
+
+    /* Row highlight by activity */
+    tr.row-pick td{ background: color-mix(in srgb, var(--c-pick) 22%, transparent); }
+    tr.row-bulk td{ background: color-mix(in srgb, var(--c-bulk) 22%, transparent); }
+    tr.row-p2p  td{ background: color-mix(in srgb, var(--c-p2p) 22%, transparent); }
+    tr.row-clp  td{ background: color-mix(in srgb, var(--c-clp) 22%, transparent); }
+    tr.row-pause td{ background: color-mix(in srgb, var(--c-pause) 22%, transparent); }
+    tr.row-mix  td{ background: rgba(255,255,255,.03); }
+
+    .legend{
+      display:flex;gap:10px;align-items:center;flex-wrap:wrap;
+      color:var(--muted);font-size:12px;
+    }
+    .chip{
+      display:flex;gap:8px;align-items:center;
+      padding:6px 10px;border-radius:999px;
+      border:1px solid rgba(255,255,255,.10);
+      background:rgba(0,0,0,.20);
+    }
+    .swatch{width:10px;height:10px;border-radius:3px}
+
+    /* Timeline */
+    .timelineWrap{
+      padding:12px 14px;
+      display:flex;
+      flex-direction:column;
+      gap: 10px;
+    }
+    .timelineRow{
+      display:flex;
+      gap:6px;
+      align-items:center;
+      overflow-x:auto;
+      padding-bottom:6px;
+    }
+    .seg{
+      width: 38px;
+      height: 14px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,.10);
+      background: rgba(255,255,255,.06);
+      cursor: pointer;
+      flex: 0 0 auto;
+    }
+    .seg:hover{ transform: translateY(-1px); }
+    .ticks{
+      display:flex;
+      justify-content:space-between;
+      color:rgba(255,255,255,.55);
+      font-size: 12px;
+    }
 
     pre{
       margin:0;padding:12px 14px;max-height:220px;overflow:auto;
       font-size:12px;line-height:1.4;color:rgba(255,255,255,.86)
     }
 
-    /* Modal */
+    /* Modal base */
     .modalOverlay{
       position:fixed;inset:0;background:rgba(0,0,0,.55);
       display:none;align-items:center;justify-content:center;padding:18px;z-index:50
@@ -137,18 +202,18 @@
     @media(max-width:980px){.formRow{grid-template-columns:1fr}}
     .small{color:var(--muted);font-size:12px;margin-top:6px}
     .modalActions{display:flex;gap:10px;justify-content:flex-end;padding:14px 16px;border-top:1px solid rgba(255,255,255,.08);background:var(--panel2)}
-    .mono{font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;}
   </style>
 </head>
 
 <body>
   <div class="wrap">
+
     <header>
       <div>
         <h1>Stock Control - Productivity — Overview</h1>
         <div class="subtitle">
-          KPI e produttività per operatore. Il tempo viene calcolato come differenza tra un evento e il successivo.
-          Se un intervallo supera 30 minuti viene classificato come <b>Pausa</b>.
+          KPI per operatore con tempo calcolato tra evento e successivo.
+          Intervallo &gt; 30 min = <b>Pausa</b>. Sequenza mostrata per <b>un turno</b> (AM/C/OM).
         </div>
       </div>
 
@@ -166,8 +231,7 @@
     <div class="card">
       <div class="bar">
         <div class="barLeft">
-          <label style="color:var(--muted);font-size:12px;font-weight:800;">Range</label>
-
+          <label style="color:var(--muted);font-size:12px;font-weight:900;">Range</label>
           <select id="rangeType">
             <option value="days">Days</option>
             <option value="weeks">Weeks</option>
@@ -176,7 +240,7 @@
 
           <input id="rangeValue" type="number" min="1" value="7" style="width:80px" />
 
-          <label style="color:var(--muted);font-size:12px;font-weight:800;">End</label>
+          <label style="color:var(--muted);font-size:12px;font-weight:900;">End</label>
           <input id="endDate" type="date" />
 
           <button id="btnApply" class="btn primary">Applica</button>
@@ -184,17 +248,50 @@
         </div>
 
         <div class="barRight">
+          <div class="legend">
+            <span class="chip"><span class="swatch" style="background:var(--c-pick)"></span>PI Pick</span>
+            <span class="chip"><span class="swatch" style="background:var(--c-bulk)"></span>PI Bulk</span>
+            <span class="chip"><span class="swatch" style="background:var(--c-p2p)"></span>P2P</span>
+            <span class="chip"><span class="swatch" style="background:var(--c-clp)"></span>CLP</span>
+            <span class="chip"><span class="swatch" style="background:var(--c-pause)"></span>Pausa</span>
+          </div>
           <span id="busyLabel"></span>
         </div>
       </div>
     </div>
 
-    <section class="grid">
+    <!-- DRILLDOWN BAR -->
+    <div class="card" style="margin-top:12px;">
+      <div class="bar">
+        <div class="barLeft">
+          <div style="font-weight:1000">Drill-down</div>
+          <div id="ddInfo" class="mono" style="color:var(--muted);font-size:12px;">Seleziona un operatore…</div>
 
-      <!-- RIEPILOGO -->
+          <label style="color:var(--muted);font-size:12px;font-weight:900;margin-left:10px;">Giorno</label>
+          <select id="daySelect"></select>
+
+          <label style="color:var(--muted);font-size:12px;font-weight:900;">Turno</label>
+          <select id="shiftSelect">
+            <option value="AM">AM 05-13</option>
+            <option value="C">C 08-16</option>
+            <option value="OM">OM 14-22</option>
+          </select>
+        </div>
+
+        <div class="barRight">
+          <button id="btnViewSequence" class="btn primary">Sequenza (Turno)</button>
+          <button id="btnExportCsv" class="btn">Esporta intervalli (CSV)</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4 PANELS IN ONE ROW -->
+    <section class="grid4">
+
+      <!-- SUMMARY -->
       <div class="panel">
         <div class="panelHeader">
-          <strong>Riepilogo (click operatore per drill-down)</strong>
+          <strong>Riepilogo</strong>
         </div>
         <div style="max-height: 420px; overflow:auto;">
           <table id="tblSummary">
@@ -203,10 +300,10 @@
                 <th>Supporto</th>
                 <th>Operatore</th>
                 <th>Tot Lavoro</th>
-                <th>PI Pick</th>
-                <th>PI Bulk</th>
+                <th>Pick</th>
+                <th>Bulk</th>
                 <th>P2P</th>
-                <th>Clean</th>
+                <th>CLP</th>
                 <th>Pausa</th>
               </tr>
             </thead>
@@ -218,26 +315,62 @@
       <!-- KPI -->
       <div class="panel">
         <div class="panelHeader">
-          <strong>Overview KPI (per operatore)</strong>
+          <strong>Overview KPI</strong>
         </div>
         <div style="max-height: 420px; overflow:auto;">
           <table id="tblKpi">
             <thead>
               <tr>
                 <th>Operatore</th>
-                <th>Tot Lavoro</th>
-                <th>PI Pick</th>
-                <th>#BIN Pick</th>
-                <th>PI Bulk</th>
-                <th>#BIN Bulk</th>
-                <th>P2P</th>
-                <th>#WO P2P</th>
-                <th>Clean</th>
-                <th>#WO Clean</th>
-                <th>WT Other</th>
-                <th>#WO Other</th>
+                <th>Tot</th>
+                <th>Pick</th><th>#BIN</th>
+                <th>Bulk</th><th>#BIN</th>
+                <th>P2P</th><th>#WO</th>
+                <th>CLP</th><th>#WO</th>
                 <th>Pausa</th>
-                <th>Self Count</th>
+                <th>Self</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- BLOCKS -->
+      <div class="panel">
+        <div class="panelHeader">
+          <strong>Sintesi sequenziale</strong>
+        </div>
+        <div style="max-height: 420px; overflow:auto;">
+          <table id="tblBlocks">
+            <thead>
+              <tr>
+                <th>Start</th>
+                <th>End</th>
+                <th>Cat</th>
+                <th>Durata</th>
+                <th>Cambi</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- INTERVALS -->
+      <div class="panel">
+        <div class="panelHeader">
+          <strong>Dettaglio intervalli</strong>
+        </div>
+        <div style="max-height: 420px; overflow:auto;">
+          <table id="tblIntervals">
+            <thead>
+              <tr>
+                <th>Start</th>
+                <th>End</th>
+                <th>Cat</th>
+                <th>Durata</th>
+                <th>WO</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -247,82 +380,26 @@
 
     </section>
 
-    <!-- DRILLDOWN -->
-    <div class="card" style="margin-top:14px;">
-      <div class="bar">
-        <div class="barLeft">
-          <div style="font-weight:900">Drill-down</div>
-          <div id="ddInfo" class="mono" style="color:var(--muted);font-size:12px;">Seleziona un operatore…</div>
-        </div>
-        <div class="barRight">
-          <button id="btnViewDetail" class="btn primary">Dettaglio</button>
-          <button id="btnViewSequence" class="btn">Sequenza</button>
-          <button id="btnExportCsv" class="btn">Esporta intervalli (CSV)</button>
-        </div>
+    <!-- TIMELINE SINGLE ROW -->
+    <div class="panel" style="margin-top:12px;">
+      <div class="panelHeader">
+        <strong>Timeline (slot 30 min — clicca su Pausa per inserire attività indiretta)</strong>
       </div>
-
-      <div id="drilldownBody" style="display:none;">
-        <div class="grid" style="margin-top:0;">
-          <div class="panel">
-            <div class="panelHeader">
-              <strong>Sintesi sequenziale (blocchi per categoria)</strong>
-            </div>
-            <div style="max-height: 360px; overflow:auto;">
-              <table id="tblBlocks">
-                <thead>
-                  <tr>
-                    <th>Start</th>
-                    <th>End</th>
-                    <th>Categoria</th>
-                    <th>Durata</th>
-                    <th>#BIN</th>
-                    <th>#WO</th>
-                    <th>Note</th>
-                  </tr>
-                </thead>
-                <tbody></tbody>
-              </table>
-            </div>
-          </div>
-
-          <div class="panel">
-            <div class="panelHeader">
-              <strong>Dettaglio intervalli</strong>
-            </div>
-            <div style="max-height: 360px; overflow:auto;">
-              <table id="tblIntervals">
-                <thead>
-                  <tr>
-                    <th>Start</th>
-                    <th>End</th>
-                    <th>Categoria</th>
-                    <th>Durata</th>
-                    <th>#BIN</th>
-                    <th>WO</th>
-                    <th>Note</th>
-                  </tr>
-                </thead>
-                <tbody></tbody>
-              </table>
-            </div>
-          </div>
+      <div class="timelineWrap">
+        <div class="ticks">
+          <span id="tickStart" class="mono"></span>
+          <span id="tickEnd" class="mono"></span>
         </div>
-
-        <!-- Sequenza 30m -->
-        <div class="panel" style="margin-top:14px; display:none;" id="seqPanel">
-          <div class="panelHeader">
-            <strong>Sequenza (slot da 30 minuti)</strong>
-          </div>
-          <div id="seqList" style="padding:12px 14px; display:flex; flex-direction:column; gap:10px;"></div>
+        <div id="timelineRow" class="timelineRow"></div>
+        <div class="small" style="color:var(--muted);">
+          Nota: timeline sempre su <b>un turno</b>. Se l’account compare in più turni, usa <b>Supporto</b> per attribuire correttamente.
         </div>
       </div>
     </div>
 
     <!-- LOG -->
-    <div class="panel" style="margin-top:14px;">
-      <div class="panelHeader">
-        <strong>Log</strong>
-      </div>
+    <div class="panel" style="margin-top:12px;">
+      <div class="panelHeader"><strong>Log</strong></div>
       <pre id="log"></pre>
     </div>
   </div>
@@ -346,7 +423,7 @@
           <button id="btnAddSupport" class="btn primary">Aggiungi</button>
         </div>
         <div class="small">
-          Inserisci una fascia Start-End durante la quale l’account supporto è stato utilizzato dall’operatore reale.
+          Start-End: fascia in cui l’account supporto è stato usato dall’operatore reale.
         </div>
 
         <div style="margin-top:14px; max-height:260px; overflow:auto;">
@@ -366,6 +443,49 @@
 
       <div class="modalActions">
         <button id="btnRecalc" class="btn primary">OK (Ricalcola)</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- INDIRECT ACTIVITY MODAL -->
+  <div id="activityOverlay" class="modalOverlay">
+    <div class="modal">
+      <div class="modalTop">
+        <div>
+          <strong id="activityTitle">Attività indiretta</strong>
+          <div id="activitySubtitle" class="small"></div>
+        </div>
+        <button id="btnCloseActivity" class="btn">Chiudi</button>
+      </div>
+
+      <div class="modalBody">
+        <div class="formRow">
+          <input id="activityLabel" placeholder="Es: Briefing, Training, Supporto linee..." />
+          <input id="activityStart" type="datetime-local" />
+          <input id="activityEnd" type="datetime-local" />
+          <button id="btnAddActivity" class="btn primary">Aggiungi</button>
+        </div>
+        <div class="small" style="margin-top:8px;">
+          Tip: puoi impostare fasce più piccole della pausa (es. 14:00–14:30).
+        </div>
+
+        <div style="margin-top:14px; max-height:260px; overflow:auto;">
+          <table id="tblActivities">
+            <thead>
+              <tr>
+                <th>Label</th>
+                <th>Start</th>
+                <th>End</th>
+                <th>Azioni</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="modalActions">
+        <button id="btnCloseActivity2" class="btn primary">OK</button>
       </div>
     </div>
   </div>
