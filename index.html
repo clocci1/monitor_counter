@@ -3,31 +3,21 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Monitor Counter — Home</title>
+  <title>Monitor Counter — Import</title>
 
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-  <!-- IMPORTANT: this must be the real shared core file name in your repo -->
   <script src="./app-core.js"></script>
 
   <style>
     :root{
       --bg:#0b1220;--card:#111a2e;--border:rgba(255,255,255,.12);--muted:#a9b7d6;--text:#e8eefc;
-      --btn:#6ea8fe;--btnText:#09101c;--bad:#ff6b6b;--ok:#2ed573;--warn:#ffc107;
-      --soft:rgba(255,255,255,.06);--soft2:rgba(255,255,255,.10);--row:rgba(255,255,255,.04);
-    }
-    body[data-theme="light"]{
-      --bg:#f6f7fb;--card:#ffffff;--border:rgba(15,23,42,.12);--muted:#475569;--text:#0f172a;
-      --btn:#2563eb;--btnText:#ffffff;--bad:#b91c1c;--ok:#15803d;--warn:#a16207;
-      --soft:rgba(15,23,42,.05);--soft2:rgba(15,23,42,.08);--row:rgba(15,23,42,.04);
+      --btn:#6ea8fe;--btnText:#09101c;--bad:#ff6b6b;--ok:#2ed573;--soft:rgba(255,255,255,.06);
+      --row:rgba(255,255,255,.04);
     }
     body{font-family:system-ui,Segoe UI,Roboto,Arial;margin:0;background:var(--bg);color:var(--text);}
-    header{padding:14px 18px;border-bottom:1px solid var(--border);background:color-mix(in srgb, var(--bg) 85%, black 15%);}
-    body[data-theme="light"] header{background:color-mix(in srgb, var(--bg) 92%, black 8%);}
-    nav{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;}
+    header{padding:14px 18px;border-bottom:1px solid var(--border);}
     nav a{color:var(--text);text-decoration:none;margin-right:12px;font-weight:800;}
-    .nav-left{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
-    .nav-right{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
     .wrap{max-width:1500px;margin:0 auto;padding:16px 18px;}
     .grid{display:grid;grid-template-columns:1fr 560px;gap:12px;align-items:start;}
     @media(max-width:1200px){.grid{grid-template-columns:1fr;}}
@@ -38,46 +28,27 @@
     .ok{color:var(--ok);font-size:12px;}
     input,select,button{border-radius:10px;border:1px solid var(--border);background:var(--soft);color:var(--text);padding:10px;}
     button{background:var(--btn);color:var(--btnText);border:0;font-weight:900;cursor:pointer;}
-    button.secondary{background:var(--soft2);color:var(--text);border:1px solid var(--border);}
-    button.danger{background:var(--bad);color:#fff;border:0;}
+    button.secondary{background:transparent;color:var(--text);border:1px solid var(--border);}
     .row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;}
     .col{display:flex;flex-direction:column;gap:6px;min-width:240px;}
-    .pill{display:inline-flex;gap:8px;align-items:center;border:1px solid var(--border);border-radius:999px;padding:6px 10px;background:var(--soft);}
-    .mono{font-family:ui-monospace,Menlo,Consolas,monospace;}
-    .drop{
-      border:1px dashed var(--border);border-radius:12px;padding:14px;background:color-mix(in srgb, var(--soft) 80%, transparent 20%);
-      display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;
-    }
-    .drop strong{font-size:13px;}
-    .footer{padding:16px 18px;color:var(--muted);text-align:center;font-size:12px;}
-    .small{font-size:11px;}
-    .list{
-      border:1px solid var(--border);border-radius:12px;overflow:hidden;background:var(--soft);
-      max-height:420px;overflow:auto;
-    }
-    .item{
-      display:flex;justify-content:space-between;gap:10px;align-items:center;
-      padding:10px 12px;border-bottom:1px solid var(--border);
-      background:transparent;
-    }
+    .drop{border:1px dashed var(--border);border-radius:12px;padding:14px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;}
+    .list{border:1px solid var(--border);border-radius:12px;overflow:hidden;background:var(--soft);max-height:420px;overflow:auto;}
+    .item{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:10px 12px;border-bottom:1px solid var(--border);}
     .item:nth-child(odd){background:var(--row);}
     .item:last-child{border-bottom:none;}
+    .pill{display:inline-flex;gap:8px;align-items:center;border:1px solid var(--border);border-radius:999px;padding:6px 10px;background:var(--soft);}
+    .mono{font-family:ui-monospace,Menlo,Consolas,monospace;}
     input[type="checkbox"]{accent-color:var(--btn);}
+    .footer{padding:16px 18px;color:var(--muted);text-align:center;font-size:12px;}
   </style>
 </head>
 <body>
 <header>
   <nav>
-    <div class="nav-left">
-      <a href="index.html">Home</a>
-      <a href="overview.html">Overview</a>
-      <a href="charts.html">Charts</a>
-      <a href="score.html">Score</a>
-    </div>
-    <div class="nav-right">
-      <span class="pill" id="activePill">Active dataset: —</span>
-      <button id="themeBtn" class="secondary" type="button">Toggle Theme</button>
-    </div>
+    <a href="index.html">Home</a>
+    <a href="overview.html">Overview</a>
+    <a href="charts.html">Charts</a>
+    <a href="score.html">Score</a>
   </nav>
 </header>
 
@@ -94,7 +65,7 @@
             <div class="drop">
               <div>
                 <strong>PI</strong>
-                <div class="hint small">Excel (.xlsx / .xls)</div>
+                <div class="hint">Excel (.xlsx / .xls)</div>
               </div>
               <input id="piFile" type="file" accept=".xlsx,.xls" multiple>
             </div>
@@ -103,14 +74,14 @@
             <div class="drop">
               <div>
                 <strong>WT</strong>
-                <div class="hint small">Excel (.xlsx / .xls)</div>
+                <div class="hint">Excel (.xlsx / .xls)</div>
               </div>
               <input id="wtFile" type="file" accept=".xlsx,.xls" multiple>
             </div>
           </div>
         </div>
 
-        <div class="row" style="margin-top:12px;align-items:flex-end;">
+        <div class="row" style="margin-top:12px;">
           <div class="col" style="min-width:260px;">
             <label class="hint">Dataset label format</label>
             <select id="dsLabelFmt">
@@ -118,6 +89,10 @@
               <option value="dd-mm-yy">dd-mm-yy</option>
             </select>
             <div class="hint">System label preview: <span class="mono" id="dsLabelPreview">—</span></div>
+          </div>
+          <div class="col" style="min-width:260px;">
+            <label class="hint">On import</label>
+            <label class="pill"><input id="skipDup" type="checkbox" checked> Skip duplicates (recommended)</label>
           </div>
           <div class="col" style="min-width:220px;">
             <button id="importBtn" type="button">Import</button>
@@ -130,69 +105,29 @@
       </div>
 
       <div class="card">
-        <div class="title">Dataset Issues</div>
-        <div class="hint">Duplicates are checked inside the <b>active dataset</b>. You can also delete datasets you no longer need.</div>
-
+        <div class="title">Preview</div>
+        <div class="hint">Extracted dates (Count/Confirmation). You can restrict the import to specific days.</div>
         <div class="row" style="margin-top:10px;align-items:center;">
-          <button id="scanIssuesBtn" class="secondary" type="button">Scan duplicates</button>
-          <button id="fixIssuesBtn" class="danger" type="button">Fix duplicates</button>
-          <span class="pill" id="issuesPill">Duplicates: —</span>
+          <span class="pill" id="countPill">PI rows: —</span>
+          <span class="pill" id="wtPill">WT rows: —</span>
+          <span class="pill" id="evPill">Events: —</span>
         </div>
-
-        <div class="hint small" style="margin-top:10px;">
-          Key: (ts, kind, category, src_operator, eff_operator, storage_bin, lane, wo_id, self_count, meta).
+        <div id="dateList" class="list" style="margin-top:10px;"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
+          <button id="selAllBtn" class="secondary" type="button">Select all dates</button>
+          <button id="selNoneBtn" class="secondary" type="button">Clear</button>
         </div>
-
-        <hr style="border:none;border-top:1px solid var(--border);margin:14px 0;">
-
-        <div class="title" style="font-size:13px;">Delete Dataset</div>
-        <div class="hint">This will permanently remove the dataset and its events (cascade).</div>
-        <div class="row" style="margin-top:10px;align-items:flex-end;">
-          <div class="col" style="min-width:360px;flex:1;">
-            <select id="deleteDsSelect"></select>
-          </div>
-          <div class="col" style="min-width:220px;">
-            <button id="deleteDsBtn" class="danger" type="button">Delete</button>
-          </div>
-        </div>
-        <div class="hint small" style="margin-top:8px;">Note: delete requires Supabase permission (RLS/policies).</div>
       </div>
     </div>
 
     <aside>
       <div class="card">
-        <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;">
-          <div>
-            <div class="title">Dataset Filter</div>
-            <div class="hint">Filter by <b>analysis period</b> (Count/Confirmation date). This filter is time-based, not dataset-based.</div>
-          </div>
-          <span id="selSummary" class="pill">0 selected</span>
-        </div>
-
-        <div class="row" style="margin-top:10px;">
-          <div class="col" style="min-width:220px;">
-            <label class="hint">View</label>
-            <select id="selMode">
-              <option value="days" selected>Days</option>
-              <option value="weeks">Weeks</option>
-              <option value="months">Months</option>
-            </select>
-          </div>
-          <div class="col" style="min-width:220px;">
-            <label class="hint">Active dataset</label>
-            <select id="activeDsSelect"></select>
-          </div>
-        </div>
-
-        <div class="hint" style="margin-top:10px;" id="periodHint">Periods</div>
-        <div id="periodList" class="list" style="margin-top:8px;"></div>
-
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
-          <button id="selAllBtn" class="secondary" type="button">Select all</button>
-          <button id="selNoneBtn" class="secondary" type="button">Clear</button>
-        </div>
+        <div class="title">Import goal</div>
+        <div class="hint">This build focuses only on the correct extraction and storage in Supabase.</div>
+        <div class="hint" style="margin-top:10px;">Active dataset: <span class="mono" id="activeDs">—</span></div>
       </div>
     </aside>
+
   </div>
 </div>
 
@@ -206,26 +141,11 @@ function setStatus(t){ $('status').textContent = 'Status: ' + t; }
 function setErr(t){ $('err').textContent = t||''; }
 function setOk(t){ $('ok').textContent = t||''; }
 
-function hardFailIfCoreMissing(){
-  if(!Core){
-    setErr("AppCore is not loaded.\n\nFix:\n1) ensure app-core.js exists in your repo root;\n2) the filename must match exactly (case-sensitive);\n3) make sure it is committed and served by GitHub Pages.\n");
-    throw new Error("AppCore missing");
+function ensureCore(){
+  if(!Core || !Core.sb) {
+    setErr("AppCore/Supabase not available. Ensure app-core.js is present and loads after supabase-js.");
+    throw new Error("Core missing");
   }
-  const needed = ["sb","dayKeyFromDate","laneFromBin","isPickBin","wtCategory","getSelection","setSelection","selectionDayKeys","fetchDatasets","fmtDDMMYYYY","getActiveDatasetId","setActiveDatasetId"];
-  const missing = needed.filter(k => typeof Core[k] === "undefined");
-  if(missing.length){
-    setErr("AppCore loaded but missing functions: " + missing.join(", ") + "\n\nFix: replace app-core.js with the latest version we generated (non-module).");
-    throw new Error("AppCore incomplete");
-  }
-}
-
-function applyTheme(theme){
-  document.body.setAttribute('data-theme', theme);
-  localStorage.setItem('mc_theme', theme);
-}
-function toggleTheme(){
-  const cur = localStorage.getItem('mc_theme') || 'dark';
-  applyTheme(cur === 'dark' ? 'light' : 'dark');
 }
 
 async function readFirstSheet(file){
@@ -289,408 +209,213 @@ async function insertChunk(table, rows, chunk=1000){
   }
 }
 
-function updateActivePill(){
-  const id = Core.getActiveDatasetId();
-  $('activePill').textContent = id ? ('Active dataset: ' + id.slice(0,8) + '…') : 'Active dataset: —';
+let preview = { piRows: [], wtRows: [], events: [], dayKeys: [] };
+let selectedDays = {};
+
+function updateLabelPreview(){
+  const fmt = $('dsLabelFmt').value;
+  const days = Object.keys(selectedDays).sort();
+  const minDay = days[0] || null;
+  const maxDay = days.length ? days[days.length-1] : null;
+  $('dsLabelPreview').textContent = rangeLabel(minDay, maxDay, fmt);
 }
 
-function isoWeekKey(dayKey){
-  const d = new Date(dayKey+"T00:00:00");
-  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
-  const dayNum = date.getUTCDay() || 7;
-  date.setUTCDate(date.getUTCDate() + 4 - dayNum);
-  const yearStart = new Date(Date.UTC(date.getUTCFullYear(),0,1));
-  const weekNo = Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
-  return `${date.getUTCFullYear()}-W${String(weekNo).padStart(2,'0')}`;
-}
-function monthKey(dayKey){
-  const d = new Date(dayKey+"T00:00:00");
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-}
-
-async function loadDatasets(){
-  const ds = await Core.fetchDatasets();
-  $('activeDsSelect').innerHTML = ds.map(d=>`<option value="${d.id}">${d.label}</option>`).join('');
-  $('deleteDsSelect').innerHTML = ds.map(d=>`<option value="${d.id}">${d.label} — ${String(d.created_at).slice(0,16).replace('T',' ')}</option>`).join('');
-
-  const active = Core.getActiveDatasetId();
-  if(active && ds.some(x=>x.id===active)) $('activeDsSelect').value = active;
-  else if(ds.length) {
-    Core.setActiveDatasetId(ds[0].id);
-    $('activeDsSelect').value = ds[0].id;
-  }
-  updateActivePill();
-}
-
-function updateSelSummary(){
-  const id = Core.getActiveDatasetId();
-  if(!id){ $('selSummary').textContent='0 selected'; return; }
-  const keys = Core.selectionDayKeys(Core.getSelection(id));
-  $('selSummary').textContent = keys.length + ' selected';
-}
-
-async function renderPeriodList(){
-  const datasetId = Core.getActiveDatasetId();
-  if(!datasetId){
-    $('periodList').innerHTML = '<div class="item"><span class="hint">No active dataset.</span></div>';
-    return;
-  }
-
-  const { data, error } = await Core.sb.from('events').select('day_key').eq('dataset_id', datasetId);
-  if(error) throw new Error(error.message);
-  const dayKeys = Array.from(new Set((data||[]).map(x=>String(x.day_key).slice(0,10)))).sort();
-  const mode = $('selMode').value;
-  const selObj = Core.getSelection(datasetId);
-
-  if(mode === 'days'){
-    $('periodHint').textContent = 'Days';
-    $('periodList').innerHTML = dayKeys.map(dk=>{
-      const checked = selObj[dk] ? 'checked' : '';
-      return `<div class="item">
-        <div>
-          <div style="font-weight:900;">${Core.fmtDDMMYYYY(dk)}</div>
-          <div class="hint small">day_key: ${dk}</div>
-        </div>
-        <input type="checkbox" data-period="${dk}" ${checked}>
-      </div>`;
-    }).join('') || `<div class="item"><span class="hint">No events.</span></div>`;
-
-    $('periodList').querySelectorAll('input[type="checkbox"][data-period]').forEach(ch=>{
-      ch.addEventListener('change', ()=>{
-        const dk = ch.getAttribute('data-period');
-        const cur = Core.getSelection(datasetId);
-        if(ch.checked) cur[dk] = {pi:true, wt:true}; else delete cur[dk];
-        Core.setSelection(datasetId, cur);
-        updateSelSummary();
-      });
-    });
-    updateSelSummary();
-    return;
-  }
-
-  const groups = new Map();
-  for(const dk of dayKeys){
-    const gk = (mode==='weeks') ? isoWeekKey(dk) : monthKey(dk);
-    if(!groups.has(gk)) groups.set(gk, []);
-    groups.get(gk).push(dk);
-  }
-  const groupKeys = Array.from(groups.keys()).sort();
-
-  $('periodHint').textContent = (mode==='weeks') ? 'Weeks' : 'Months';
-
-  function groupChecked(gk){
-    const days = groups.get(gk) || [];
-    if(!days.length) return false;
-    return days.every(dk => !!selObj[dk]);
-  }
-
-  $('periodList').innerHTML = groupKeys.map(gk=>{
-    const days = (groups.get(gk)||[]).slice().sort();
-    const checked = groupChecked(gk) ? 'checked' : '';
-    const sub = `${Core.fmtDDMMYYYY(days[0])} → ${Core.fmtDDMMYYYY(days[days.length-1])} (${days.length} days)`;
-    const label = (mode==='weeks') ? `Week ${gk}` : `Month ${gk}`;
+function renderDates(){
+  const dayKeys = preview.dayKeys.slice().sort();
+  $('dateList').innerHTML = dayKeys.map(dk=>{
+    const checked = selectedDays[dk] ? 'checked' : '';
     return `<div class="item">
       <div>
-        <div style="font-weight:900;">${label}</div>
-        <div class="hint small">${sub}</div>
+        <div style="font-weight:900;">${Core.fmtDDMMYYYY(dk)}</div>
+        <div class="hint">${dk}</div>
       </div>
-      <input type="checkbox" data-group="${gk}" ${checked}>
+      <input type="checkbox" data-dk="${dk}" ${checked}>
     </div>`;
-  }).join('') || `<div class="item"><span class="hint">No events.</span></div>`;
+  }).join('') || `<div class="item"><span class="hint">No dates detected yet.</span></div>`;
 
-  $('periodList').querySelectorAll('input[type="checkbox"][data-group]').forEach(ch=>{
+  $('dateList').querySelectorAll('input[type="checkbox"][data-dk]').forEach(ch=>{
     ch.addEventListener('change', ()=>{
-      const gk = ch.getAttribute('data-group');
-      const checked = ch.checked;
-      const days = groups.get(gk) || [];
-      const cur = Core.getSelection(datasetId);
-      for(const dk of days){
-        if(checked) cur[dk] = {pi:true,wt:true};
-        else delete cur[dk];
-      }
-      Core.setSelection(datasetId, cur);
-      updateSelSummary();
+      const dk = ch.getAttribute('data-dk');
+      if(ch.checked) selectedDays[dk]=true; else delete selectedDays[dk];
+      updateLabelPreview();
     });
   });
-  updateSelSummary();
+
+  updateLabelPreview();
 }
 
-async function scanDuplicates(){
-  const datasetId = Core.getActiveDatasetId();
-  if(!datasetId){ $('issuesPill').textContent='Duplicates: —'; return; }
+function buildEventsFromRows(skipDup){
+  const events = [];
+  const daySet = new Set();
+  const seenPI = new Set();
+  const seenWT = new Set();
 
+  for(const r of preview.piRows){
+    const counter = norm(getField(r, ['Counter']));
+    if(!counter) continue;
+    const dt = combineDateTime(getField(r, ['Count Date']), getField(r, ['Count Time']));
+    if(!dt) continue;
+    const dayKey = Core.dayKeyFromDate(dt);
+    const bin = norm(getField(r, ['Storage Bin']));
+    const wo = norm(getField(r, ['Warehouse Order'])) || null;
+
+    const piKey = [dayKey, counter, wo||'', bin].join('|');
+    if(skipDup){
+      if(seenPI.has(piKey)) continue;
+      seenPI.add(piKey);
+    }
+
+    events.push({
+      dataset_id: null,
+      ts: dt.toISOString(),
+      day_key: dayKey,
+      src_operator: counter,
+      eff_operator: counter,
+      kind: 'PI',
+      category: 'PI',
+      self_count: false,
+      storage_bin: bin || null,
+      lane: Core.laneFromBin(bin) || null,
+      wo_id: wo,
+      meta: {}
+    });
+    daySet.add(dayKey);
+  }
+
+  for(const r of preview.wtRows){
+    const srcBin = norm(getField(r, ['Source Storage Bin']));
+    if(!isNonEmptyBin(srcBin)) continue;
+
+    const proc = norm(getField(r, ['Whse Proc. Type']));
+    const cat = Core.wtCategory(proc);
+
+    const confirmedBy = norm(getField(r, ['Confirmed by','Confirmed By']));
+    if(!confirmedBy) continue;
+
+    const dt = combineDateTime(getField(r, ['Confirmation Date']), getField(r, ['Confirmation Time']));
+    if(!dt) continue;
+
+    const dayKey = Core.dayKeyFromDate(dt);
+    const wo = norm(getField(r, ['Warehouse Order'])) || null;
+
+    const wtKey = [dayKey, confirmedBy, wo||'', proc, srcBin, dt.toISOString()].join('|');
+    if(skipDup){
+      if(seenWT.has(wtKey)) continue;
+      seenWT.add(wtKey);
+    }
+
+    events.push({
+      dataset_id: null,
+      ts: dt.toISOString(),
+      day_key: dayKey,
+      src_operator: confirmedBy,
+      eff_operator: confirmedBy,
+      kind: 'WT',
+      category: cat,
+      self_count: false,
+      storage_bin: srcBin || null,
+      lane: Core.laneFromBin(srcBin) || null,
+      wo_id: wo,
+      meta: { proc_type: proc || null }
+    });
+
+    daySet.add(dayKey);
+  }
+
+  preview.events = events;
+  preview.dayKeys = Array.from(daySet).sort();
+
+  selectedDays = {};
+  for(const dk of preview.dayKeys) selectedDays[dk]=true;
+
+  $('countPill').textContent = 'PI rows: ' + (preview.piRows.length || 0);
+  $('wtPill').textContent = 'WT rows: ' + (preview.wtRows.length || 0);
+  $('evPill').textContent = 'Events: ' + (preview.events.length || 0);
+
+  renderDates();
+}
+
+async function refreshPreview(){
   setErr(''); setOk('');
-  $('issuesPill').textContent = 'Duplicates: scanning…';
+  const piFiles = Array.from($('piFile').files||[]);
+  const wtFiles = Array.from($('wtFile').files||[]);
+  if(!piFiles.length && !wtFiles.length) return;
 
-  const { data, error } = await Core.sb
-    .from('events')
-    .select('id, ts, kind, category, src_operator, eff_operator, storage_bin, lane, wo_id, self_count, meta')
-    .eq('dataset_id', datasetId)
-    .order('id', {ascending:true});
+  setStatus('Reading Excel…');
+  preview.piRows = [];
+  preview.wtRows = [];
 
-  if(error){ setErr(error.message); $('issuesPill').textContent='Duplicates: error'; return; }
+  for(const f of piFiles) preview.piRows.push(...await readFirstSheet(f));
+  for(const f of wtFiles) preview.wtRows.push(...await readFirstSheet(f));
 
-  const seen = new Map();
-  let dupCount = 0;
-  for(const e of (data||[])){
-    const key = [
-      e.ts, e.kind, e.category, e.src_operator, e.eff_operator,
-      e.storage_bin||'', e.lane||'', e.wo_id||'', e.self_count ? '1':'0',
-      JSON.stringify(e.meta||{})
-    ].join('|');
-    if(seen.has(key)) dupCount++;
-    else seen.set(key, e.id);
-  }
-  $('issuesPill').textContent = 'Duplicates: ' + dupCount;
-  return { data, dupCount };
+  buildEventsFromRows($('skipDup').checked);
+  setStatus('Ready (preview built).');
 }
 
-async function fixDuplicates(){
-  const datasetId = Core.getActiveDatasetId();
-  if(!datasetId) return;
+$('piFile').addEventListener('change', ()=>refreshPreview().catch(e=>setErr(e.message)));
+$('wtFile').addEventListener('change', ()=>refreshPreview().catch(e=>setErr(e.message)));
+$('skipDup').addEventListener('change', ()=>buildEventsFromRows($('skipDup').checked));
+$('dsLabelFmt').addEventListener('change', ()=>updateLabelPreview());
 
-  const scan = await scanDuplicates();
-  if(!scan || !scan.dupCount){ setOk('No duplicates found.'); return; }
-
-  if(!confirm(`This will delete ${scan.dupCount} duplicate rows in the active dataset. Continue?`)) return;
-
-  const { data } = scan;
-  const seen = new Set();
-  const toDelete = [];
-  for(const e of data){
-    const key = [
-      e.ts, e.kind, e.category, e.src_operator, e.eff_operator,
-      e.storage_bin||'', e.lane||'', e.wo_id||'', e.self_count ? '1':'0',
-      JSON.stringify(e.meta||{})
-    ].join('|');
-    if(seen.has(key)) toDelete.push(e.id);
-    else seen.add(key);
-  }
-
-  for(let i=0;i<toDelete.length;i+=500){
-    const part = toDelete.slice(i,i+500);
-    const { error } = await Core.sb.from('events').delete().in('id', part);
-    if(error){ setErr(error.message); return; }
-  }
-  setOk(`Deleted ${toDelete.length} duplicates.`);
-  await scanDuplicates();
-}
-
-async function deleteDataset(){
-  const id = $('deleteDsSelect').value;
-  if(!id) return;
-  if(!confirm('Delete this dataset permanently? (events will be deleted too)')) return;
-
-  setErr(''); setOk('');
-  const { error } = await Core.sb.from('datasets').delete().eq('id', id);
-  if(error){ setErr(error.message); return; }
-
-  setOk('Dataset deleted.');
-  if(Core.getActiveDatasetId() === id) Core.setActiveDatasetId('');
-  await loadDatasets();
-  await renderPeriodList();
-  updateSelSummary();
-}
-
-$('themeBtn').addEventListener('click', toggleTheme);
-$('scanIssuesBtn').addEventListener('click', ()=>scanDuplicates().catch(e=>setErr(e.message)));
-$('fixIssuesBtn').addEventListener('click', ()=>fixDuplicates().catch(e=>setErr(e.message)));
-$('deleteDsBtn').addEventListener('click', ()=>deleteDataset().catch(e=>setErr(e.message)));
-
-$('selMode').addEventListener('change', ()=>renderPeriodList().catch(e=>setErr(e.message)));
-$('activeDsSelect').addEventListener('change', ()=>{
-  Core.setActiveDatasetId($('activeDsSelect').value);
-  updateActivePill();
-  renderPeriodList().catch(e=>setErr(e.message));
-  scanDuplicates().catch(()=>{});
+$('selAllBtn').addEventListener('click', ()=>{
+  for(const dk of preview.dayKeys) selectedDays[dk]=true;
+  renderDates();
 });
-
-$('selAllBtn').addEventListener('click', async ()=>{
-  const datasetId = Core.getActiveDatasetId(); if(!datasetId) return;
-  const { data, error } = await Core.sb.from('events').select('day_key').eq('dataset_id', datasetId);
-  if(error){ setErr(error.message); return; }
-  const dayKeys = Array.from(new Set((data||[]).map(x=>String(x.day_key).slice(0,10))));
-  const out={}; for(const dk of dayKeys) out[dk]={pi:true,wt:true};
-  Core.setSelection(datasetId, out);
-  await renderPeriodList();
-});
-$('selNoneBtn').addEventListener('click', async ()=>{
-  const datasetId = Core.getActiveDatasetId(); if(!datasetId) return;
-  Core.setSelection(datasetId, {});
-  await renderPeriodList();
-});
-
-$('dsLabelFmt').addEventListener('change', ()=>{
-  $('dsLabelPreview').textContent = 'Derived from data dates (min→max)';
+$('selNoneBtn').addEventListener('click', ()=>{
+  selectedDays = {};
+  renderDates();
 });
 
 $('importBtn').addEventListener('click', async ()=>{
   try{
-    hardFailIfCoreMissing();
+    ensureCore();
     setErr(''); setOk('');
-    const piFiles = Array.from($('piFile').files||[]);
-    const wtFiles = Array.from($('wtFile').files||[]);
+
+    const days = Object.keys(selectedDays);
+    if(!days.length){ setErr('Select at least one day to import.'); return; }
+
     const fmt = $('dsLabelFmt').value;
-    if(!piFiles.length || !wtFiles.length){ setErr('Please upload both PI and WT files.'); return; }
-
-    setStatus('Reading Excel…');
-    let piRows=[]; for(const f of piFiles) piRows.push(...await readFirstSheet(f));
-    let wtRows=[]; for(const f of wtFiles) wtRows.push(...await readFirstSheet(f));
-
-    const events=[];
-    let minDay=null, maxDay=null;
-
-    for(const r of piRows){
-      const counter = norm(getField(r, ['Counter']));
-      if(!counter) continue;
-      const dt = combineDateTime(getField(r, ['Count Date']), getField(r, ['Count Time']));
-      if(!dt) continue;
-      const dayKey = Core.dayKeyFromDate(dt);
-
-      const bin = norm(getField(r, ['Storage Bin']));
-      const createdBy = norm(getField(r, ['Created By']));
-      const selfCount = (counter && createdBy && counter===createdBy);
-
-      events.push({
-        dataset_id: null,
-        ts: dt.toISOString(),
-        day_key: dayKey,
-        src_operator: counter,
-        eff_operator: counter,
-        kind: 'PI',
-        category: Core.isPickBin(bin) ? 'PI Pick' : 'PI Bulk',
-        self_count: !!selfCount,
-        storage_bin: bin || null,
-        lane: Core.laneFromBin(bin) || null,
-        wo_id: norm(getField(r, ['Warehouse Order'])) || null,
-        meta: { created_by: createdBy || null }
-      });
-
-      if(!minDay || dayKey < minDay) minDay=dayKey;
-      if(!maxDay || dayKey > maxDay) maxDay=dayKey;
-    }
-
-    for(const r of wtRows){
-      const srcBin = norm(getField(r, ['Source Storage Bin']));
-      if(!isNonEmptyBin(srcBin)) continue;
-
-      const proc = norm(getField(r, ['Whse Proc. Type']));
-      const cat = Core.wtCategory(proc);
-
-      const wo = norm(getField(r, ['Warehouse Order']));
-      const destBin = norm(getField(r, ['Dest. Stor. Bin']));
-      const qty = getField(r, ['Act.Qty Dest. Alt.Un']);
-
-      const confirmedBy = norm(getField(r, ['Confirmed by','Confirmed By']));
-      const createdBy = norm(getField(r, ['Created By']));
-      const srcOp = confirmedBy || createdBy;
-      if(!srcOp) continue;
-
-      const dt = combineDateTime(
-        getField(r, ['Confirmation Date','Created On']),
-        getField(r, ['Confirmation Time','Created At'])
-      );
-      if(!dt) continue;
-
-      const dayKey = Core.dayKeyFromDate(dt);
-      const baseMeta = {
-        proc_type: proc || null,
-        confirmed_by: confirmedBy || null,
-        created_by: createdBy || null,
-        act_qty: (typeof qty === 'number' || typeof qty === 'string') ? (Number(qty) || 0) : 0,
-        source_bin: srcBin || null,
-        dest_bin: destBin || null
-      };
-
-      events.push({
-        dataset_id: null,
-        ts: dt.toISOString(),
-        day_key: dayKey,
-        src_operator: srcOp,
-        eff_operator: srcOp,
-        kind: 'WT',
-        category: cat,
-        self_count: false,
-        storage_bin: srcBin || null,
-        lane: Core.laneFromBin(srcBin) || null,
-        wo_id: wo || null,
-        meta: Object.assign({ role:'src' }, baseMeta)
-      });
-
-      if(cat==='P2P' && isNonEmptyBin(destBin)){
-        events.push({
-          dataset_id: null,
-          ts: dt.toISOString(),
-          day_key: dayKey,
-          src_operator: srcOp,
-          eff_operator: srcOp,
-          kind: 'WT',
-          category: cat,
-          self_count: false,
-          storage_bin: destBin || null,
-          lane: Core.laneFromBin(destBin) || null,
-          wo_id: wo || null,
-          meta: Object.assign({ role:'dest' }, baseMeta)
-        });
-      }
-
-      if(!minDay || dayKey < minDay) minDay=dayKey;
-      if(!maxDay || dayKey > maxDay) maxDay=dayKey;
-    }
-
-    if(!events.length){ setErr('No events generated. Check file headers.'); return; }
-
+    const sorted = days.slice().sort();
+    const minDay = sorted[0];
+    const maxDay = sorted[sorted.length-1];
     const label = rangeLabel(minDay, maxDay, fmt);
-    $('dsLabelPreview').textContent = label;
+
+    const eventsToInsert = preview.events.filter(e => !!selectedDays[e.day_key]);
+    if(!eventsToInsert.length){ setErr('No events match the selected dates.'); return; }
 
     setStatus('Creating dataset…');
     const { data: ds, error: dsErr } = await Core.sb
       .from('datasets')
-      .insert([{ label, start_date:minDay, end_date:maxDay, notes:null }])
+      .insert([{ label: label, start_date: minDay, end_date: maxDay, notes: null }])
       .select('id')
       .single();
     if(dsErr) throw new Error(dsErr.message);
 
     const datasetId = ds.id;
-    for(const e of events) e.dataset_id = datasetId;
+    for(const e of eventsToInsert) e.dataset_id = datasetId;
 
-    setStatus('Inserting events… (' + events.length + ')');
-    await insertChunk('events', events, 1000);
+    setStatus('Inserting events… (' + eventsToInsert.length + ')');
+    await insertChunk('events', eventsToInsert, 1000);
 
     Core.setActiveDatasetId(datasetId);
-    updateActivePill();
+    $('activeDs').textContent = datasetId;
 
-    const out={};
-    const days = new Set(events.map(e=>e.day_key));
-    for(const dk of days) out[dk]={pi:true,wt:true};
-    Core.setSelection(datasetId, out);
+    const sel = {};
+    for(const dk of days) sel[dk]=true;
+    Core.setSelection(datasetId, sel);
 
     setStatus('Done.');
     setOk('Import completed successfully.');
-    await loadDatasets();
-    await renderPeriodList();
-    updateSelSummary();
-    await scanDuplicates();
   } catch(e){
     console.error(e);
-    if(!$('err').textContent) setErr(e.message || String(e));
+    setErr(e.message || String(e));
     setStatus('Error');
   }
 });
 
-(async function boot(){
-  applyTheme(localStorage.getItem('mc_theme') || 'dark');
-  $('dsLabelPreview').textContent = 'Derived from data dates (min→max)';
-  try{
-    hardFailIfCoreMissing();
-    updateActivePill();
-    await loadDatasets();
-    await renderPeriodList();
-    updateSelSummary();
-    scanDuplicates().catch(()=>{});
-  }catch(e){
-    // error already shown
-  }
+(function boot(){
+  setStatus('Ready.');
+  $('activeDs').textContent = Core ? (Core.getActiveDatasetId() || '—') : '—';
 })();
 </script>
 </body>
