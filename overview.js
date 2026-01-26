@@ -104,6 +104,56 @@ function categoryToCssBg(cat) {
   return "var(--c-mix)";
 }
 
+function buildSlotGradient(acc, totalMs) {
+  // acc: Map(category -> overlapMs)
+  const order = ["PI Pick", "PI Bulk", "P2P", "CLP", "PAUSA"];
+
+  // se nessun overlap
+  if (totalMs <= 0) {
+    return "rgba(255,255,255,.06)";
+  }
+
+  let pos = 0;
+  const parts = [];
+
+  const present = order.filter(cat => (acc.get(cat) || 0) > 0);
+  if (present.length === 1) {
+    // colore pieno
+    return categoryToCssBg(present[0]);
+  }
+
+  // multi-categoria: gradient proporzionale
+  for (let i = 0; i < present.length; i++) {
+    const cat = present[i];
+    const ms = acc.get(cat) || 0;
+    let pct = (ms / totalMs) * 100;
+
+    // ultima categoria chiude a 100 per evitare buchi di rounding
+    const start = pos;
+    const end = (i === present.length - 1) ? 100 : Math.min(100, pos + pct);
+
+    parts.push(`${categoryToCssBg(cat)} ${start}% ${end}%`);
+    pos = end;
+  }
+
+  return `linear-gradient(to right, ${parts.join(", ")})`;
+}
+
+function buildSlotTooltip(acc) {
+  // tooltip con breakdown
+  const order = ["PI Pick", "PI Bulk", "P2P", "CLP", "PAUSA"];
+  const chunks = [];
+
+  for (const cat of order) {
+    const ms = acc.get(cat) || 0;
+    if (ms <= 0) continue;
+    const min = Math.round(ms / 60000);
+    chunks.push(`${cat}: ${min}m`);
+  }
+
+  return chunks.join(" | ") || "—";
+}
+
 // -------------------- Auth --------------------
 async function ensureAnonymousSession() {
   setAuthUI(false, "checking session...", "-");
@@ -239,15 +289,29 @@ function groupBlocks(intervals) {
 
   for (const it of intervals) {
     if (!cur || cur.category !== it.category) {
-      cur = { category: it.category, start: it.start, end: it.end, sec: it.sec };
+      cur = {
+        category: it.category,
+        start: it.start,
+        end: it.end,
+        sec: it.sec,
+        events: [], // eventi "nextEvent" associati agli intervalli del blocco
+      };
       blocks.push(cur);
     } else {
       cur.end = it.end;
       cur.sec += it.sec;
     }
+
+    // Importante:
+    // se il blocco è PAUSA, NON conteggiamo eventi (altrimenti la task dopo la pausa finisce dentro al blocco pausa)
+    if (it.category !== "PAUSA") {
+      cur.events.push(it.nextEvent);
+    }
   }
+
   return blocks;
 }
+
 
 // -------------------- Aggregations --------------------
 function computeOperatorStats(opEvents) {
@@ -351,22 +415,31 @@ function renderBlocks(blocks) {
   tb.innerHTML = "";
 
   let prev = null;
+
   for (const b of blocks) {
     const tr = document.createElement("tr");
     tr.className = categoryToRowClass(b.category);
+
     const changeText = prev ? `${prev} → ${b.category}` : "—";
     prev = b.category;
+
+    const events = b.events || [];
+    const binCount = events.filter(e => e?.source === "PI").length;
+    const woCount = uniq(events.filter(e => e?.source === "WT").map(e => e.warehouse_order)).length;
 
     tr.innerHTML = `
       <td class="mono">${escapeHtml(fmtDT(b.start))}</td>
       <td class="mono">${escapeHtml(fmtDT(b.end))}</td>
       <td>${escapeHtml(b.category)}</td>
       <td class="mono">${secToHHMM(b.sec)}</td>
+      <td class="mono">${binCount}</td>
+      <td class="mono">${woCount}</td>
       <td class="mono">${escapeHtml(changeText)}</td>
     `;
     tb.appendChild(tr);
   }
 }
+
 
 function renderIntervals(intervals) {
   const tb = $("tblIntervals").querySelector("tbody");
@@ -502,7 +575,6 @@ function renderTimelineForShift(intervals, day, shiftKey) {
   const slotMs = SLOT_MINUTES * 60 * 1000;
   const slotCount = Math.round((shiftEnd.getTime() - shiftStart.getTime()) / slotMs);
 
-  // grid full width: repeat(slotCount, 1fr)
   row.style.gridTemplateColumns = `repeat(${slotCount}, 1fr)`;
 
   for (let i = 0; i < slotCount; i++) {
@@ -510,35 +582,43 @@ function renderTimelineForShift(intervals, day, shiftKey) {
     const slotEnd = new Date(slotStart.getTime() + slotMs);
 
     // overlap durations per category
-    const acc = new Map();
+    const acc = new Map(); // category -> overlapMs
+    let totalMs = 0;
+
     for (const it of intervals) {
       const overlap = Math.max(0, Math.min(it.end, slotEnd) - Math.max(it.start, slotStart));
       if (overlap <= 0) continue;
+      totalMs += overlap;
       acc.set(it.category, (acc.get(it.category) || 0) + overlap);
     }
 
-    const cats = Array.from(acc.keys());
-    let cat = "—";
-    if (cats.length === 0) cat = "—";
-    else if (cats.length === 1) cat = cats[0];
-    else cat = "MIX";
-
+    // manual overlay SOLO come testo nel tooltip (se presente in pausa)
     const manual = findManualActivityForSlot(slotStart, slotEnd);
-    const displayLabel = (manual && cat === "PAUSA") ? manual.label : cat;
+    const tooltipBreakdown = buildSlotTooltip(acc);
+
+    const pauseMs = acc.get("PAUSA") || 0;
+    const canClickPause = pauseMs > 0;
 
     const seg = document.createElement("div");
     seg.className = "seg";
-    seg.style.background = categoryToCssBg(cat === "MIX" ? "MIX" : cat);
-    seg.title = `${fmtDT(slotStart).slice(11,16)}–${fmtDT(slotEnd).slice(11,16)} | ${displayLabel}`;
+
+    // gradient coerente (anche MIX)
+    seg.style.background = buildSlotGradient(acc, totalMs);
+
+    const baseLabel = `${fmtDT(slotStart).slice(11,16)}–${fmtDT(slotEnd).slice(11,16)}`;
+    const manualTxt = (manual && pauseMs > 0) ? ` | Indirect: ${manual.label}` : "";
+    seg.title = `${baseLabel} | ${tooltipBreakdown}${manualTxt}`;
 
     seg.addEventListener("click", () => {
-      if (cat !== "PAUSA") return;
+      // cliccabile se nello slot c'è almeno un pezzo di pausa
+      if (!canClickPause) return;
       openActivityModal(slotStart, slotEnd);
     });
 
     row.appendChild(seg);
   }
 }
+
 
 // -------------------- Drilldown --------------------
 async function openDrilldown(operator) {
