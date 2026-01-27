@@ -229,8 +229,8 @@ async function fetchEventsAll(fromDay, toDay) {
     const to = from + PAGE - 1;
 
     const { data, error } = await supabase
-      .from("v_operator_events_effective")
-      .select("source,event_dt,operator_code,operator_original,warehouse_order,category,created_by,counter")
+      .from("v_operator_events_effective_plus_support")
+      .select("source,event_dt,operator_code_effective,operator_base,operator_code,operator_original,warehouse_order,category,created_by,counter")
       .gte("event_dt", start)
       .lte("event_dt", end)
       .order("operator_code", { ascending: true })
@@ -248,7 +248,15 @@ async function fetchEventsAll(fromDay, toDay) {
   }
 
   // normalize operator_code to avoid duplicates due to spaces/case
-  all.forEach(e => { e.operator_code = String(e.operator_code ?? "-").trim(); });
+  all.forEach(e => {
+  // operator_code effettivo (post support segments)
+  const eff = (e.operator_code_effective ?? e.operator_code ?? "-");
+  e.operator_code = String(eff).trim();
+
+  // tieni anche la base (account usato)
+  e.operator_base = String(e.operator_base ?? e.operator_original ?? "").trim();
+});
+
 
   return all;
 }
