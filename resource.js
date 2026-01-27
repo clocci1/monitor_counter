@@ -7,25 +7,40 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 const $ = (id) => document.getElementById(id);
 const logEl = $("log");
 
+const PAUSE_THRESHOLD_SEC = 30 * 60;
+const BREAK_SEC_PER_DAY = 30 * 60;
+
+// Alias “preimpostati”: UI alias rimossa
+const ALIAS_MAP = new Map([
+  ["S.TAZANOU", "R.SOLL"],
+  ["F.SAADANI", "S.FETHIA"],
+]);
+
+// Standard shift times (se vuoi usarli in edit cell)
+const SHIFT_TIMES = {
+  AM: { start: "05:00", end: "13:00" },
+  C:  { start: "08:00", end: "16:00" },
+  OM: { start: "14:00", end: "22:00" },
+};
+
 let user = null;
 
-let resources = [];
-let aliases = [];
-let accountsFound = [];
+let resources = [];            // tutte le risorse in tabella resources
+let guaranteed = [];           // counter/specialist/teamleader
+let supportSegments = [];      // support_work_segments per settimana
+let weekSchedule = [];         // resource_schedule_segments per settimana
+let weekEvents = [];           // v_operator_events_effective per settimana (solo per calcolo)
+let lastActMap = new Map();    // account -> last_event_dt
 
-let editingResId = null;
-let editingAliasId = null;
+let selectedWeekStart = null;  // yyyy-mm-dd (lun)
+let importPreviewRows = [];    // schedule rows preview per import
+let editingResourceId = null;
 
-let schedulePreview = []; // rows ready to upsert
-
+// ------------ utils ------------
 function log(...args) {
   const line = args.map(a => (typeof a === "string" ? a : JSON.stringify(a, null, 2))).join(" ");
   logEl.textContent += line + "\n";
   logEl.scrollTop = logEl.scrollHeight;
-}
-
-function normalizeCode(s) {
-  return String(s ?? "").trim().toUpperCase();
 }
 
 function setAuthUI(ok, statusText, userId) {
@@ -36,6 +51,82 @@ function setAuthUI(ok, statusText, userId) {
   dot.classList.add(ok ? "ok" : "bad");
 }
 
+function norm(s) {
+  return String(s ?? "").trim().toUpperCase();
+}
+function canon(code) {
+  const c = norm(code);
+  return ALIAS_MAP.get(c) ?? c;
+}
+
+function fmtDT(d) {
+  const dd = new Date(d);
+  if (isNaN(dd.getTime())) return "";
+  const y = dd.getFullYear();
+  const m = String(dd.getMonth()+1).padStart(2,"0");
+  const da = String(dd.getDate()).padStart(2,"0");
+  const hh = String(dd.getHours()).padStart(2,"0");
+  const mi = String(dd.getMinutes()).padStart(2,"0");
+  return `${y}-${m}-${da} ${hh}:${mi}`;
+}
+
+function secToHHMM(sec) {
+  const s = Math.max(0, Math.floor(sec));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`;
+}
+
+function parseDT(s) {
+  if (!s) return null;
+  const iso = String(s).includes("T") ? String(s) : String(s).replace(" ", "T");
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function dayKey(d) {
+  const dd = new Date(d);
+  const y = dd.getFullYear();
+  const m = String(dd.getMonth()+1).padStart(2,"0");
+  const da = String(dd.getDate()).padStart(2,"0");
+  return `${y}-${m}-${da}`;
+}
+
+function addDays(yyyy_mm_dd, n) {
+  const d = new Date(`${yyyy_mm_dd}T00:00:00`);
+  d.setDate(d.getDate() + n);
+  return dayKey(d);
+}
+
+function getWeekStart(yyyy_mm_dd) {
+  // Monday-based
+  const d = new Date(`${yyyy_mm_dd}T00:00:00`);
+  const day = d.getDay(); // 0..6 (Sun..Sat)
+  const diff = (day === 0 ? -6 : 1 - day); // shift to Monday
+  d.setDate(d.getDate() + diff);
+  return dayKey(d);
+}
+
+function weekDays(weekStart) {
+  return Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+}
+
+function timeToSec(hhmm) {
+  const [h,m] = hhmm.split(":").map(Number);
+  return h*3600 + m*60;
+}
+
+function durationSec(startHHMM, endHHMM) {
+  return Math.max(0, timeToSec(endHHMM) - timeToSec(startHHMM));
+}
+
+function escapeHtml(str) {
+  return String(str ?? "")
+    .replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;").replaceAll("'","&#039;");
+}
+
+// ------------ auth ------------
 async function ensureAnon() {
   setAuthUI(false, "checking session...", "-");
   const { data: s } = await supabase.auth.getSession();
@@ -54,230 +145,372 @@ async function resetSession() {
   location.reload();
 }
 
-// ---------------------- Loaders ----------------------
+// ------------ load data ------------
 async function loadResources() {
   const { data, error } = await supabase
     .from("resources")
-    .select("*")
+    .select("id,operator_code,role,current_week_shift,active")
     .order("role", { ascending: true })
     .order("operator_code", { ascending: true });
 
   if (error) throw error;
-  resources = (data ?? []).map(r => ({ ...r, operator_code: normalizeCode(r.operator_code) }));
+
+  resources = (data ?? []).map(r => ({
+    ...r,
+    operator_code: canon(r.operator_code),
+  }));
+
+  guaranteed = resources.filter(r => ["counter","specialist","teamleader"].includes(r.role) && r.active);
 }
 
-async function loadAliases() {
+async function loadSupportSegments(weekStart) {
+  const from = `${weekStart}T00:00:00`;
+  const to = `${addDays(weekStart, 6)}T23:59:59`;
   const { data, error } = await supabase
-    .from("resource_aliases")
+    .from("support_work_segments")
     .select("*")
-    .order("alias_code", { ascending: true });
+    .gte("start_dt", from)
+    .lte("end_dt", to)
+    .order("start_dt", { ascending: true });
 
   if (error) throw error;
-  aliases = (data ?? []).map(a => ({
-    ...a,
-    alias_code: normalizeCode(a.alias_code),
-    canonical_code: normalizeCode(a.canonical_code),
+  supportSegments = data ?? [];
+}
+
+async function loadWeekSchedule(weekStart) {
+  const from = weekStart;
+  const to = addDays(weekStart, 6);
+
+  const { data, error } = await supabase
+    .from("resource_schedule_segments")
+    .select("id,operator_code,work_date,segment_no,status,start_time,end_time,shift,raw_text")
+    .gte("work_date", from)
+    .lte("work_date", to)
+    .order("operator_code", { ascending: true })
+    .order("work_date", { ascending: true })
+    .order("segment_no", { ascending: true });
+
+  if (error) throw error;
+
+  weekSchedule = (data ?? []).map(x => ({
+    ...x,
+    operator_code: canon(x.operator_code),
   }));
 }
 
-async function loadAccountsFound() {
-  // NB: view v_all_operator_accounts non ha RLS, ma legge da v_operator_events_effective (già usata in overview)
-  // paginazione simple
+async function loadWeekEvents(weekStart) {
+  const from = `${weekStart}T00:00:00`;
+  const to = `${addDays(weekStart, 6)}T23:59:59`;
+
+  // prendiamo gli eventi “effettivi” e calcoliamo last act e lavoro
+  // operator_code in view già “effective”; normalizziamo comunque
   const PAGE = 1000;
-  let from = 0;
+  let fromIx = 0;
   let all = [];
   while (true) {
     const { data, error } = await supabase
-      .from("v_all_operator_accounts")
-      .select("account")
-      .range(from, from + PAGE - 1);
+      .from("v_operator_events_effective")
+      .select("source,event_dt,operator_code,created_by,counter,warehouse_order,category")
+      .gte("event_dt", from)
+      .lte("event_dt", to)
+      .order("event_dt", { ascending: true })
+      .range(fromIx, fromIx + PAGE - 1);
+
     if (error) throw error;
 
-    const batch = (data ?? []).map(x => normalizeCode(x.account)).filter(Boolean);
+    const batch = (data ?? []).map(e => ({
+      ...e,
+      operator_code: canon(e.operator_code),
+      created_by: e.created_by ? canon(e.created_by) : null,
+      counter: e.counter ? canon(e.counter) : null,
+    }));
+
     all = all.concat(batch);
-
     if (batch.length < PAGE) break;
-    from += PAGE;
-    if (from > 50000) break;
+    fromIx += PAGE;
+    if (fromIx > 60000) break;
   }
-  accountsFound = Array.from(new Set(all)).sort();
+
+  weekEvents = all;
+
+  // last act per account (consideriamo operator_code + created_by + counter)
+  lastActMap = new Map();
+  for (const e of weekEvents) {
+    const dt = parseDT(e.event_dt);
+    if (!dt) continue;
+
+    const accounts = [e.operator_code, e.created_by, e.counter].filter(Boolean).map(canon);
+    for (const a of accounts) {
+      const prev = lastActMap.get(a);
+      if (!prev || dt > prev) lastActMap.set(a, dt);
+    }
+  }
 }
 
-// ---------------------- Render helpers ----------------------
-function roleLabel(r) {
-  if (r === "counter") return "Counter";
-  if (r === "specialist") return "Specialist";
-  if (r === "support") return "Supporto";
-  if (r === "teamleader") return "Teamleader";
-  return r;
+// ------------ compute time over ------------
+function buildAccountEventsMap() {
+  // qui scegliamo “account” = operator_code (coerente con Overview)
+  const m = new Map();
+  for (const e of weekEvents) {
+    const acc = canon(e.operator_code);
+    if (!m.has(acc)) m.set(acc, []);
+    m.get(acc).push(e);
+  }
+  for (const [k, arr] of m.entries()) {
+    arr.sort((a,b) => parseDT(a.event_dt) - parseDT(b.event_dt));
+    m.set(k, arr);
+  }
+  return m;
 }
 
-function renderResources() {
-  const roleFilter = $("roleFilter").value;
-  const q = normalizeCode($("qFilter").value);
+function computeWorkSecondsForAccount(events) {
+  // lavoro = somma dt fra eventi consecutivi se <= 30 min (gap oltre soglia = pausa/non conteggio)
+  let work = 0;
+  for (let i = 0; i < events.length - 1; i++) {
+    const a = parseDT(events[i].event_dt);
+    const b = parseDT(events[i+1].event_dt);
+    if (!a || !b) continue;
+    const dt = Math.floor((b - a)/1000);
+    if (dt <= 0) continue;
+    if (dt > PAUSE_THRESHOLD_SEC) continue;
+    work += dt;
+  }
+  return work;
+}
 
-  const tb = $("tblResources").querySelector("tbody");
+function scheduleExpectedSecondsForAccount(account, days) {
+  // expected = somma segmenti “present” - break 30m per giorno se presente almeno un segmento present
+  const acc = canon(account);
+
+  let total = 0;
+  let presentDays = 0;
+
+  for (const d of days) {
+    const segs = weekSchedule.filter(s => canon(s.operator_code) === acc && s.work_date === d);
+
+    const presentSegs = segs.filter(s => s.status === "present" && s.start_time && s.end_time);
+    if (presentSegs.length > 0) {
+      let daySec = 0;
+      for (const s of presentSegs) daySec += durationSec(String(s.start_time).slice(0,5), String(s.end_time).slice(0,5));
+      total += daySec;
+      presentDays += 1;
+      continue;
+    }
+
+    // se non abbiamo schedule per quel giorno: expected 0 (così l’utente capisce che deve impostare/importare turni)
+  }
+
+  total -= presentDays * BREAK_SEC_PER_DAY;
+  return Math.max(0, total);
+}
+
+function computeSupportiTable(weekStart) {
+  const days = weekDays(weekStart);
+  const accEvents = buildAccountEventsMap();
+
+  // set accounts = eventi + support accounts (role support) + guaranteed accounts
+  const set = new Set();
+  for (const k of accEvents.keys()) set.add(k);
+  for (const r of resources) set.add(canon(r.operator_code));
+
+  const rows = [];
+  for (const acc of Array.from(set).sort()) {
+    const evs = accEvents.get(acc) ?? [];
+    const workSec = computeWorkSecondsForAccount(evs);
+
+    // expected solo se è risorsa garantita (o se ha schedule comunque)
+    const isGuaranteed = guaranteed.some(r => canon(r.operator_code) === acc);
+    const hasAnySchedule = weekSchedule.some(s => canon(s.operator_code) === acc);
+
+    const expectedSec = (isGuaranteed || hasAnySchedule) ? scheduleExpectedSecondsForAccount(acc, days) : 0;
+    const over = Math.max(0, workSec - expectedSec);
+
+    // regole di popolamento:
+    // - se over > 0 => mostra
+    // - oppure se è account support (role='support') e ha workSec>0 => mostra (expected 0)
+    const isSupportAcc = resources.some(r => canon(r.operator_code) === acc && r.role === "support");
+    if (over > 0 || (isSupportAcc && workSec > 0)) {
+      rows.push({ account: acc, overSec: over, workSec, expectedSec });
+    }
+  }
+
+  // ordina per over desc
+  rows.sort((a,b) => b.overSec - a.overSec);
+  return rows;
+}
+
+// ------------ render ------------
+function renderKpi(rowsSupporti) {
+  $("kpiGuaranteed").textContent = String(guaranteed.length);
+  $("kpiCounters").textContent = String(guaranteed.filter(x => x.role === "counter").length);
+  $("kpiSpecialist").textContent = String(guaranteed.filter(x => x.role === "specialist").length);
+
+  const absent = weekSchedule.filter(s =>
+    guaranteed.some(r => canon(r.operator_code) === canon(s.operator_code)) &&
+    ["vacation","permission","absent"].includes(s.status)
+  ).length;
+  $("kpiAbsent").textContent = String(absent);
+
+  const totOver = rowsSupporti.reduce((sum,r)=>sum + r.overSec, 0);
+  $("kpiOver").textContent = secToHHMM(totOver);
+
+  $("kpiSegments").textContent = String(supportSegments.length);
+}
+
+function renderResourcesTable() {
+  const group = $("resGroup").value;
+
+  let rows = guaranteed.slice();
+  if (group !== "all") rows = rows.filter(r => r.role === group);
+
+  const tb = $("tblRes").querySelector("tbody");
   tb.innerHTML = "";
 
-  const rows = resources.filter(r => {
-    if (roleFilter && r.role !== roleFilter) return false;
-    if (q && !normalizeCode(r.operator_code).includes(q) && !normalizeCode(r.display_name).includes(q)) return false;
-    return true;
+  for (const r of rows) {
+    const last = lastActMap.get(canon(r.operator_code));
+    const lastTxt = last ? fmtDT(last) : "";
+
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td class="mono"><span class="link" data-edit="${r.id}">${escapeHtml(r.operator_code)}</span></td>
+      <td>${escapeHtml(r.role)}</td>
+      <td class="mono">${escapeHtml(r.current_week_shift ?? "")}</td>
+      <td class="mono">${escapeHtml(lastTxt)}</td>
+      <td>
+        <select data-man="${r.id}">
+          <option value="">—</option>
+          <option value="edit">Modifica</option>
+          <option value="remove">Rimuovi</option>
+        </select>
+      </td>
+    `;
+    tb.appendChild(tr);
+  }
+
+  tb.querySelectorAll("[data-edit]").forEach(el => {
+    el.addEventListener("click", () => openResModal(el.getAttribute("data-edit")));
   });
+
+  tb.querySelectorAll("[data-man]").forEach(sel => {
+    sel.addEventListener("change", async () => {
+      const id = sel.getAttribute("data-man");
+      const val = sel.value;
+      sel.value = "";
+      if (val === "edit") openResModal(id);
+      if (val === "remove") await removeResource(id);
+    });
+  });
+}
+
+function renderSupportiTable(rows) {
+  const tb = $("tblSupporti").querySelector("tbody");
+  tb.innerHTML = "";
 
   for (const r of rows) {
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td class="mono"><span class="link" data-edit="${r.id}">${r.operator_code}</span></td>
-      <td>${roleLabel(r.role)}</td>
-      <td>${r.active ? "✅" : "—"}</td>
-      <td>${r.support_dept ?? ""}</td>
-      <td>${r.default_shift ?? ""}</td>
-      <td>${r.default_resource_used ?? ""}</td>
-      <td>
-        <button class="btn" data-edit="${r.id}">Edit</button>
-        <button class="btn danger" data-del="${r.id}">Del</button>
-      </td>
+      <td class="mono">${escapeHtml(r.account)}</td>
+      <td class="mono">${secToHHMM(r.overSec)}</td>
+      <td><button class="btn primary small" data-set="${escapeHtml(r.account)}">Set supporto</button></td>
     `;
     tb.appendChild(tr);
   }
 
-  tb.querySelectorAll("[data-edit]").forEach(btn => {
-    btn.addEventListener("click", () => editResource(btn.getAttribute("data-edit")));
-  });
-
-  tb.querySelectorAll("[data-del]").forEach(btn => {
-    btn.addEventListener("click", () => deleteResource(btn.getAttribute("data-del")));
+  tb.querySelectorAll("[data-set]").forEach(btn => {
+    btn.addEventListener("click", () => openSupportModal(btn.getAttribute("data-set")));
   });
 }
 
-function renderAliases() {
-  const tb = $("tblAliases").querySelector("tbody");
-  tb.innerHTML = "";
+function renderWeekTable(weekStart) {
+  const days = weekDays(weekStart);
 
-  for (const a of aliases) {
+  // header
+  const head = $("weekHead");
+  head.innerHTML = `
+    <tr>
+      <th>WORKER</th>
+      ${days.map((d,i)=>`<th class="mono">${["Mon","Tue","Wed","Thu","Fri","Sat","Sun"][i]}<br>${d}</th>`).join("")}
+    </tr>
+  `;
+
+  const body = $("weekBody");
+  body.innerHTML = "";
+
+  for (const r of guaranteed) {
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td class="mono"><span class="link" data-edit="${a.id}">${a.alias_code}</span></td>
-      <td class="mono">${a.canonical_code}</td>
-      <td>${a.note ?? ""}</td>
-      <td>
-        <button class="btn" data-edit="${a.id}">Edit</button>
-        <button class="btn danger" data-del="${a.id}">Del</button>
-      </td>
+      <td class="mono">${escapeHtml(r.operator_code)}</td>
+      ${days.map(d => {
+        const segs = weekSchedule.filter(s => canon(s.operator_code) === canon(r.operator_code) && s.work_date === d);
+        let txt = "";
+        if (segs.length === 0) txt = "";
+        else {
+          // compress: if present show time, else status label
+          const parts = segs.map(s => {
+            if (s.status === "present") return `${String(s.start_time).slice(0,5)}-${String(s.end_time).slice(0,5)}`;
+            if (s.status === "vacation") return "ferie";
+            if (s.status === "permission") return "perm";
+            if (s.status === "absent") return "abs";
+            return s.raw_text ?? s.status;
+          });
+          txt = parts.join(" | ");
+        }
+        return `<td class="mono"><span class="link" data-cell="${escapeHtml(r.operator_code)}|${d}">${escapeHtml(txt)}</span></td>`;
+      }).join("")}
     `;
-    tb.appendChild(tr);
+    body.appendChild(tr);
   }
 
-  tb.querySelectorAll("[data-edit]").forEach(btn => {
-    btn.addEventListener("click", () => editAlias(btn.getAttribute("data-edit")));
-  });
-  tb.querySelectorAll("[data-del]").forEach(btn => {
-    btn.addEventListener("click", () => deleteAlias(btn.getAttribute("data-del")));
-  });
-}
-
-function isKnownResource(code) {
-  return resources.some(r => normalizeCode(r.operator_code) === normalizeCode(code));
-}
-function isKnownAlias(code) {
-  return aliases.some(a => normalizeCode(a.alias_code) === normalizeCode(code));
-}
-
-function renderAccountsFound() {
-  const tb = $("tblAccounts").querySelector("tbody");
-  tb.innerHTML = "";
-
-  for (const acc of accountsFound) {
-    const knownRes = isKnownResource(acc);
-    const knownAlias = isKnownAlias(acc);
-
-    let status = "NEW";
-    if (knownRes) status = "IN RESOURCES";
-    else if (knownAlias) status = "IN ALIASES";
-
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td class="mono">${acc}</td>
-      <td>${status}</td>
-      <td>
-        <button class="btn" data-addres="${acc}">+ Risorsa</button>
-        <button class="btn" data-addalias="${acc}">+ Alias</button>
-      </td>
-    `;
-    tb.appendChild(tr);
-  }
-
-  tb.querySelectorAll("[data-addres]").forEach(btn => {
-    btn.addEventListener("click", () => {
-      clearResForm();
-      $("resCode").value = btn.getAttribute("data-addres");
-      $("resRole").value = "support"; // default
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    });
-  });
-
-  tb.querySelectorAll("[data-addalias]").forEach(btn => {
-    btn.addEventListener("click", () => {
-      clearAliasForm();
-      $("alAlias").value = btn.getAttribute("data-addalias");
-      window.scrollTo({ top: 0, behavior: "smooth" });
+  body.querySelectorAll("[data-cell]").forEach(el => {
+    el.addEventListener("click", () => {
+      const [acc, d] = el.getAttribute("data-cell").split("|");
+      openScheduleCellModal(acc, d);
     });
   });
 }
 
-async function reloadAll() {
-  await Promise.all([loadResources(), loadAliases(), loadAccountsFound()]);
-  renderResources();
-  renderAliases();
-  renderAccountsFound();
+// ------------ resource modal ------------
+function openResModal(id = null) {
+  editingResourceId = id;
+
+  if (!id) {
+    $("resTitle").textContent = "Aggiungi risorsa";
+    $("resCode").value = "";
+    $("resRole").value = "counter";
+    $("resWeekShift").value = "";
+  } else {
+    const r = guaranteed.find(x => x.id === id);
+    if (!r) return;
+    $("resTitle").textContent = `Modifica risorsa: ${r.operator_code}`;
+    $("resCode").value = r.operator_code;
+    $("resRole").value = r.role;
+    $("resWeekShift").value = r.current_week_shift ?? "";
+  }
+
+  $("resOverlay").style.display = "flex";
 }
 
-// ---------------------- Resource CRUD ----------------------
-function clearResForm() {
-  editingResId = null;
-  $("resCode").value = "";
-  $("resRole").value = "counter";
-  $("resName").value = "";
-  $("resDept").value = "";
-  $("resShift").value = "";
-  $("resUsed").value = "";
-  $("resActive").checked = true;
-  $("resNotes").value = "";
-}
-
-function editResource(id) {
-  const r = resources.find(x => x.id === id);
-  if (!r) return;
-  editingResId = id;
-
-  $("resCode").value = r.operator_code ?? "";
-  $("resRole").value = r.role ?? "counter";
-  $("resName").value = r.display_name ?? "";
-  $("resDept").value = r.support_dept ?? "";
-  $("resShift").value = r.default_shift ?? "";
-  $("resUsed").value = r.default_resource_used ?? "";
-  $("resActive").checked = !!r.active;
-  $("resNotes").value = r.notes ?? "";
+function closeResModal() {
+  $("resOverlay").style.display = "none";
+  editingResourceId = null;
 }
 
 async function saveResource() {
-  const operator_code = normalizeCode($("resCode").value);
-  if (!operator_code) { log("⚠️ operator_code richiesto"); return; }
+  const operator_code = canon($("resCode").value);
+  const role = $("resRole").value;
+  const current_week_shift = $("resWeekShift").value || null;
+
+  if (!operator_code) { log("⚠️ Account richiesto"); return; }
 
   const payload = {
     user_id: user.id,
     operator_code,
-    display_name: $("resName").value.trim() || operator_code,
-    role: $("resRole").value,
-    active: $("resActive").checked,
-    support_dept: $("resDept").value || null,
-    default_shift: $("resShift").value || null,
-    default_resource_used: $("resUsed").value.trim() || null,
-    notes: $("resNotes").value.trim() || null
+    role,
+    current_week_shift,
+    active: true,
   };
 
-  if (editingResId) payload.id = editingResId;
+  if (editingResourceId) payload.id = editingResourceId;
 
   const { error } = await supabase
     .from("resources")
@@ -285,87 +518,231 @@ async function saveResource() {
 
   if (error) { log("❌ saveResource:", error.message); return; }
 
-  clearResForm();
+  closeResModal();
   await reloadAll();
-  log("✅ Risorsa salvata");
+  log("✅ risorsa salvata");
 }
 
-async function deleteResource(id) {
-  const r = resources.find(x => x.id === id);
+async function removeResource(id) {
+  const r = guaranteed.find(x => x.id === id);
   if (!r) return;
-  if (!confirm(`Eliminare risorsa ${r.operator_code}?`)) return;
+  if (!confirm(`Rimuovere ${r.operator_code}?`)) return;
 
   const { error } = await supabase.from("resources").delete().eq("id", id);
-  if (error) { log("❌ deleteResource:", error.message); return; }
+  if (error) { log("❌ removeResource:", error.message); return; }
+
   await reloadAll();
-  log("✅ Risorsa eliminata");
+  log("✅ risorsa rimossa");
 }
 
-// ---------------------- Alias CRUD ----------------------
-function clearAliasForm() {
-  editingAliasId = null;
-  $("alAlias").value = "";
-  $("alCanon").value = "";
-  $("alNote").value = "";
+// ------------ support modal / segments ------------
+function showHideSupportFields() {
+  const kind = $("supKind").value;
+  const isSupport = kind === "support";
+  $("supRealWrap").classList.toggle("hidden", !isSupport);
+  $("supUsedWrap").classList.toggle("hidden", !isSupport);
 }
 
-function editAlias(id) {
-  const a = aliases.find(x => x.id === id);
-  if (!a) return;
-  editingAliasId = id;
+function openSupportModal(account) {
+  $("supAccount").value = account;
+  $("supTitle").textContent = `Set supporto — ${account}`;
 
-  $("alAlias").value = a.alias_code ?? "";
-  $("alCanon").value = a.canonical_code ?? "";
-  $("alNote").value = a.note ?? "";
+  // default: oggi dentro la settimana
+  const d = selectedWeekStart;
+  $("supDay").value = d;
+  $("supStart").value = "08:00";
+  $("supEnd").value = "12:00";
+  $("supKind").value = "overtime_counter";
+  $("supReal").value = "";
+  $("supDept").value = "";
+  $("supUsed").value = "";
+  $("supNote").value = "";
+  showHideSupportFields();
+
+  renderSupportSegmentsForAccount(account);
+  $("supOverlay").style.display = "flex";
 }
 
-async function saveAlias() {
-  const alias_code = normalizeCode($("alAlias").value);
-  const canonical_code = normalizeCode($("alCanon").value);
-  if (!alias_code || !canonical_code) { log("⚠️ alias + canonico richiesti"); return; }
+function closeSupportModal() {
+  $("supOverlay").style.display = "none";
+}
+
+function weekRangeTs(weekStart) {
+  const from = new Date(`${weekStart}T00:00:00`);
+  const to = new Date(`${addDays(weekStart, 6)}T23:59:59`);
+  return { from, to };
+}
+
+function renderSupportSegmentsForAccount(account) {
+  const tb = $("tblSupSeg").querySelector("tbody");
+  tb.innerHTML = "";
+
+  const { from, to } = weekRangeTs(selectedWeekStart);
+  const rows = supportSegments
+    .filter(s => canon(s.account_used) === canon(account))
+    .filter(s => {
+      const a = parseDT(s.start_dt), b = parseDT(s.end_dt);
+      return a && b && a >= from && b <= to;
+    });
+
+  for (const s of rows) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(s.kind)}</td>
+      <td class="mono">${escapeHtml(fmtDT(s.start_dt))}</td>
+      <td class="mono">${escapeHtml(fmtDT(s.end_dt))}</td>
+      <td>${escapeHtml(s.real_name ?? "")}</td>
+      <td><button class="btn danger small" data-del="${s.id}">Del</button></td>
+    `;
+    tb.appendChild(tr);
+  }
+
+  tb.querySelectorAll("[data-del]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const id = btn.getAttribute("data-del");
+      if (!confirm("Eliminare segmento supporto?")) return;
+      const { error } = await supabase.from("support_work_segments").delete().eq("id", id);
+      if (error) { log("❌ delete segment:", error.message); return; }
+      await loadSupportSegments(selectedWeekStart);
+      renderSupportSegmentsForAccount(account);
+      await recalcSupporti();
+    });
+  });
+}
+
+async function saveSupportSegment() {
+  const account = canon($("supAccount").value);
+  const kind = $("supKind").value;
+
+  const day = $("supDay").value;
+  const startT = $("supStart").value;
+  const endT = $("supEnd").value;
+
+  if (!account || !day || !startT || !endT) { log("⚠️ account/giorno/start/end richiesti"); return; }
+
+  const start_dt = `${day}T${startT}:00`;
+  const end_dt = `${day}T${endT}:00`;
 
   const payload = {
     user_id: user.id,
-    alias_code,
-    canonical_code,
-    note: $("alNote").value.trim() || null
+    account_used: account,
+    kind,
+    start_dt,
+    end_dt,
+    note: $("supNote").value.trim() || null,
+    real_name: null,
+    dept: null,
+    used_resource: null,
   };
 
-  if (editingAliasId) payload.id = editingAliasId;
+  if (kind === "support") {
+    payload.real_name = $("supReal").value.trim() || null;
+    payload.dept = $("supDept").value || null;
+    payload.used_resource = $("supUsed").value.trim() || null;
+  }
 
-  const { error } = await supabase
-    .from("resource_aliases")
-    .upsert(payload, { onConflict: "user_id,alias_code" });
+  const { error } = await supabase.from("support_work_segments").insert(payload);
+  if (error) { log("❌ save support segment:", error.message); return; }
 
-  if (error) { log("❌ saveAlias:", error.message); return; }
-
-  clearAliasForm();
-  await reloadAll();
-  log("✅ Alias salvato");
+  await loadSupportSegments(selectedWeekStart);
+  renderSupportSegmentsForAccount(account);
+  await recalcSupporti();
+  log("✅ support segment salvato");
 }
 
-async function deleteAlias(id) {
-  const a = aliases.find(x => x.id === id);
-  if (!a) return;
-  if (!confirm(`Eliminare alias ${a.alias_code} -> ${a.canonical_code}?`)) return;
+// ------------ schedule cell edit (minimal) ------------
+function openScheduleCellModal(account, date) {
+  // edit rapido: prompt (per restare vanilla e veloce)
+  // valori: AM / C / OM / ferie / perm / empty / custom 08:30-16:30
+  const currentSegs = weekSchedule.filter(s => canon(s.operator_code)===canon(account) && s.work_date===date);
+  const curTxt = currentSegs.map(s => s.status==="present" ? `${String(s.start_time).slice(0,5)}-${String(s.end_time).slice(0,5)}` : (s.status==="vacation"?"ferie":(s.status==="permission"?"perm":s.status))).join(" | ");
+  const val = prompt(
+    `Imposta turno per ${account} @ ${date}\n`+
+    `Esempi: AM | C | OM | ferie | perm | 08:30-16:30 | (vuoto per cancellare)\n\nAttuale: ${curTxt}`,
+    curTxt
+  );
 
-  const { error } = await supabase.from("resource_aliases").delete().eq("id", id);
-  if (error) { log("❌ deleteAlias:", error.message); return; }
-  await reloadAll();
-  log("✅ Alias eliminato");
+  if (val === null) return;
+  const v = String(val).trim().toLowerCase();
+  saveScheduleCell(account, date, v);
 }
 
-// ---------------------- Seed defaults ----------------------
-async function seedDefaults() {
-  const { data, error } = await supabase.rpc("seed_default_resources");
-  if (error) { log("❌ seed:", error.message); return; }
-  log("✅ seed:", data);
-  await reloadAll();
+function parseTimeRange(cell) {
+  const t = String(cell ?? "").trim();
+  const m = t.match(/(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})/);
+  if (!m) return null;
+  const start = m[1].padStart(5,"0");
+  const end = m[2].padStart(5,"0");
+  return { start, end };
 }
 
-// ---------------------- Schedule parsing (paste / xlsx) ----------------------
+async function saveScheduleCell(account, date, valLower) {
+  const acc = canon(account);
+
+  // delete existing segments for (acc,date) for simplicity (segment_no=1 only)
+  // (se poi vuoi multi-segmento, lo estendiamo)
+  const toDel = weekSchedule.filter(s => canon(s.operator_code)===acc && s.work_date===date);
+  for (const s of toDel) {
+    await supabase.from("resource_schedule_segments").delete().eq("id", s.id);
+  }
+
+  if (!valLower) {
+    await loadWeekSchedule(selectedWeekStart);
+    renderWeekTable(selectedWeekStart);
+    await recalcSupporti();
+    return;
+  }
+
+  let row = {
+    user_id: user.id,
+    operator_code: acc,
+    work_date: date,
+    segment_no: 1,
+    status: "present",
+    start_time: null,
+    end_time: null,
+    shift: null,
+    raw_text: null
+  };
+
+  if (valLower === "ferie") {
+    row.status = "vacation";
+    row.raw_text = "ferie";
+  } else if (valLower === "perm") {
+    row.status = "permission";
+    row.raw_text = "perm";
+  } else if (["am","c","om"].includes(valLower)) {
+    const sh = valLower.toUpperCase();
+    row.status = "present";
+    row.shift = sh;
+    row.start_time = SHIFT_TIMES[sh].start;
+    row.end_time = SHIFT_TIMES[sh].end;
+    row.raw_text = `${row.start_time}-${row.end_time}`;
+  } else {
+    const tr = parseTimeRange(valLower);
+    if (tr) {
+      row.status = "present";
+      row.start_time = tr.start;
+      row.end_time = tr.end;
+      row.raw_text = `${tr.start}-${tr.end}`;
+      // shift opzionale: inferisci da start
+      row.shift = tr.start.startsWith("05:") ? "AM" : (tr.start.startsWith("14:") ? "OM" : "C");
+    } else {
+      row.status = "other";
+      row.raw_text = valLower;
+    }
+  }
+
+  const { error } = await supabase.from("resource_schedule_segments").insert(row);
+  if (error) { log("❌ save schedule cell:", error.message); return; }
+
+  await loadWeekSchedule(selectedWeekStart);
+  renderWeekTable(selectedWeekStart);
+  await recalcSupporti();
+}
+
+// ------------ import schedule (paste/xlsx) ------------
 function parseDateToken(tok) {
-  // supports: 26-1-2026, 26/1/2026, 26-01-2026
   const t = String(tok ?? "").trim();
   const m = t.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
   if (!m) return null;
@@ -375,31 +752,6 @@ function parseDateToken(tok) {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-function parseTimeRange(cell) {
-  // matches: 05:00-13:00 (with optional spaces)
-  const t = String(cell ?? "").trim();
-  const m = t.match(/(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})/);
-  if (!m) return null;
-  const start = m[1].padStart(5,"0");
-  const end = m[2].padStart(5,"0");
-  return { start, end };
-}
-
-function inferShift(startTime) {
-  if (!startTime) return null;
-  const s = startTime.slice(0,5);
-  if (s.startsWith("05:")) return "AM";
-  if (s.startsWith("08:") || s.startsWith("09:")) return "C";
-  if (s.startsWith("14:")) return "OM";
-  return null;
-}
-
-function resolveCanonical(code) {
-  const c = normalizeCode(code);
-  const a = aliases.find(x => normalizeCode(x.alias_code) === c);
-  return a ? normalizeCode(a.canonical_code) : c;
-}
-
 function parseScheduleTSV(tsv) {
   const lines = String(tsv ?? "")
     .split(/\r?\n/)
@@ -407,22 +759,21 @@ function parseScheduleTSV(tsv) {
     .filter(l => l.trim().length > 0);
 
   const grid = lines.map(l => l.split("\t"));
-  if (grid.length < 3) return { dates: [], rows: [], preview: [] };
+  if (grid.length < 3) return { dates: [], rows: [] };
 
-  // Find the row containing dates: at least 3 date tokens
   let dateRow = -1;
   for (let r = 0; r < grid.length; r++) {
     const parsed = grid[r].map(parseDateToken).filter(Boolean);
     if (parsed.length >= 3) { dateRow = r; break; }
   }
-  if (dateRow === -1) return { dates: [], rows: [], preview: [] };
+  if (dateRow === -1) return { dates: [], rows: [] };
 
-  // Determine dateStartCol and list of dates contiguous
   const row = grid[dateRow];
   let startCol = -1;
   for (let c = 0; c < row.length; c++) {
     if (parseDateToken(row[c])) { startCol = c; break; }
   }
+
   const dates = [];
   for (let c = startCol; c < row.length; c++) {
     const d = parseDateToken(row[c]);
@@ -430,284 +781,215 @@ function parseScheduleTSV(tsv) {
     dates.push(d);
   }
 
-  // Skip possible weekday row (dateRow+1)
   let dataStartRow = dateRow + 1;
   if (grid[dataStartRow]) {
     const hasWeekday = grid[dataStartRow].some(x => /mon|tue|wed|thu|fri|sat|sun/i.test(String(x)));
     if (hasWeekday) dataStartRow++;
   }
 
-  const preview = [];
-
+  const out = [];
   for (let r = dataStartRow; r < grid.length; r++) {
     const line = grid[r];
     const opRaw = String(line[0] ?? "").trim();
     if (!opRaw) continue;
+    const op = canon(opRaw);
 
-    const op = normalizeCode(opRaw);
-    // second col may be E/A (macro group hint) but optional
-    const groupHint = normalizeCode(line[1] ?? "");
-
-    // ignore totally blank “extra rows” where operator cell is something like W05
-    if (op.startsWith("W") && op.length <= 5) continue;
+    // import SOLO per risorse garantite (come vuoi tu)
+    if (!guaranteed.some(x => canon(x.operator_code) === op)) continue;
 
     for (let i = 0; i < dates.length; i++) {
       const cell = String(line[startCol + i] ?? "").trim();
-      if (!cell) continue; // off => non salva
+      if (!cell) continue;
 
       const lower = cell.toLowerCase();
+
       if (lower.includes("ferie")) {
-        preview.push({
-          operator_code: resolveCanonical(op),
-          original_code: op,
+        out.push({
+          user_id: user.id,
+          operator_code: op,
           work_date: dates[i],
           segment_no: 1,
           status: "vacation",
+          raw_text: "ferie",
           start_time: null,
           end_time: null,
-          shift: null,
-          raw_text: cell
+          shift: null
+        });
+        continue;
+      }
+      if (lower.includes("perm")) {
+        out.push({
+          user_id: user.id,
+          operator_code: op,
+          work_date: dates[i],
+          segment_no: 1,
+          status: "permission",
+          raw_text: "perm",
+          start_time: null,
+          end_time: null,
+          shift: null
         });
         continue;
       }
 
       const tr = parseTimeRange(cell);
       if (tr) {
-        preview.push({
-          operator_code: resolveCanonical(op),
-          original_code: op,
+        const shift = tr.start.startsWith("05:") ? "AM" : (tr.start.startsWith("14:") ? "OM" : "C");
+        out.push({
+          user_id: user.id,
+          operator_code: op,
           work_date: dates[i],
           segment_no: 1,
           status: "present",
           start_time: tr.start,
           end_time: tr.end,
-          shift: inferShift(tr.start),
-          raw_text: cell,
-          group_hint: groupHint
+          shift,
+          raw_text: `${tr.start}-${tr.end}`
         });
         continue;
       }
 
-      // fallback: mark as "other"
-      preview.push({
-        operator_code: resolveCanonical(op),
-        original_code: op,
+      out.push({
+        user_id: user.id,
+        operator_code: op,
         work_date: dates[i],
         segment_no: 1,
         status: "other",
+        raw_text: cell,
         start_time: null,
         end_time: null,
-        shift: null,
-        raw_text: cell,
-        group_hint: groupHint
+        shift: null
       });
     }
   }
 
-  return { dates, preview };
+  return { dates, rows: out };
 }
 
-function fillImportDatesFromParsed(dates) {
-  if (!dates || dates.length === 0) return;
-  $("impFrom").value = dates[0];
-  $("impTo").value = dates[dates.length - 1];
+async function parseImportPaste() {
+  const tsv = $("impPaste").value;
+  const { dates, rows } = parseScheduleTSV(tsv);
+  importPreviewRows = rows;
+
+  if (dates.length) {
+    // auto weekStart = monday of first date
+    const ws = getWeekStart(dates[0]);
+    $("weekStart").value = ws;
+    selectedWeekStart = ws;
+  }
+
+  $("btnSaveImp").disabled = importPreviewRows.length === 0;
+  log(`Import preview rows: ${importPreviewRows.length}`);
 }
 
-async function parseFromPaste() {
-  const tsv = $("pasteBox").value;
-  const { dates, preview } = parseScheduleTSV(tsv);
-
-  schedulePreview = preview;
-  $("btnSaveSchedule").disabled = schedulePreview.length === 0;
-
-  if (dates.length) fillImportDatesFromParsed(dates);
-
-  log(`Preview rows: ${schedulePreview.length}`);
-  // Quick log sample
-  log(schedulePreview.slice(0, 5));
-}
-
-async function parseFromXlsx(file) {
+async function parseImportXlsx(file) {
   const buf = await file.arrayBuffer();
   const wb = XLSX.read(buf, { type: "array" });
   const ws = wb.Sheets[wb.SheetNames[0]];
-  // convert to TSV-like
   const tsv = XLSX.utils.sheet_to_csv(ws, { FS: "\t" });
-  $("pasteBox").value = tsv;
-  await parseFromPaste();
+  $("impPaste").value = tsv;
+  await parseImportPaste();
 }
 
-// ---------------------- Schedule save/view/edit ----------------------
-function resourceByCode(code) {
-  const c = normalizeCode(code);
-  return resources.find(r => normalizeCode(r.operator_code) === c) || null;
-}
-
-async function saveSchedulePreview() {
-  if (schedulePreview.length === 0) return;
-
-  // Enrich support default fields (dept/used/shift) when status present and missing
-  const rows = schedulePreview.map(p => {
-    const r = resourceByCode(p.operator_code);
-    const isSupport = r?.role === "support";
-
-    return {
-      user_id: user.id,
-      operator_code: p.operator_code,
-      work_date: p.work_date,
-      segment_no: p.segment_no,
-      status: p.status,
-      start_time: p.start_time,
-      end_time: p.end_time,
-      shift: p.shift || (isSupport ? r.default_shift : null),
-      support_dept: isSupport ? (r.support_dept ?? null) : null,
-      used_resource: isSupport ? (r.default_resource_used ?? null) : null,
-      raw_text: p.raw_text ?? null
-    };
-  });
+async function saveImportRows() {
+  if (importPreviewRows.length === 0) return;
 
   const { error } = await supabase
     .from("resource_schedule_segments")
-    .upsert(rows, { onConflict: "user_id,operator_code,work_date,segment_no" });
+    .upsert(importPreviewRows, { onConflict: "user_id,operator_code,work_date,segment_no" });
 
-  if (error) { log("❌ save schedule:", error.message); return; }
+  if (error) { log("❌ save import:", error.message); return; }
 
-  log(`✅ saved schedule rows: ${rows.length}`);
-  await loadScheduleViewer();
+  log(`✅ saved schedule rows: ${importPreviewRows.length}`);
+  importPreviewRows = [];
+  $("btnSaveImp").disabled = true;
+  closeImpModal();
+
+  await reloadWeek();
 }
 
-async function loadScheduleViewer() {
-  const from = $("viewFrom").value;
-  const to = $("viewTo").value;
-  if (!from || !to) { log("⚠️ Set viewFrom/viewTo"); return; }
-
-  const { data, error } = await supabase
-    .from("resource_schedule_segments")
-    .select("*")
-    .gte("work_date", from)
-    .lte("work_date", to)
-    .order("work_date", { ascending: true })
-    .order("operator_code", { ascending: true })
-    .order("segment_no", { ascending: true });
-
-  if (error) { log("❌ load schedule:", error.message); return; }
-
-  const tb = $("tblSchedule").querySelector("tbody");
-  tb.innerHTML = "";
-
-  for (const s of (data ?? [])) {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td class="mono">${s.operator_code}</td>
-      <td class="mono">${s.work_date}</td>
-      <td class="mono">${s.segment_no}</td>
-      <td>${s.status}</td>
-      <td class="mono">${s.start_time ?? ""}</td>
-      <td class="mono">${s.end_time ?? ""}</td>
-      <td>${s.shift ?? ""}</td>
-      <td>${s.support_dept ?? ""}</td>
-      <td>${s.used_resource ?? ""}</td>
-      <td>
-        <button class="btn" data-edit="${s.id}">Edit</button>
-        <button class="btn danger" data-del="${s.id}">Del</button>
-      </td>
-    `;
-    tb.appendChild(tr);
-  }
-
-  tb.querySelectorAll("[data-del]").forEach(btn => {
-    btn.addEventListener("click", async () => {
-      const id = btn.getAttribute("data-del");
-      if (!confirm("Eliminare segmento schedule?")) return;
-      await supabase.from("resource_schedule_segments").delete().eq("id", id);
-      await loadScheduleViewer();
-    });
-  });
-
-  tb.querySelectorAll("[data-edit]").forEach(btn => {
-    btn.addEventListener("click", async () => {
-      const id = btn.getAttribute("data-edit");
-      const seg = (data ?? []).find(x => x.id === id);
-      if (!seg) return;
-
-      // inline edit minimale via prompt
-      const status = prompt("status (present/vacation/absent/other):", seg.status) || seg.status;
-      let start_time = seg.start_time, end_time = seg.end_time;
-      if (status === "present") {
-        start_time = prompt("start_time (HH:MM):", seg.start_time ?? "08:30") || seg.start_time;
-        end_time = prompt("end_time (HH:MM):", seg.end_time ?? "16:30") || seg.end_time;
-      } else {
-        start_time = null; end_time = null;
-      }
-
-      const { error } = await supabase
-        .from("resource_schedule_segments")
-        .update({
-          status,
-          start_time,
-          end_time,
-          shift: (status === "present" ? inferShift(start_time) : null),
-        })
-        .eq("id", id);
-
-      if (error) log("❌ update schedule:", error.message);
-      await loadScheduleViewer();
-    });
-  });
-
-  log(`Loaded schedule segments: ${(data ?? []).length}`);
+// ------------ Supporti recalc ------------
+async function recalcSupporti() {
+  await loadSupportSegments(selectedWeekStart);
+  const rows = computeSupportiTable(selectedWeekStart);
+  renderSupportiTable(rows);
+  renderKpi(rows);
 }
 
-// ---------------------- Init ----------------------
+// ------------ reload flows ------------
+async function reloadWeek() {
+  await Promise.all([
+    loadWeekSchedule(selectedWeekStart),
+    loadWeekEvents(selectedWeekStart),
+    loadSupportSegments(selectedWeekStart),
+  ]);
+
+  renderResourcesTable();
+  renderWeekTable(selectedWeekStart);
+  await recalcSupporti();
+}
+
+async function reloadAll() {
+  await loadResources();
+  await reloadWeek();
+}
+
+// ------------ modal import ------------
+function openImpModal() { $("impOverlay").style.display = "flex"; }
+function closeImpModal() { $("impOverlay").style.display = "none"; }
+
+// ------------ init ------------
 (async function init() {
   try {
     user = await ensureAnon();
     log("✅ user:", user.id);
 
-    // default viewer range: last 7 days
-    const now = new Date();
-    const to = now.toISOString().slice(0,10);
-    const fromD = new Date(now);
-    fromD.setDate(fromD.getDate() - 6);
-    const from = fromD.toISOString().slice(0,10);
-
-    $("viewFrom").value = from;
-    $("viewTo").value = to;
-
     $("btnReset").addEventListener("click", resetSession);
-    $("btnSeed").addEventListener("click", seedDefaults);
 
-    $("btnSaveRes").addEventListener("click", saveResource);
-    $("btnClearRes").addEventListener("click", () => { clearResForm(); });
-    $("roleFilter").addEventListener("change", renderResources);
-    $("qFilter").addEventListener("input", renderResources);
+    // init week inputs: today -> monday
+    const today = new Date().toISOString().slice(0,10);
+    selectedWeekStart = getWeekStart(today);
 
-    $("btnSaveAlias").addEventListener("click", saveAlias);
-    $("btnClearAlias").addEventListener("click", clearAliasForm);
-    $("btnClearAliasForm").addEventListener("click", clearAliasForm);
+    $("weekStart").value = selectedWeekStart;
+    $("supWeek").value = selectedWeekStart;
 
-    $("btnReloadAccounts").addEventListener("click", async () => {
-      await loadAccountsFound();
-      renderAccountsFound();
-      log("✅ accounts reloaded");
+    $("btnLoadWeek").addEventListener("click", async () => {
+      selectedWeekStart = getWeekStart($("weekStart").value || selectedWeekStart);
+      $("weekStart").value = selectedWeekStart;
+      $("supWeek").value = selectedWeekStart;
+      await reloadWeek();
     });
 
-    $("btnParse").addEventListener("click", parseFromPaste);
-    $("btnSaveSchedule").addEventListener("click", saveSchedulePreview);
+    $("btnReloadSupporti").addEventListener("click", async () => {
+      selectedWeekStart = getWeekStart($("supWeek").value || selectedWeekStart);
+      $("weekStart").value = selectedWeekStart;
+      await reloadWeek();
+    });
 
-    $("xlsxFile").addEventListener("change", async (e) => {
+    $("resGroup").addEventListener("change", renderResourcesTable);
+
+    // resource modal
+    $("btnAddRes").addEventListener("click", () => openResModal(null));
+    $("btnCloseRes").addEventListener("click", closeResModal);
+    $("btnSaveRes").addEventListener("click", saveResource);
+
+    // support modal
+    $("btnCloseSup").addEventListener("click", closeSupportModal);
+    $("supKind").addEventListener("change", showHideSupportFields);
+    $("btnSaveSupSeg").addEventListener("click", saveSupportSegment);
+
+    // import modal
+    $("btnOpenImport").addEventListener("click", openImpModal);
+    $("btnCloseImp").addEventListener("click", closeImpModal);
+    $("btnParseImp").addEventListener("click", parseImportPaste);
+    $("btnSaveImp").addEventListener("click", saveImportRows);
+    $("impFile").addEventListener("change", async (e) => {
       const f = e.target.files?.[0];
       if (!f) return;
-      await parseFromXlsx(f);
+      await parseImportXlsx(f);
     });
 
-    $("btnLoadSchedule").addEventListener("click", loadScheduleViewer);
-
-    clearResForm();
-    clearAliasForm();
-
     await reloadAll();
-    await loadScheduleViewer();
   } catch (e) {
     log("❌ init:", e?.message ?? String(e));
     setAuthUI(false, "AUTH ERROR", "-");
