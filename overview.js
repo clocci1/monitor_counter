@@ -7,6 +7,111 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 const $ = (id) => document.getElementById(id);
 const logEl = $("log");
 
+function dt(dateStr, timeStr) {
+  return new Date(`${dateStr}T${String(timeStr).slice(0,5)}:00`);
+}
+
+function addWindow(map, operator, day, start, end) {
+  const key = `${operator}__${day}`;
+  if (!map.has(key)) map.set(key, []);
+  map.get(key).push({ start, end });
+}
+
+function mergeWindows(wins) {
+  wins.sort((a,b)=>a.start-b.start);
+  const out = [];
+  for (const w of wins) {
+    if (!out.length || w.start > out[out.length-1].end) out.push({ ...w });
+    else out[out.length-1].end = new Date(Math.max(out[out.length-1].end, w.end));
+  }
+  return out;
+}
+
+function buildWindowsMap(sched, supSeg) {
+  const map = new Map();
+
+  // schedule -> garantiti
+  for (const s of (sched ?? [])) {
+    const op = (s.operator_code ?? "").trim();
+    if (!op) continue;
+    if (s.status !== "present") continue;
+    if (!s.start_time || !s.end_time) continue;
+
+    addWindow(map, op, s.work_date, dt(s.work_date, s.start_time), dt(s.work_date, s.end_time));
+  }
+
+  // support segments -> persone reali
+  for (const seg of (supSeg ?? [])) {
+    const real = (seg.real_name ?? "").trim();
+    if (!real) continue;
+
+    const a = new Date(seg.start_dt);
+    const b = new Date(seg.end_dt);
+    const day = a.toISOString().slice(0,10);
+
+    addWindow(map, real, day, a, b);
+  }
+
+  for (const [k, wins] of map.entries()) map.set(k, mergeWindows(wins));
+  return map;
+}
+
+function intervalsFromEventsInWindows(events, windows, pauseThresholdMin=30) {
+  const pauseMs = pauseThresholdMin * 60 * 1000;
+  const out = [];
+
+  for (const w of windows) {
+    const ev = events.filter(e => {
+      const t = new Date(e.event_dt);
+      return t >= w.start && t <= w.end;
+    });
+    if (ev.length === 0) continue;
+
+    for (let i=0; i<ev.length; i++) {
+      const a = new Date(ev[i].event_dt);
+      const aCat = ev[i].category;
+      let end = w.end;
+
+      if (i < ev.length-1) {
+        const b = new Date(ev[i+1].event_dt);
+        if ((b - a) > pauseMs) {
+          const pauseEnd = new Date(Math.min(b.getTime(), w.end.getTime()));
+          out.push({ start: a, end: pauseEnd, category: "PAUSA", wo: null });
+          continue;
+        }
+        end = new Date(Math.min(b.getTime(), w.end.getTime()));
+      }
+
+      if (end > a) {
+        out.push({
+          start: a,
+          end,
+          category: aCat,
+          wo: ev[i].warehouse_order ?? null
+        });
+      }
+    }
+  }
+  return out;
+}
+
+function hasSchedule(windowsMap, operator, day) {
+  return (windowsMap.get(`${operator}__${day}`) ?? []).length > 0;
+}
+
+// quando selezioni operatore + giorno:
+if (hasSchedule(windowsMap, operator, day)) {
+  shiftSelect.disabled = true;
+  shiftSelect.style.display = "none";     // oppure lo disabiliti e lo lasci visibile
+  shiftLabel.textContent = "Shift da schedule";
+} else {
+  shiftSelect.disabled = false;
+  shiftSelect.style.display = "";
+  shiftLabel.textContent = "Shift manuale";
+}
+
+
+
 const PAUSE_THRESHOLD_SEC = 30 * 60;
 
 const SHIFTS = {
@@ -200,6 +305,29 @@ function computeEffectiveDays() {
 
   if (!from || !to) return [];
 
+  // 1) Schedule (turni) nel range
+const { data: sched, error: schedErr } = await supabase
+  .from("resource_schedule_segments")
+  .select("operator_code, work_date, status, start_time, end_time, shift")
+  .gte("work_date", from)
+  .lte("work_date", to);
+
+if (schedErr) throw schedErr;
+
+// 2) Support segments reali nel range
+const { data: supSeg, error: supErr } = await supabase
+  .from("support_work_segments")
+  .select("account_used, real_name, start_dt, end_dt, kind")
+  .gte("start_dt", from + "T00:00:00")
+  .lte("end_dt", to + "T23:59:59")
+  .eq("kind", "support");
+
+if (supErr) throw supErr;
+
+// 3) Build windows map (turni effettivi per persona)
+const windowsMap = buildWindowsMap(sched, supSeg);
+
+
   const baseDays = dateRangeList(from, to);
 
   if (picked.length === 0) return baseDays;
@@ -230,7 +358,7 @@ async function fetchEventsAll(fromDay, toDay) {
 
     const { data, error } = await supabase
       .from("v_operator_events_effective_plus_support")
-      .select("source,event_dt,operator_code_effective,operator_base,operator_code,operator_original,warehouse_order,category,created_by,counter")
+      .select("event_dt, source, category, warehouse_order, operator_code_effective, operator_base, operator_code")
       .gte("event_dt", start)
       .lte("event_dt", end)
       .order("operator_code", { ascending: true })
@@ -247,11 +375,11 @@ async function fetchEventsAll(fromDay, toDay) {
     if (from > 100000) break;
   }
 
-  // normalize operator_code to avoid duplicates due to spaces/case
-  all.forEach(e => {
-  // operator_code effettivo (post support segments)
-  const eff = (e.operator_code_effective ?? e.operator_code ?? "-");
-  e.operator_code = String(eff).trim();
+events.forEach(e => {
+  e.operator = (e.operator_code_effective ?? e.operator_code ?? "").trim();
+  e.account_used = (e.operator_base ?? e.operator_code ?? "").trim(); // account realmente usato
+});
+
 
   // tieni anche la base (account usato)
   e.operator_base = String(e.operator_base ?? e.operator_original ?? "").trim();
