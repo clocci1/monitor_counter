@@ -26,10 +26,9 @@
       color:var(--text);
       font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
     }
-
     .app{
       display:grid;
-      grid-template-columns: 1fr 360px;
+      grid-template-columns: 1fr 320px;
       gap:12px;
       padding:16px;
       max-width: 1500px;
@@ -37,8 +36,9 @@
     }
     @media(max-width:1100px){
       .app{grid-template-columns:1fr}
-      .right{position:relative; top:auto; height:auto;}
+      .right{position:relative;top:auto;height:auto;}
     }
+    .main{min-width:0; display:flex; flex-direction:column; gap:12px;}
 
     .panel{
       border:1px solid var(--stroke);
@@ -64,6 +64,9 @@
       letter-spacing:.2px;
     }
     .panelBody{padding:12px}
+    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    .mono{font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;}
+    .muted{color:var(--muted);font-size:12px;line-height:1.35}
 
     .btn{
       appearance:none;
@@ -79,10 +82,8 @@
     .btn:hover{background:rgba(255,255,255,.10);border-color:rgba(255,255,255,.16)}
     .btn.primary{border-color:rgba(124,92,255,.55);background:rgba(124,92,255,.18)}
     .btn.danger{border-color:rgba(255,77,109,.45);background:rgba(255,77,109,.12)}
+    .btn.small{padding:7px 10px;font-size:12px}
     .btn:disabled{opacity:.55;cursor:not-allowed}
-
-    .mono{font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;}
-    .muted{color:var(--muted);font-size:12px;line-height:1.35}
 
     table{width:100%;border-collapse:collapse;font-size:12.5px}
     th,td{padding:9px 10px;border-bottom:1px solid rgba(255,255,255,.08);text-align:left;color:rgba(255,255,255,.86)}
@@ -106,22 +107,7 @@
       border-radius:12px;
       outline:none;
     }
-    textarea{min-height:140px;resize:vertical}
-    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-    .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
-    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-    .pill{
-      display:flex;gap:8px;align-items:center;
-      padding:10px 12px;border-radius:14px;
-      border:1px solid rgba(255,255,255,.10);
-      background:rgba(0,0,0,.18);
-      color:rgba(255,255,255,.75);
-      font-size:12px;
-      justify-content:space-between;
-    }
-    .dot{width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.25);display:inline-block}
-    .dot.ok{background:rgba(45,212,191,.95)}
-    .dot.bad{background:rgba(255,77,109,.95)}
+    textarea{min-height:120px;resize:vertical}
 
     .right{
       position:sticky;
@@ -139,21 +125,68 @@
       box-shadow:var(--shadow);
       backdrop-filter:blur(12px);
     }
-    pre{margin:0;padding:12px;max-height:180px;overflow:auto;font-size:12px}
+    .pill{
+      display:flex;gap:8px;align-items:center;
+      padding:10px 12px;border-radius:14px;
+      border:1px solid rgba(255,255,255,.10);
+      background:rgba(0,0,0,.18);
+      color:rgba(255,255,255,.75);
+      font-size:12px;
+      justify-content:space-between;
+    }
+    .dot{width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.25);display:inline-block}
+    .dot.ok{background:rgba(45,212,191,.95)}
+    .dot.bad{background:rgba(255,77,109,.95)}
+
+    .kpiCard{
+      border:1px solid rgba(255,255,255,.10);
+      border-radius:14px;
+      background:rgba(0,0,0,.18);
+      padding:10px;
+    }
+    .kpiRow{display:flex;justify-content:space-between;gap:10px; padding:6px 0; border-bottom:1px solid rgba(255,255,255,.06)}
+    .kpiRow:last-child{border-bottom:none}
+    .kpiRow b{font-weight:1000;color:rgba(255,255,255,.85)}
+    .kpiRow span{color:rgba(255,255,255,.70)}
+    pre{margin:0;padding:12px;max-height:200px;overflow:auto;font-size:12px}
+
+    /* modal */
+    .overlay{
+      position:fixed; inset:0;
+      background:rgba(0,0,0,.55);
+      display:none; align-items:center; justify-content:center;
+      padding:18px; z-index:50;
+    }
+    .modal{
+      width:min(980px, 100%);
+      background:rgba(12,16,24,.96);
+      border:1px solid rgba(255,255,255,.12);
+      border-radius:18px;
+      box-shadow:var(--shadow);
+      overflow:hidden;
+    }
+    .modalTop{
+      display:flex;align-items:center;justify-content:space-between;gap:12px;
+      padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.08)
+    }
+    .modalTop strong{font-size:16px}
+    .modalBody{padding:16px}
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+    .modalActions{display:flex;gap:10px;justify-content:flex-end;padding:14px 16px;border-top:1px solid rgba(255,255,255,.08);background:var(--panel2)}
+    .hidden{display:none !important}
   </style>
 </head>
 
 <body>
   <div class="app">
 
-    <!-- LEFT -->
-    <div style="display:flex;flex-direction:column;gap:12px;min-width:0;">
-
+    <div class="main">
       <div class="panel">
         <div class="panelBody" style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
           <div>
-            <div style="font-size:22px;font-weight:1000;">Resource</div>
-            <div class="muted">Gestione risorse (Counters / Specialist / Supporti / Teamleader) + turni/presenze. Alias inclusi.</div>
+            <div style="font-size:22px;font-weight:1000;">Stock Control - Productivity — Resource</div>
+            <div class="muted">Risorse garantite, supporti (time-over) e turni settimanali. Alias: hardcoded.</div>
           </div>
           <div class="row">
             <a class="btn" href="./index.html">Import</a>
@@ -162,76 +195,65 @@
         </div>
       </div>
 
-      <!-- RESOURCES TABLE -->
+      <!-- RISORSE GARANTITE -->
       <div class="panel">
         <div class="panelHeader">
-          <strong>Risorse</strong>
+          <strong>Risorse (garantite)</strong>
           <div class="row">
-            <select id="roleFilter" style="width:160px;">
-              <option value="">Tutti</option>
+            <button class="btn primary small" id="btnAddRes">＋</button>
+            <select id="resGroup" style="width:170px;">
+              <option value="all">Tutte</option>
               <option value="counter">Counters</option>
               <option value="specialist">Specialist</option>
-              <option value="support">Supporti</option>
               <option value="teamleader">Teamleader</option>
             </select>
-            <input id="qFilter" placeholder="Search (es: BEJAN)" style="width:220px;">
           </div>
         </div>
+
         <div style="max-height:360px;overflow:auto;">
-          <table id="tblResources">
+          <table id="tblRes">
             <thead>
               <tr>
-                <th>Code</th>
-                <th>Role</th>
-                <th>Active</th>
-                <th>Dept</th>
-                <th>Shift</th>
-                <th>Used</th>
-                <th>Azioni</th>
+                <th>WORKER</th>
+                <th>ROLE</th>
+                <th>SHIFT (W)</th>
+                <th>LAST ACT</th>
+                <th>Manage</th>
               </tr>
             </thead>
             <tbody></tbody>
           </table>
         </div>
-      </div>
 
-      <!-- ACCOUNTS FOUND -->
-      <div class="panel">
-        <div class="panelHeader">
-          <strong>Accounts trovati nei dati</strong>
-          <button class="btn" id="btnReloadAccounts">Ricarica</button>
-        </div>
         <div class="panelBody">
-          <div class="muted">Sono i codici visti in PI/WT (Counter/Created By). Da qui li aggiungi velocemente a Risorse o Alias.</div>
-          <div style="max-height:200px;overflow:auto;margin-top:10px;">
-            <table id="tblAccounts">
-              <thead>
-                <tr>
-                  <th>Account</th>
-                  <th>Stato</th>
-                  <th>Azione</th>
-                </tr>
-              </thead>
-              <tbody></tbody>
-            </table>
-          </div>
+          <div class="muted">SHIFT (W) = shift “settimana in corso” (se vuoto, conviene impostarlo o importare lo schedule per evitare falsi supporti).</div>
         </div>
       </div>
 
-      <!-- ALIASES -->
+      <!-- SUPPORTI (time-over + support segments) -->
       <div class="panel">
         <div class="panelHeader">
-          <strong>Alias</strong>
-          <button class="btn" id="btnClearAliasForm">Nuovo</button>
+          <strong>Supporti</strong>
+          <div class="row">
+            <input id="supWeek" type="date" style="width:170px;">
+            <button class="btn" id="btnReloadSupporti">Ricalcola</button>
+          </div>
         </div>
-        <div style="max-height:260px;overflow:auto;">
-          <table id="tblAliases">
+
+        <div class="panelBody">
+          <div class="muted">
+            Time Over = ore lavorate (da eventi) - ore attese (da schedule).
+            Se schedule manca, Time Over tende ad essere alto (quindi prima imposta/importa i turni).
+          </div>
+        </div>
+
+        <div style="max-height:320px;overflow:auto;">
+          <table id="tblSupporti">
             <thead>
               <tr>
-                <th>Alias</th>
-                <th>Canonico</th>
-                <th>Note</th>
-                <th>Azioni</th>
+                <th>Account</th>
+                <th>Time Over</th>
+                <th>Action</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -239,33 +261,25 @@
         </div>
       </div>
 
-      <!-- SCHEDULE VIEW -->
+      <!-- SCHEDULE (settimana) -->
       <div class="panel">
         <div class="panelHeader">
-          <strong>Schedule (viewer)</strong>
+          <strong>Schedule (Week)</strong>
           <div class="row">
-            <input id="viewFrom" type="date" style="width:160px;">
-            <input id="viewTo" type="date" style="width:160px;">
-            <button class="btn" id="btnLoadSchedule">Carica</button>
+            <input id="weekStart" type="date" style="width:170px;">
+            <button class="btn" id="btnLoadWeek">Carica</button>
+            <button class="btn primary" id="btnOpenImport">Carica turni</button>
           </div>
         </div>
-        <div style="max-height:360px;overflow:auto;">
-          <table id="tblSchedule">
-            <thead>
-              <tr>
-                <th>Operatore</th>
-                <th>Data</th>
-                <th>Seg</th>
-                <th>Status</th>
-                <th>Start</th>
-                <th>End</th>
-                <th>Shift</th>
-                <th>Dept</th>
-                <th>Used</th>
-                <th>Azioni</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
+
+        <div class="panelBody">
+          <div class="muted">Vista settimanale solo per risorse garantite. Clic su cella per impostare turno/ferie/permessi/altro.</div>
+        </div>
+
+        <div style="max-height:420px;overflow:auto;">
+          <table id="tblWeek">
+            <thead id="weekHead"></thead>
+            <tbody id="weekBody"></tbody>
           </table>
         </div>
       </div>
@@ -277,7 +291,7 @@
       </div>
     </div>
 
-    <!-- RIGHT -->
+    <!-- RIGHT SIDEBAR -->
     <aside class="right">
       <div class="pill">
         <div style="display:flex;gap:8px;align-items:center;">
@@ -289,150 +303,167 @@
 
       <button class="btn danger" id="btnReset" style="width:100%;">Reset session</button>
 
-      <div class="panel" style="box-shadow:none;">
-        <div class="panelHeader"><strong>Bootstrap</strong></div>
-        <div class="panelBody">
-          <div class="muted">Crea automaticamente Counters/Specialist/Support/TL + alias noti.</div>
-          <button class="btn primary" id="btnSeed" style="width:100%;margin-top:10px;">Seed default resources</button>
-        </div>
+      <div class="kpiCard">
+        <div class="kpiRow"><b>Guaranteed</b><span id="kpiGuaranteed">-</span></div>
+        <div class="kpiRow"><b>Counters</b><span id="kpiCounters">-</span></div>
+        <div class="kpiRow"><b>Specialist</b><span id="kpiSpecialist">-</span></div>
+        <div class="kpiRow"><b>Assenti prog.</b><span id="kpiAbsent">-</span></div>
+        <div class="kpiRow"><b>Time Over tot</b><span id="kpiOver">-</span></div>
+        <div class="kpiRow"><b>Support segments</b><span id="kpiSegments">-</span></div>
       </div>
 
-      <!-- RESOURCE FORM -->
-      <div class="panel" style="box-shadow:none;">
-        <div class="panelHeader"><strong>Risorsa</strong></div>
-        <div class="panelBody">
-          <div class="grid2">
-            <div>
-              <div class="muted">Operator code</div>
-              <input id="resCode" placeholder="es: A.BEJAN">
-            </div>
-            <div>
-              <div class="muted">Role</div>
-              <select id="resRole">
-                <option value="counter">Counter</option>
-                <option value="specialist">Specialist</option>
-                <option value="support">Supporto</option>
-                <option value="teamleader">Teamleader</option>
-              </select>
-            </div>
-          </div>
-
-          <div style="margin-top:10px;">
-            <div class="muted">Display name (opz.)</div>
-            <input id="resName" placeholder="es: E.BEJAN">
-          </div>
-
-          <div class="grid3" style="margin-top:10px;">
-            <div>
-              <div class="muted">Dept (support)</div>
-              <select id="resDept">
-                <option value="">—</option>
-                <option value="OP">OP</option>
-                <option value="IPL">IPL</option>
-                <option value="GR">GR</option>
-                <option value="RET">RET</option>
-                <option value="PC">PC</option>
-                <option value="EXP">EXP</option>
-              </select>
-            </div>
-            <div>
-              <div class="muted">Default shift</div>
-              <select id="resShift">
-                <option value="">—</option>
-                <option value="AM">AM</option>
-                <option value="C">C</option>
-                <option value="OM">OM</option>
-              </select>
-            </div>
-            <div>
-              <div class="muted">Used resource</div>
-              <input id="resUsed" placeholder="N/A, CLP-PICK-01...">
-            </div>
-          </div>
-
-          <div style="margin-top:10px;">
-            <label class="muted"><input type="checkbox" id="resActive" checked> Active</label>
-          </div>
-
-          <div style="margin-top:10px;">
-            <div class="muted">Note</div>
-            <input id="resNotes" placeholder="opzionale">
-          </div>
-
-          <div class="row" style="margin-top:12px;">
-            <button class="btn primary" id="btnSaveRes" style="flex:1;">Salva</button>
-            <button class="btn" id="btnClearRes" style="flex:1;">Nuovo</button>
-          </div>
-
-          <div class="muted" style="margin-top:8px;">Suggerimento: per Supporti imposta Dept/Shift/Used.</div>
-        </div>
+      <div class="kpiCard">
+        <div class="muted">Suggerimento operativo:</div>
+        <div class="muted">1) Importa turni settimana</div>
+        <div class="muted">2) Controlla Supporti (time-over)</div>
+        <div class="muted">3) “Set supporto” per attribuire ore extra</div>
       </div>
-
-      <!-- ALIAS FORM -->
-      <div class="panel" style="box-shadow:none;">
-        <div class="panelHeader"><strong>Alias</strong></div>
-        <div class="panelBody">
-          <div class="grid2">
-            <div>
-              <div class="muted">Alias</div>
-              <input id="alAlias" placeholder="es: S.TAZANOU">
-            </div>
-            <div>
-              <div class="muted">Canonico</div>
-              <input id="alCanon" placeholder="es: R.SOLL">
-            </div>
-          </div>
-          <div style="margin-top:10px;">
-            <div class="muted">Note</div>
-            <input id="alNote" placeholder="opzionale">
-          </div>
-          <div class="row" style="margin-top:12px;">
-            <button class="btn primary" id="btnSaveAlias" style="flex:1;">Salva</button>
-            <button class="btn" id="btnClearAlias" style="flex:1;">Nuovo</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- SCHEDULE IMPORT -->
-      <div class="panel" style="box-shadow:none;">
-        <div class="panelHeader"><strong>Schedule import</strong></div>
-        <div class="panelBody">
-          <div class="muted">Copia-incolla la tabella Excel (TSV) oppure carica .xlsx. Parser: righe date + righe operatori.</div>
-
-          <div class="grid2" style="margin-top:10px;">
-            <div>
-              <div class="muted">From</div>
-              <input id="impFrom" type="date">
-            </div>
-            <div>
-              <div class="muted">To</div>
-              <input id="impTo" type="date">
-            </div>
-          </div>
-
-          <div style="margin-top:10px;">
-            <div class="muted">Paste (TSV)</div>
-            <textarea id="pasteBox" placeholder="Incolla qui la tabella..."></textarea>
-          </div>
-
-          <div style="margin-top:10px;">
-            <div class="muted">Oppure file Excel</div>
-            <input id="xlsxFile" type="file" accept=".xlsx,.xls">
-          </div>
-
-          <div class="row" style="margin-top:12px;">
-            <button class="btn" id="btnParse" style="flex:1;">Parse preview</button>
-            <button class="btn primary" id="btnSaveSchedule" style="flex:1;" disabled>Salva schedule</button>
-          </div>
-
-          <div class="muted" style="margin-top:8px;">Nota: “ferie” → vacation. Celle vuote → off (non salva).</div>
-        </div>
-      </div>
-
     </aside>
   </div>
 
-  <!-- XLSX for Excel import -->
+  <!-- MODAL: Resource add/edit -->
+  <div id="resOverlay" class="overlay">
+    <div class="modal">
+      <div class="modalTop">
+        <strong id="resTitle">Risorsa</strong>
+        <button class="btn" id="btnCloseRes">Chiudi</button>
+      </div>
+      <div class="modalBody">
+        <div class="grid3">
+          <div>
+            <div class="muted">Account</div>
+            <input id="resCode" placeholder="A.BEJAN">
+          </div>
+          <div>
+            <div class="muted">Role</div>
+            <select id="resRole">
+              <option value="counter">Counter</option>
+              <option value="specialist">Specialist</option>
+              <option value="teamleader">Teamleader</option>
+            </select>
+          </div>
+          <div>
+            <div class="muted">Shift settimana</div>
+            <select id="resWeekShift">
+              <option value="">—</option>
+              <option value="AM">AM</option>
+              <option value="C">C</option>
+              <option value="OM">OM</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="modalActions">
+        <button class="btn primary" id="btnSaveRes">Salva</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Set supporto -->
+  <div id="supOverlay" class="overlay">
+    <div class="modal">
+      <div class="modalTop">
+        <strong id="supTitle">Set supporto</strong>
+        <button class="btn" id="btnCloseSup">Chiudi</button>
+      </div>
+      <div class="modalBody">
+        <div class="grid2">
+          <div>
+            <div class="muted">Account usato</div>
+            <input id="supAccount" disabled>
+          </div>
+          <div>
+            <div class="muted">Tipo</div>
+            <select id="supKind">
+              <option value="overtime_counter">Straordinario Counter</option>
+              <option value="specialist_ops">Specialist OPS</option>
+              <option value="support">Supporto</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="supRealWrap" class="grid2" style="margin-top:10px;">
+          <div>
+            <div class="muted">Nome reale (solo Supporto)</div>
+            <input id="supReal" placeholder="Es. Mario Rossi / M.HAYAT">
+          </div>
+          <div>
+            <div class="muted">Reparto (solo Supporto)</div>
+            <select id="supDept">
+              <option value="">—</option>
+              <option value="OP">OP</option><option value="IPL">IPL</option><option value="GR">GR</option>
+              <option value="RET">RET</option><option value="PC">PC</option><option value="EXP">EXP</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="supUsedWrap" style="margin-top:10px;">
+          <div class="muted">Risorsa usata (solo Supporto)</div>
+          <input id="supUsed" placeholder="N/A, CLP-PICK-01, INV-PICK-04...">
+        </div>
+
+        <div class="grid3" style="margin-top:10px;">
+          <div>
+            <div class="muted">Giorno</div>
+            <input id="supDay" type="date">
+          </div>
+          <div>
+            <div class="muted">Start</div>
+            <input id="supStart" type="time">
+          </div>
+          <div>
+            <div class="muted">End</div>
+            <input id="supEnd" type="time">
+          </div>
+        </div>
+
+        <div style="margin-top:10px;">
+          <div class="muted">Note</div>
+          <input id="supNote" placeholder="opzionale">
+        </div>
+
+        <div class="muted" style="margin-top:10px;">Segmenti già inseriti (settimana):</div>
+        <div style="max-height:180px;overflow:auto;margin-top:8px;">
+          <table id="tblSupSeg">
+            <thead>
+              <tr><th>Kind</th><th>Start</th><th>End</th><th>Real</th><th>Del</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modalActions">
+        <button class="btn primary" id="btnSaveSupSeg">Salva</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Week import (paste/xlsx) -->
+  <div id="impOverlay" class="overlay">
+    <div class="modal">
+      <div class="modalTop">
+        <strong>Import turni (paste o xlsx)</strong>
+        <button class="btn" id="btnCloseImp">Chiudi</button>
+      </div>
+      <div class="modalBody">
+        <div class="muted">Incolla la tabella Excel (TSV) o carica .xlsx. Parser riconosce date + righe operatori.</div>
+        <div style="margin-top:10px;">
+          <div class="muted">Paste TSV</div>
+          <textarea id="impPaste" placeholder="Incolla qui..."></textarea>
+        </div>
+        <div style="margin-top:10px;">
+          <div class="muted">Oppure file Excel</div>
+          <input id="impFile" type="file" accept=".xlsx,.xls">
+        </div>
+        <div class="row" style="margin-top:12px;">
+          <button class="btn" id="btnParseImp" style="flex:1;">Parse</button>
+          <button class="btn primary" id="btnSaveImp" style="flex:1;" disabled>Salva</button>
+        </div>
+        <div class="muted" style="margin-top:10px;">Alias hardcoded: S.TAZANOU→R.SOLL, F.SAADANI→S.FETHIA. “ferie”→vacation, “perm”→permission.</div>
+      </div>
+    </div>
+  </div>
+
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script type="module" src="./resource.js"></script>
 </body>
