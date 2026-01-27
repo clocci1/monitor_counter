@@ -1,0 +1,439 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Stock Control - Productivity | Resource</title>
+
+  <style>
+    :root{
+      --bg:#0b0f14;
+      --panel:rgba(255,255,255,.06);
+      --panel2:rgba(255,255,255,.04);
+      --stroke:rgba(255,255,255,.10);
+      --text:rgba(255,255,255,.92);
+      --muted:rgba(255,255,255,.62);
+      --shadow:0 18px 55px rgba(0,0,0,.55);
+      --radius:16px;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0; min-height:100vh;
+      background:
+        radial-gradient(1000px 500px at 10% -10%, rgba(124,92,255,.35), transparent 60%),
+        radial-gradient(800px 500px at 100% 0%, rgba(45,212,191,.18), transparent 60%),
+        var(--bg);
+      color:var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+    }
+
+    .app{
+      display:grid;
+      grid-template-columns: 1fr 360px;
+      gap:12px;
+      padding:16px;
+      max-width: 1500px;
+      margin:0 auto;
+    }
+    @media(max-width:1100px){
+      .app{grid-template-columns:1fr}
+      .right{position:relative; top:auto; height:auto;}
+    }
+
+    .panel{
+      border:1px solid var(--stroke);
+      border-radius:var(--radius);
+      background:rgba(255,255,255,.03);
+      box-shadow:var(--shadow);
+      backdrop-filter: blur(12px);
+      overflow:hidden;
+    }
+    .panelHeader{
+      padding:10px 12px;
+      border-bottom:1px solid rgba(255,255,255,.08);
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:10px;
+      background:rgba(255,255,255,.02);
+    }
+    .panelHeader strong{
+      font-size:12px;
+      color:var(--muted);
+      text-transform:uppercase;
+      letter-spacing:.2px;
+    }
+    .panelBody{padding:12px}
+
+    .btn{
+      appearance:none;
+      border:1px solid rgba(255,255,255,.12);
+      background:rgba(255,255,255,.06);
+      color:var(--text);
+      padding:10px 12px;
+      border-radius:999px;
+      cursor:pointer;
+      font-weight:900;
+      font-size:13px;
+    }
+    .btn:hover{background:rgba(255,255,255,.10);border-color:rgba(255,255,255,.16)}
+    .btn.primary{border-color:rgba(124,92,255,.55);background:rgba(124,92,255,.18)}
+    .btn.danger{border-color:rgba(255,77,109,.45);background:rgba(255,77,109,.12)}
+    .btn:disabled{opacity:.55;cursor:not-allowed}
+
+    .mono{font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;}
+    .muted{color:var(--muted);font-size:12px;line-height:1.35}
+
+    table{width:100%;border-collapse:collapse;font-size:12.5px}
+    th,td{padding:9px 10px;border-bottom:1px solid rgba(255,255,255,.08);text-align:left;color:rgba(255,255,255,.86)}
+    th{
+      position:sticky;top:0;
+      background:rgba(10,14,20,.85);
+      backdrop-filter:blur(10px);
+      color:rgba(255,255,255,.75);
+      font-weight:900;
+      letter-spacing:.2px
+    }
+    tr:hover td{background:rgba(255,255,255,.03)}
+    .link{color:#9cc2ff;text-decoration:none;font-weight:900;cursor:pointer}
+
+    input,select,textarea{
+      width:100%;
+      background:rgba(0,0,0,.22);
+      border:1px solid rgba(255,255,255,.12);
+      color:var(--text);
+      padding:9px 10px;
+      border-radius:12px;
+      outline:none;
+    }
+    textarea{min-height:140px;resize:vertical}
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    .pill{
+      display:flex;gap:8px;align-items:center;
+      padding:10px 12px;border-radius:14px;
+      border:1px solid rgba(255,255,255,.10);
+      background:rgba(0,0,0,.18);
+      color:rgba(255,255,255,.75);
+      font-size:12px;
+      justify-content:space-between;
+    }
+    .dot{width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.25);display:inline-block}
+    .dot.ok{background:rgba(45,212,191,.95)}
+    .dot.bad{background:rgba(255,77,109,.95)}
+
+    .right{
+      position:sticky;
+      top:16px;
+      align-self:start;
+      height: calc(100vh - 32px);
+      overflow:auto;
+      padding:12px;
+      display:flex;
+      flex-direction:column;
+      gap:12px;
+      border:1px solid var(--stroke);
+      border-radius:var(--radius);
+      background:linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03));
+      box-shadow:var(--shadow);
+      backdrop-filter:blur(12px);
+    }
+    pre{margin:0;padding:12px;max-height:180px;overflow:auto;font-size:12px}
+  </style>
+</head>
+
+<body>
+  <div class="app">
+
+    <!-- LEFT -->
+    <div style="display:flex;flex-direction:column;gap:12px;min-width:0;">
+
+      <div class="panel">
+        <div class="panelBody" style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
+          <div>
+            <div style="font-size:22px;font-weight:1000;">Resource</div>
+            <div class="muted">Gestione risorse (Counters / Specialist / Supporti / Teamleader) + turni/presenze. Alias inclusi.</div>
+          </div>
+          <div class="row">
+            <a class="btn" href="./index.html">Import</a>
+            <a class="btn" href="./overview.html">Overview</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- RESOURCES TABLE -->
+      <div class="panel">
+        <div class="panelHeader">
+          <strong>Risorse</strong>
+          <div class="row">
+            <select id="roleFilter" style="width:160px;">
+              <option value="">Tutti</option>
+              <option value="counter">Counters</option>
+              <option value="specialist">Specialist</option>
+              <option value="support">Supporti</option>
+              <option value="teamleader">Teamleader</option>
+            </select>
+            <input id="qFilter" placeholder="Search (es: BEJAN)" style="width:220px;">
+          </div>
+        </div>
+        <div style="max-height:360px;overflow:auto;">
+          <table id="tblResources">
+            <thead>
+              <tr>
+                <th>Code</th>
+                <th>Role</th>
+                <th>Active</th>
+                <th>Dept</th>
+                <th>Shift</th>
+                <th>Used</th>
+                <th>Azioni</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ACCOUNTS FOUND -->
+      <div class="panel">
+        <div class="panelHeader">
+          <strong>Accounts trovati nei dati</strong>
+          <button class="btn" id="btnReloadAccounts">Ricarica</button>
+        </div>
+        <div class="panelBody">
+          <div class="muted">Sono i codici visti in PI/WT (Counter/Created By). Da qui li aggiungi velocemente a Risorse o Alias.</div>
+          <div style="max-height:200px;overflow:auto;margin-top:10px;">
+            <table id="tblAccounts">
+              <thead>
+                <tr>
+                  <th>Account</th>
+                  <th>Stato</th>
+                  <th>Azione</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ALIASES -->
+      <div class="panel">
+        <div class="panelHeader">
+          <strong>Alias</strong>
+          <button class="btn" id="btnClearAliasForm">Nuovo</button>
+        </div>
+        <div style="max-height:260px;overflow:auto;">
+          <table id="tblAliases">
+            <thead>
+              <tr>
+                <th>Alias</th>
+                <th>Canonico</th>
+                <th>Note</th>
+                <th>Azioni</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- SCHEDULE VIEW -->
+      <div class="panel">
+        <div class="panelHeader">
+          <strong>Schedule (viewer)</strong>
+          <div class="row">
+            <input id="viewFrom" type="date" style="width:160px;">
+            <input id="viewTo" type="date" style="width:160px;">
+            <button class="btn" id="btnLoadSchedule">Carica</button>
+          </div>
+        </div>
+        <div style="max-height:360px;overflow:auto;">
+          <table id="tblSchedule">
+            <thead>
+              <tr>
+                <th>Operatore</th>
+                <th>Data</th>
+                <th>Seg</th>
+                <th>Status</th>
+                <th>Start</th>
+                <th>End</th>
+                <th>Shift</th>
+                <th>Dept</th>
+                <th>Used</th>
+                <th>Azioni</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- LOG -->
+      <div class="panel">
+        <div class="panelHeader"><strong>Log</strong></div>
+        <pre id="log"></pre>
+      </div>
+    </div>
+
+    <!-- RIGHT -->
+    <aside class="right">
+      <div class="pill">
+        <div style="display:flex;gap:8px;align-items:center;">
+          <span id="authDot" class="dot"></span>
+          <span id="authStatus">...</span>
+        </div>
+        <span class="mono" id="userId">-</span>
+      </div>
+
+      <button class="btn danger" id="btnReset" style="width:100%;">Reset session</button>
+
+      <div class="panel" style="box-shadow:none;">
+        <div class="panelHeader"><strong>Bootstrap</strong></div>
+        <div class="panelBody">
+          <div class="muted">Crea automaticamente Counters/Specialist/Support/TL + alias noti.</div>
+          <button class="btn primary" id="btnSeed" style="width:100%;margin-top:10px;">Seed default resources</button>
+        </div>
+      </div>
+
+      <!-- RESOURCE FORM -->
+      <div class="panel" style="box-shadow:none;">
+        <div class="panelHeader"><strong>Risorsa</strong></div>
+        <div class="panelBody">
+          <div class="grid2">
+            <div>
+              <div class="muted">Operator code</div>
+              <input id="resCode" placeholder="es: A.BEJAN">
+            </div>
+            <div>
+              <div class="muted">Role</div>
+              <select id="resRole">
+                <option value="counter">Counter</option>
+                <option value="specialist">Specialist</option>
+                <option value="support">Supporto</option>
+                <option value="teamleader">Teamleader</option>
+              </select>
+            </div>
+          </div>
+
+          <div style="margin-top:10px;">
+            <div class="muted">Display name (opz.)</div>
+            <input id="resName" placeholder="es: E.BEJAN">
+          </div>
+
+          <div class="grid3" style="margin-top:10px;">
+            <div>
+              <div class="muted">Dept (support)</div>
+              <select id="resDept">
+                <option value="">—</option>
+                <option value="OP">OP</option>
+                <option value="IPL">IPL</option>
+                <option value="GR">GR</option>
+                <option value="RET">RET</option>
+                <option value="PC">PC</option>
+                <option value="EXP">EXP</option>
+              </select>
+            </div>
+            <div>
+              <div class="muted">Default shift</div>
+              <select id="resShift">
+                <option value="">—</option>
+                <option value="AM">AM</option>
+                <option value="C">C</option>
+                <option value="OM">OM</option>
+              </select>
+            </div>
+            <div>
+              <div class="muted">Used resource</div>
+              <input id="resUsed" placeholder="N/A, CLP-PICK-01...">
+            </div>
+          </div>
+
+          <div style="margin-top:10px;">
+            <label class="muted"><input type="checkbox" id="resActive" checked> Active</label>
+          </div>
+
+          <div style="margin-top:10px;">
+            <div class="muted">Note</div>
+            <input id="resNotes" placeholder="opzionale">
+          </div>
+
+          <div class="row" style="margin-top:12px;">
+            <button class="btn primary" id="btnSaveRes" style="flex:1;">Salva</button>
+            <button class="btn" id="btnClearRes" style="flex:1;">Nuovo</button>
+          </div>
+
+          <div class="muted" style="margin-top:8px;">Suggerimento: per Supporti imposta Dept/Shift/Used.</div>
+        </div>
+      </div>
+
+      <!-- ALIAS FORM -->
+      <div class="panel" style="box-shadow:none;">
+        <div class="panelHeader"><strong>Alias</strong></div>
+        <div class="panelBody">
+          <div class="grid2">
+            <div>
+              <div class="muted">Alias</div>
+              <input id="alAlias" placeholder="es: S.TAZANOU">
+            </div>
+            <div>
+              <div class="muted">Canonico</div>
+              <input id="alCanon" placeholder="es: R.SOLL">
+            </div>
+          </div>
+          <div style="margin-top:10px;">
+            <div class="muted">Note</div>
+            <input id="alNote" placeholder="opzionale">
+          </div>
+          <div class="row" style="margin-top:12px;">
+            <button class="btn primary" id="btnSaveAlias" style="flex:1;">Salva</button>
+            <button class="btn" id="btnClearAlias" style="flex:1;">Nuovo</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- SCHEDULE IMPORT -->
+      <div class="panel" style="box-shadow:none;">
+        <div class="panelHeader"><strong>Schedule import</strong></div>
+        <div class="panelBody">
+          <div class="muted">Copia-incolla la tabella Excel (TSV) oppure carica .xlsx. Parser: righe date + righe operatori.</div>
+
+          <div class="grid2" style="margin-top:10px;">
+            <div>
+              <div class="muted">From</div>
+              <input id="impFrom" type="date">
+            </div>
+            <div>
+              <div class="muted">To</div>
+              <input id="impTo" type="date">
+            </div>
+          </div>
+
+          <div style="margin-top:10px;">
+            <div class="muted">Paste (TSV)</div>
+            <textarea id="pasteBox" placeholder="Incolla qui la tabella..."></textarea>
+          </div>
+
+          <div style="margin-top:10px;">
+            <div class="muted">Oppure file Excel</div>
+            <input id="xlsxFile" type="file" accept=".xlsx,.xls">
+          </div>
+
+          <div class="row" style="margin-top:12px;">
+            <button class="btn" id="btnParse" style="flex:1;">Parse preview</button>
+            <button class="btn primary" id="btnSaveSchedule" style="flex:1;" disabled>Salva schedule</button>
+          </div>
+
+          <div class="muted" style="margin-top:8px;">Nota: “ferie” → vacation. Celle vuote → off (non salva).</div>
+        </div>
+      </div>
+
+    </aside>
+  </div>
+
+  <!-- XLSX for Excel import -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script type="module" src="./resource.js"></script>
+</body>
+</html>
