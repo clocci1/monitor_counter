@@ -258,19 +258,38 @@
             </thead>
             <tbody></tbody>
           </table>
+          <div class="panelBody">
+  <div class="muted">Segmenti supporto inseriti (week):</div>
+  <div style="max-height:220px;overflow:auto;margin-top:8px;">
+    <table id="tblSupportSeg">
+      <thead>
+        <tr>
+          <th>Account</th><th>Kind</th><th>Start</th><th>End</th><th>Real</th><th>Del</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</div>
+
         </div>
       </div>
 
       <!-- SCHEDULE (settimana) -->
-      <div class="panel">
-        <div class="panelHeader">
-          <strong>Schedule (Week)</strong>
-          <div class="row">
-            <input id="weekStart" type="date" style="width:170px;">
-            <button class="btn" id="btnLoadWeek">Carica</button>
-            <button class="btn primary" id="btnOpenImport">Carica turni</button>
-          </div>
-        </div>
+<div class="panelHeader">
+  <strong>Schedule</strong>
+  <div class="row">
+    <button class="btn small" id="btnPrevWeek">‹</button>
+    <div class="mono" id="weekLabel"
+      style="min-width:260px;text-align:center;color:rgba(255,255,255,.75);font-weight:900;">
+      —
+    </div>
+    <button class="btn small" id="btnNextWeek">›</button>
+    <button class="btn primary" id="btnOpenImport">Carica turni</button>
+  </div>
+</div>
+
+
 
         <div class="panelBody">
           <div class="muted">Vista settimanale solo per risorse garantite. Clic su cella per impostare turno/ferie/permessi/altro.</div>
