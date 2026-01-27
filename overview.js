@@ -7,8 +7,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 const $ = (id) => document.getElementById(id);
 const logEl = $("log");
 
-const PAUSE_THRESHOLD_SEC = 30 * 60; // > 30 min => pausa
-const SLOT_MINUTES = 30;
+const PAUSE_THRESHOLD_SEC = 30 * 60;
 
 const SHIFTS = {
   AM: { start: "05:00", end: "13:00" },
@@ -17,16 +16,16 @@ const SHIFTS = {
 };
 
 let currentUser = null;
-let cachedEvents = [];
-let currentRange = { start: null, end: null };
-
+let cachedEvents = [];          // fetched for base range
+let effectiveEvents = [];       // after items + chip filter
 let currentOperator = null;
-let currentIntervals = [];
-let currentBlocks = [];
-let operatorDayList = [];
 
-let supportAccountOpen = null;
+let selectedChipDays = new Set(); // “filtro sul filtro”
+let effectiveDayList = [];        // days produced by right sidebar selection
+let drillDay = null;              // single day for blocks/detail
+
 let manualActivities = [];
+let supportAccountOpen = null;
 
 function log(...args) {
   const line = args.map(a => (typeof a === "string" ? a : JSON.stringify(a, null, 2))).join(" ");
@@ -38,9 +37,6 @@ function setBusy(isBusy, msg="") {
   $("btnApply").disabled = isBusy;
   $("btnRefresh").disabled = isBusy;
   $("btnReset").disabled = isBusy;
-  $("btnViewSequence").disabled = isBusy;
-  $("btnExportCsv").disabled = isBusy;
-  $("busyLabel").textContent = msg;
 }
 
 function setAuthUI(ok, statusText, userId) {
@@ -69,6 +65,13 @@ function fmtDT(d) {
   return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
 }
 
+function dayKey(d) {
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth()+1).padStart(2,"0");
+  const dd = String(d.getDate()).padStart(2,"0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 function secToHHMM(sec) {
   const s = Math.max(0, Math.floor(sec));
   const h = Math.floor(s / 3600);
@@ -86,13 +89,20 @@ function uniq(arr) {
   return Array.from(new Set(arr));
 }
 
+function parseTimeToDay(day, hhmm) {
+  const [hh, mm] = hhmm.split(":").map(Number);
+  const d = new Date(`${day}T00:00:00`);
+  d.setHours(hh, mm, 0, 0);
+  return d;
+}
+
 function categoryToRowClass(cat) {
   if (cat === "PI Pick") return "row-pick";
   if (cat === "PI Bulk") return "row-bulk";
   if (cat === "P2P") return "row-p2p";
   if (cat === "CLP") return "row-clp";
   if (cat === "PAUSA") return "row-pause";
-  return "row-mix";
+  return "";
 }
 
 function categoryToCssBg(cat) {
@@ -102,56 +112,6 @@ function categoryToCssBg(cat) {
   if (cat === "CLP") return "var(--c-clp)";
   if (cat === "PAUSA") return "var(--c-pause)";
   return "var(--c-mix)";
-}
-
-function buildSlotGradient(acc, totalMs) {
-  // acc: Map(category -> overlapMs)
-  const order = ["PI Pick", "PI Bulk", "P2P", "CLP", "PAUSA"];
-
-  // se nessun overlap
-  if (totalMs <= 0) {
-    return "rgba(255,255,255,.06)";
-  }
-
-  let pos = 0;
-  const parts = [];
-
-  const present = order.filter(cat => (acc.get(cat) || 0) > 0);
-  if (present.length === 1) {
-    // colore pieno
-    return categoryToCssBg(present[0]);
-  }
-
-  // multi-categoria: gradient proporzionale
-  for (let i = 0; i < present.length; i++) {
-    const cat = present[i];
-    const ms = acc.get(cat) || 0;
-    let pct = (ms / totalMs) * 100;
-
-    // ultima categoria chiude a 100 per evitare buchi di rounding
-    const start = pos;
-    const end = (i === present.length - 1) ? 100 : Math.min(100, pos + pct);
-
-    parts.push(`${categoryToCssBg(cat)} ${start}% ${end}%`);
-    pos = end;
-  }
-
-  return `linear-gradient(to right, ${parts.join(", ")})`;
-}
-
-function buildSlotTooltip(acc) {
-  // tooltip con breakdown
-  const order = ["PI Pick", "PI Bulk", "P2P", "CLP", "PAUSA"];
-  const chunks = [];
-
-  for (const cat of order) {
-    const ms = acc.get(cat) || 0;
-    if (ms <= 0) continue;
-    const min = Math.round(ms / 60000);
-    chunks.push(`${cat}: ${min}m`);
-  }
-
-  return chunks.join(" | ") || "—";
 }
 
 // -------------------- Auth --------------------
@@ -169,40 +129,97 @@ async function ensureAnonymousSession() {
 }
 
 async function resetSession() {
-  setBusy(true, "reset session...");
+  setBusy(true);
   await supabase.auth.signOut();
-  setAuthUI(false, "signed-out", "-");
-  setBusy(false, "");
+  setBusy(false);
   location.reload();
 }
 
-// -------------------- Range selection --------------------
-function computeRangeFromUI() {
+// -------------------- Right sidebar filter (type + items) --------------------
+function dateRangeList(fromDay, toDay) {
+  const out = [];
+  const a = new Date(`${fromDay}T00:00:00`);
+  const b = new Date(`${toDay}T00:00:00`);
+  for (let d = new Date(a); d <= b; d.setDate(d.getDate() + 1)) {
+    out.push(dayKey(d));
+  }
+  return out;
+}
+
+function isoWeekKey(d) {
+  // ISO week key like 2026-W04
+  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dayNum = date.getUTCDay() || 7;
+  date.setUTCDate(date.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
+  return `${date.getUTCFullYear()}-W${String(weekNo).padStart(2,"0")}`;
+}
+
+function monthKey(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+}
+
+function rebuildRangeItems() {
   const type = $("rangeType").value;
-  const val = Math.max(1, Number($("rangeValue").value || 1));
-  const endDate = $("endDate").value;
+  const from = $("fromDate").value;
+  const to = $("toDate").value;
+  const sel = $("rangeItems");
 
-  const end = endDate ? new Date(`${endDate}T23:59:59`) : new Date();
-  let days = val;
-  if (type === "weeks") days = val * 7;
-  if (type === "months") days = val * 30;
+  sel.innerHTML = "";
+  if (!from || !to) return;
 
-  const start = new Date(end.getTime() - days * 24 * 3600 * 1000);
-  start.setHours(0,0,0,0);
-  return { start, end };
+  const days = dateRangeList(from, to);
+
+  let items = [];
+  if (type === "days") {
+    items = days;
+  } else if (type === "weeks") {
+    items = uniq(days.map(x => isoWeekKey(new Date(`${x}T00:00:00`)))).sort();
+  } else {
+    items = uniq(days.map(x => monthKey(new Date(`${x}T00:00:00`)))).sort();
+  }
+
+  for (const it of items) {
+    const opt = document.createElement("option");
+    opt.value = it;
+    opt.textContent = it;
+    sel.appendChild(opt);
+  }
 }
 
-function rangeToFilter(range) {
-  const start = fmtDT(range.start).replace(" ", "T");
-  const end = fmtDT(range.end).replace(" ", "T");
-  return { start, end };
+function getSelectedOptions(selectEl) {
+  return Array.from(selectEl.selectedOptions).map(o => o.value);
 }
 
-// -------------------- Fetch ALL events (pagination) --------------------
-// Fix "operatori mancanti": la API può limitare le righe per request.
-// Con questa funzione paginiamo finché non finisce.
-async function fetchEventsAll(range) {
-  const { start, end } = rangeToFilter(range);
+function computeEffectiveDays() {
+  const type = $("rangeType").value;
+  const from = $("fromDate").value;
+  const to = $("toDate").value;
+  const picked = getSelectedOptions($("rangeItems"));
+
+  if (!from || !to) return [];
+
+  const baseDays = dateRangeList(from, to);
+
+  if (picked.length === 0) return baseDays;
+
+  if (type === "days") {
+    return picked.filter(d => baseDays.includes(d)).sort();
+  }
+
+  if (type === "weeks") {
+    return baseDays.filter(d => picked.includes(isoWeekKey(new Date(`${d}T00:00:00`))));
+  }
+
+  // months
+  return baseDays.filter(d => picked.includes(monthKey(new Date(`${d}T00:00:00`))));
+}
+
+// -------------------- Fetch ALL events for base range (pagination) --------------------
+async function fetchEventsAll(fromDay, toDay) {
+  const start = `${fromDay}T00:00:00`;
+  const end = `${toDay}T23:59:59`;
 
   const PAGE = 1000;
   let from = 0;
@@ -225,29 +242,15 @@ async function fetchEventsAll(range) {
     const batch = data ?? [];
     all = all.concat(batch);
 
-    if (batch.length < PAGE) break; // finito
+    if (batch.length < PAGE) break;
     from += PAGE;
-
-    // safety per evitare runaway
-    if (from > 50000) break;
+    if (from > 100000) break;
   }
 
+  // normalize operator_code to avoid duplicates due to spaces/case
+  all.forEach(e => { e.operator_code = String(e.operator_code ?? "-").trim(); });
+
   return all;
-}
-
-async function fetchManualActivities(operator, range) {
-  const { start, end } = rangeToFilter(range);
-
-  const { data, error } = await supabase
-    .from("manual_activity_segments")
-    .select("id,operator_code,start_dt,end_dt,label,color")
-    .eq("operator_code", operator)
-    .gte("start_dt", start)
-    .lte("end_dt", end)
-    .order("start_dt", { ascending: true });
-
-  if (error) throw error;
-  return data ?? [];
 }
 
 // -------------------- Category mapping --------------------
@@ -262,7 +265,7 @@ function mapCatForUI(ev) {
   return "CLP";
 }
 
-// -------------------- Intervals logic --------------------
+// Duration between event[i] and event[i+1] assigned to NEXT event category, >30 min = PAUSA
 function buildIntervalsForOperator(events) {
   const out = [];
   for (let i = 0; i < events.length - 1; i++) {
@@ -289,31 +292,20 @@ function groupBlocks(intervals) {
 
   for (const it of intervals) {
     if (!cur || cur.category !== it.category) {
-      cur = {
-        category: it.category,
-        start: it.start,
-        end: it.end,
-        sec: it.sec,
-        events: [], // eventi "nextEvent" associati agli intervalli del blocco
-      };
+      cur = { category: it.category, start: it.start, end: it.end, sec: it.sec, events: [] };
       blocks.push(cur);
     } else {
       cur.end = it.end;
       cur.sec += it.sec;
     }
 
-    // Importante:
-    // se il blocco è PAUSA, NON conteggiamo eventi (altrimenti la task dopo la pausa finisce dentro al blocco pausa)
-    if (it.category !== "PAUSA") {
-      cur.events.push(it.nextEvent);
-    }
+    // per conteggi: NON contare eventi dentro PAUSA
+    if (it.category !== "PAUSA") cur.events.push(it.nextEvent);
   }
 
   return blocks;
 }
 
-
-// -------------------- Aggregations --------------------
 function computeOperatorStats(opEvents) {
   const intervals = buildIntervalsForOperator(opEvents);
 
@@ -345,7 +337,6 @@ function computeOperatorStats(opEvents) {
 }
 
 function buildOperatorMap(events) {
-  // trim per evitare operatori “splittati” per spazi/refusi
   const map = new Map();
   for (const e of events) {
     const op = String(e.operator_code ?? "-").trim() || "-";
@@ -353,6 +344,41 @@ function buildOperatorMap(events) {
     map.get(op).push(e);
   }
   return map;
+}
+
+// -------------------- Date chips strip --------------------
+function attachStripArrows(leftBtnId, rightBtnId, scrollId) {
+  const left = $(leftBtnId);
+  const right = $(rightBtnId);
+  const sc = $(scrollId);
+
+  left.addEventListener("click", () => sc.scrollBy({ left: -220, behavior: "smooth" }));
+  right.addEventListener("click", () => sc.scrollBy({ left: 220, behavior: "smooth" }));
+}
+
+function renderDayChips(scrollId, days, multiSelect, selectedSet, onToggle) {
+  const sc = $(scrollId);
+  sc.innerHTML = "";
+
+  for (const d of days) {
+    const b = document.createElement("button");
+    b.className = "chip" + (selectedSet.has(d) ? " on" : "");
+    b.textContent = d.slice(5); // MM-DD
+    b.title = d;
+
+    b.addEventListener("click", () => {
+      if (!multiSelect) {
+        selectedSet.clear();
+        selectedSet.add(d);
+      } else {
+        if (selectedSet.has(d)) selectedSet.delete(d);
+        else selectedSet.add(d);
+      }
+      onToggle();
+    });
+
+    sc.appendChild(b);
+  }
 }
 
 // -------------------- Render tables --------------------
@@ -415,7 +441,6 @@ function renderBlocks(blocks) {
   tb.innerHTML = "";
 
   let prev = null;
-
   for (const b of blocks) {
     const tr = document.createElement("tr");
     tr.className = categoryToRowClass(b.category);
@@ -440,7 +465,6 @@ function renderBlocks(blocks) {
   }
 }
 
-
 function renderIntervals(intervals) {
   const tb = $("tblIntervals").querySelector("tbody");
   tb.innerHTML = "";
@@ -461,226 +485,237 @@ function renderIntervals(intervals) {
   }
 }
 
-// -------------------- Day + shift helpers --------------------
-function dayKey(d) {
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth()+1).padStart(2,"0");
-  const dd = String(d.getDate()).padStart(2,"0");
-  return `${yyyy}-${mm}-${dd}`;
+// -------------------- Filters application --------------------
+function applyChipFilter(events) {
+  if (selectedChipDays.size === 0) return events;
+  return events.filter(e => selectedChipDays.has(dayKey(parseDT(e.event_dt))));
 }
 
-function parseTimeToDay(day, hhmm) {
-  const [hh, mm] = hhmm.split(":").map(Number);
-  const d = new Date(`${day}T00:00:00`);
-  d.setHours(hh, mm, 0, 0);
-  return d;
+function applyEffectiveDayList(events) {
+  const set = new Set(effectiveDayList);
+  return events.filter(e => set.has(dayKey(parseDT(e.event_dt))));
 }
 
-function buildDayListForOperator(opEvents) {
-  const days = uniq(opEvents.map(e => dayKey(parseDT(e.event_dt)))).sort();
-  return days;
+// -------------------- Manual activities --------------------
+async function fetchManualActivities(operator, fromDay, toDay) {
+  const start = `${fromDay}T00:00:00`;
+  const end = `${toDay}T23:59:59`;
+
+  const { data, error } = await supabase
+    .from("manual_activity_segments")
+    .select("id,operator_code,start_dt,end_dt,label,color")
+    .eq("operator_code", operator)
+    .gte("start_dt", start)
+    .lte("end_dt", end)
+    .order("start_dt", { ascending: true });
+
+  if (error) throw error;
+  return data ?? [];
 }
 
-function chooseDefaultDayShift(intervals, days) {
-  let bestDay = days[0] ?? null;
-  let bestSec = -1;
+// -------------------- Drilldown: timeline continuous + multi-day --------------------
+function sliceIntervalsToDay(intervals, day) {
+  const dayStart = new Date(`${day}T00:00:00`);
+  const dayEnd = new Date(`${day}T23:59:59`);
 
-  for (const day of days) {
-    const dayStart = new Date(`${day}T00:00:00`);
-    const dayEnd = new Date(`${day}T23:59:59`);
-    let sec = 0;
-
-    for (const it of intervals) {
-      const overlap = Math.max(0, Math.min(it.end, dayEnd) - Math.max(it.start, dayStart));
-      if (overlap > 0 && it.category !== "PAUSA") sec += overlap / 1000;
-    }
-    if (sec > bestSec) { bestSec = sec; bestDay = day; }
+  const out = [];
+  for (const it of intervals) {
+    const s = new Date(Math.max(it.start.getTime(), dayStart.getTime()));
+    const e = new Date(Math.min(it.end.getTime(), dayEnd.getTime()));
+    const ms = e.getTime() - s.getTime();
+    if (ms <= 0) continue;
+    out.push({ ...it, start: s, end: e, sec: Math.floor(ms/1000) });
   }
-
-  let bestShift = "AM";
-  let bestShiftSec = -1;
-
-  for (const shiftKey of Object.keys(SHIFTS)) {
-    const sh = SHIFTS[shiftKey];
-    const shStart = parseTimeToDay(bestDay, sh.start);
-    const shEnd = parseTimeToDay(bestDay, sh.end);
-    let sec = 0;
-
-    for (const it of intervals) {
-      const overlap = Math.max(0, Math.min(it.end, shEnd) - Math.max(it.start, shStart));
-      if (overlap > 0 && it.category !== "PAUSA") sec += overlap / 1000;
-    }
-    if (sec > bestShiftSec) { bestShiftSec = sec; bestShift = shiftKey; }
-  }
-
-  return { day: bestDay, shift: bestShift };
+  return out;
 }
 
-function fillDaySelect(days) {
-  const sel = $("daySelect");
-  sel.innerHTML = "";
-  for (const d of days) {
-    const opt = document.createElement("option");
-    opt.value = d;
-    opt.textContent = d;
-    sel.appendChild(opt);
-  }
-}
-
-// -------------------- Manual overlay on PAUSA (visual) --------------------
-function findManualActivityForSlot(slotStart, slotEnd) {
-  for (const a of manualActivities) {
-    const as = parseDT(a.start_dt);
-    const ae = parseDT(a.end_dt);
-    if (!as || !ae) continue;
-    const overlap = Math.max(0, Math.min(ae, slotEnd) - Math.max(as, slotStart));
-    if (overlap > 0) return a;
-  }
-  return null;
-}
-
-// -------------------- Timeline full width (grid) --------------------
-function renderAxisAndTicks(day, shiftKey) {
-  const sh = SHIFTS[shiftKey];
-  $("axisLeft").textContent = `${day} ${sh.start}`;
-  $("axisRight").textContent = `${day} ${sh.end}`;
-
-  // 8 hours => 9 ticks (inclusive)
-  const startH = Number(sh.start.split(":")[0]);
-  const endH = Number(sh.end.split(":")[0]);
-
-  const ticks = $("timelineTicks");
-  ticks.innerHTML = "";
-
-  const hours = endH - startH;
-  const tickCount = hours + 1; // 9
-  for (let i = 0; i < tickCount; i++) {
-    const h = String(startH + i).padStart(2,"0");
-    const span = document.createElement("span");
-    span.textContent = `${h}:00`;
-    ticks.appendChild(span);
-  }
-}
-
-function renderTimelineForShift(intervals, day, shiftKey) {
+function buildSegmentsForDayShift(intervals, day, shiftKey) {
   const sh = SHIFTS[shiftKey];
   const shiftStart = parseTimeToDay(day, sh.start);
   const shiftEnd = parseTimeToDay(day, sh.end);
+  const totalMs = shiftEnd.getTime() - shiftStart.getTime();
 
-  renderAxisAndTicks(day, shiftKey);
+  // overlaps
+  const chunks = [];
+  for (const it of intervals) {
+    const a = Math.max(it.start.getTime(), shiftStart.getTime());
+    const b = Math.min(it.end.getTime(), shiftEnd.getTime());
+    if (b <= a) continue;
+    chunks.push({
+      category: it.category,
+      start: new Date(a),
+      end: new Date(b),
+      ms: b - a,
+    });
+  }
+  chunks.sort((x,y) => x.start - y.start);
 
-  const row = $("timelineRow");
-  row.innerHTML = "";
+  // merge consecutive same category
+  const merged = [];
+  for (const c of chunks) {
+    const last = merged[merged.length - 1];
+    if (last && last.category === c.category && last.end.getTime() === c.start.getTime()) {
+      last.end = c.end;
+      last.ms += c.ms;
+    } else {
+      merged.push({ ...c });
+    }
+  }
 
-  const slotMs = SLOT_MINUTES * 60 * 1000;
-  const slotCount = Math.round((shiftEnd.getTime() - shiftStart.getTime()) / slotMs);
+  // fill holes with NONE segments (optional) to show empty time
+  const filled = [];
+  let cursor = shiftStart.getTime();
+  for (const seg of merged) {
+    if (seg.start.getTime() > cursor) {
+      filled.push({
+        category: "NONE",
+        start: new Date(cursor),
+        end: new Date(seg.start.getTime()),
+        ms: seg.start.getTime() - cursor,
+      });
+    }
+    filled.push(seg);
+    cursor = seg.end.getTime();
+  }
+  if (cursor < shiftEnd.getTime()) {
+    filled.push({
+      category: "NONE",
+      start: new Date(cursor),
+      end: shiftEnd,
+      ms: shiftEnd.getTime() - cursor,
+    });
+  }
 
-  row.style.gridTemplateColumns = `repeat(${slotCount}, 1fr)`;
+  return { filled, shiftStart, shiftEnd, totalMs };
+}
 
-  for (let i = 0; i < slotCount; i++) {
-    const slotStart = new Date(shiftStart.getTime() + i * slotMs);
-    const slotEnd = new Date(slotStart.getTime() + slotMs);
+function renderMultiDayTimeline(intervals, days, shiftKey) {
+  const wrap = $("timelineMulti");
+  wrap.innerHTML = "";
 
-    // overlap durations per category
-    const acc = new Map(); // category -> overlapMs
-    let totalMs = 0;
+  for (const day of days) {
+    const { filled, shiftStart, shiftEnd, totalMs } = buildSegmentsForDayShift(intervals, day, shiftKey);
 
-    for (const it of intervals) {
-      const overlap = Math.max(0, Math.min(it.end, slotEnd) - Math.max(it.start, slotStart));
-      if (overlap <= 0) continue;
-      totalMs += overlap;
-      acc.set(it.category, (acc.get(it.category) || 0) + overlap);
+    const row = document.createElement("div");
+    row.className = "barRow";
+
+    const label = document.createElement("div");
+    label.className = "barLabel mono";
+    label.textContent = `${day}  ${fmtDT(shiftStart).slice(11,16)}–${fmtDT(shiftEnd).slice(11,16)}`;
+
+    const bar = document.createElement("div");
+    bar.className = "timeBar";
+
+    // build widths (%) – last segment closes remaining
+    let used = 0;
+    for (let i = 0; i < filled.length; i++) {
+      const s = filled[i];
+      const div = document.createElement("div");
+
+      const pct = (i === filled.length - 1)
+        ? Math.max(0, 100 - used)
+        : Math.round((s.ms / totalMs) * 1000) / 10; // 0.1%
+      used += pct;
+
+      div.className = "seg" + (s.category === "NONE" ? " none" : "");
+      div.style.width = `${pct}%`;
+      div.style.background = (s.category === "NONE") ? "rgba(255,255,255,.06)" : categoryToCssBg(s.category);
+      div.title = `${fmtDT(s.start).slice(11,16)}–${fmtDT(s.end).slice(11,16)} | ${s.category}`;
+
+      // click su PAUSA -> inserisci attività indiretta (segmento reale)
+      if (s.category === "PAUSA") {
+        div.addEventListener("click", () => openActivityModal(s.start, s.end));
+      }
+
+      bar.appendChild(div);
     }
 
-    // manual overlay SOLO come testo nel tooltip (se presente in pausa)
-    const manual = findManualActivityForSlot(slotStart, slotEnd);
-    const tooltipBreakdown = buildSlotTooltip(acc);
-
-    const pauseMs = acc.get("PAUSA") || 0;
-    const canClickPause = pauseMs > 0;
-
-    const seg = document.createElement("div");
-    seg.className = "seg";
-
-    // gradient coerente (anche MIX)
-    seg.style.background = buildSlotGradient(acc, totalMs);
-
-    const baseLabel = `${fmtDT(slotStart).slice(11,16)}–${fmtDT(slotEnd).slice(11,16)}`;
-    const manualTxt = (manual && pauseMs > 0) ? ` | Indirect: ${manual.label}` : "";
-    seg.title = `${baseLabel} | ${tooltipBreakdown}${manualTxt}`;
-
-    seg.addEventListener("click", () => {
-      // cliccabile se nello slot c'è almeno un pezzo di pausa
-      if (!canClickPause) return;
-      openActivityModal(slotStart, slotEnd);
-    });
-
-    row.appendChild(seg);
+    row.appendChild(label);
+    row.appendChild(bar);
+    wrap.appendChild(row);
   }
 }
 
+// -------------------- Drilldown open/render --------------------
+function getDrillDays() {
+  // se l’utente ha selezionato chips: quelle; altrimenti tutti i giorni effettivi
+  const base = (selectedChipDays.size > 0) ? Array.from(selectedChipDays) : [...effectiveDayList];
+  base.sort();
+  return base;
+}
 
-// -------------------- Drilldown --------------------
+function renderDrillDayChips(days) {
+  const sc = $("ddScroll");
+  sc.innerHTML = "";
+
+  for (const d of days) {
+    const b = document.createElement("button");
+    b.className = "chip" + (drillDay === d ? " on" : "");
+    b.textContent = d.slice(5);
+    b.title = d;
+
+    b.addEventListener("click", () => {
+      drillDay = d;
+      // re-render drill tables (blocks/intervals) per quella data
+      renderDrillTablesForDay();
+      // refresh chips UI
+      renderDrillDayChips(days);
+    });
+
+    sc.appendChild(b);
+  }
+}
+
+function renderDrillTablesForDay() {
+  if (!currentOperator || !drillDay) return;
+
+  const opEvents = effectiveEvents
+    .filter(e => String(e.operator_code ?? "-").trim() === currentOperator)
+    .sort((a,b) => parseDT(a.event_dt) - parseDT(b.event_dt));
+
+  const intervalsAll = buildIntervalsForOperator(opEvents);
+  const intervalsDay = sliceIntervalsToDay(intervalsAll, drillDay);
+
+  const blocks = groupBlocks(intervalsDay);
+
+  renderBlocks(blocks);
+  renderIntervals(intervalsDay);
+}
+
 async function openDrilldown(operator) {
   currentOperator = operator;
 
-  const opEvents = cachedEvents
+  $("drilldownSection").style.display = "block";
+  $("ddInfo").textContent = `Operatore: ${operator}`;
+
+  // giorni drill = chips selezionati o giorni effettivi
+  const days = getDrillDays();
+  drillDay = days[0] ?? null;
+
+  renderDrillDayChips(days);
+
+  const fromDay = $("fromDate").value;
+  const toDay = $("toDate").value;
+  manualActivities = await fetchManualActivities(operator, fromDay, toDay);
+
+  // timeline multi-day (tutti i giorni filtrati)
+  const opEvents = effectiveEvents
     .filter(e => String(e.operator_code ?? "-").trim() === operator)
     .sort((a,b) => parseDT(a.event_dt) - parseDT(b.event_dt));
+  const intervalsAll = buildIntervalsForOperator(opEvents);
 
-  currentIntervals = buildIntervalsForOperator(opEvents);
-  currentBlocks = groupBlocks(currentIntervals);
+  renderMultiDayTimeline(intervalsAll, days, $("shiftSelect").value);
 
-  operatorDayList = buildDayListForOperator(opEvents);
-  fillDaySelect(operatorDayList);
+  // tables per giorno singolo (drillDay)
+  renderDrillTablesForDay();
 
-  const { day, shift } = chooseDefaultDayShift(currentIntervals, operatorDayList);
-  $("daySelect").value = day ?? "";
-  $("shiftSelect").value = shift ?? "AM";
-
-  manualActivities = await fetchManualActivities(operator, currentRange);
-
-  const changes = Math.max(0, currentBlocks.length - 1);
-  $("ddInfo").textContent = `Operatore: ${operator} | Intervalli: ${currentIntervals.length} | Cambi: ${changes}`;
-
-  renderBlocks(currentBlocks);
-  renderIntervals(currentIntervals);
-
-  if (day) renderTimelineForShift(currentIntervals, day, shift);
-}
-
-// -------------------- CSV Export --------------------
-function exportIntervalsCsv() {
-  if (!currentOperator || currentIntervals.length === 0) return;
-
-  const lines = [];
-  lines.push(["operator","start","end","category","duration_hhmm","warehouse_order"].join(","));
-
-  for (const it of currentIntervals) {
-    const wo = it.nextEvent?.warehouse_order ?? "";
-    lines.push([
-      currentOperator,
-      fmtDT(it.start),
-      fmtDT(it.end),
-      it.category,
-      secToHHMM(it.sec),
-      String(wo).replaceAll(",", " "),
-    ].join(","));
-  }
-
-  const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `intervals_${currentOperator}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
+  // scroll down to drill section
+  $("drilldownSection").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 // -------------------- Support modal --------------------
 function openSupportModal(supportAccount) {
   supportAccountOpen = supportAccount;
-
   $("supportTitle").textContent = `Supporto account: ${supportAccount}`;
   $("supportSubtitle").textContent = `Assegna fasce Start-End a un operatore reale.`;
 
@@ -757,12 +792,12 @@ async function addSupportRange() {
   log("✅ Support range saved");
 }
 
-// -------------------- Manual Activity Modal (click pausa) --------------------
+// -------------------- Manual activity modal --------------------
 function openActivityModal(startDt, endDt) {
   if (!currentOperator) return;
 
   $("activityTitle").textContent = `Attività indiretta — ${currentOperator}`;
-  $("activitySubtitle").textContent = `${fmtDT(startDt)} → ${fmtDT(endDt)} (slot ${SLOT_MINUTES}m)`;
+  $("activitySubtitle").textContent = `${fmtDT(startDt)} → ${fmtDT(endDt)}`;
 
   $("activityLabel").value = "";
   $("activityStart").value = dtToLocal(startDt);
@@ -790,7 +825,8 @@ async function loadActivitiesTable() {
   tb.innerHTML = "";
   if (!currentOperator) return;
 
-  manualActivities = await fetchManualActivities(currentOperator, currentRange);
+  // reload
+  manualActivities = await fetchManualActivities(currentOperator, $("fromDate").value, $("toDate").value);
 
   for (const a of manualActivities) {
     const tr = document.createElement("tr");
@@ -808,7 +844,12 @@ async function loadActivitiesTable() {
       const id = btn.getAttribute("data-del");
       await supabase.from("manual_activity_segments").delete().eq("id", id);
       await loadActivitiesTable();
-      rerenderTimeline();
+      // refresh drill timeline
+      if (currentOperator) {
+        const days = getDrillDays();
+        const opEvents = effectiveEvents.filter(e => e.operator_code === currentOperator).sort((a,b)=>parseDT(a.event_dt)-parseDT(b.event_dt));
+        renderMultiDayTimeline(buildIntervalsForOperator(opEvents), days, $("shiftSelect").value);
+      }
     });
   });
 }
@@ -833,85 +874,140 @@ async function addManualActivity() {
   if (error) { log("❌ insert activity:", error.message); return; }
 
   await loadActivitiesTable();
-  rerenderTimeline();
   log("✅ Activity saved");
 }
 
-function rerenderTimeline() {
-  if (!currentOperator) return;
-  const day = $("daySelect").value;
-  const shift = $("shiftSelect").value;
-  if (day && shift) renderTimelineForShift(currentIntervals, day, shift);
+// -------------------- Main load/render --------------------
+function recomputeFromCached() {
+  // 1) effective days from right sidebar selection
+  effectiveDayList = computeEffectiveDays();
+
+  // 2) filter cached events to effective day list
+  const dayFiltered = applyEffectiveDayList(cachedEvents);
+
+  // 3) chips selection (filtro sul filtro)
+  effectiveEvents = applyChipFilter(dayFiltered);
+
+  // chips list shown on panels must be the effective day list (not chip-selected)
+  renderDayChips("sumScroll", effectiveDayList, true, selectedChipDays, () => recomputeFromCached());
+  renderDayChips("kpiScroll", effectiveDayList, true, selectedChipDays, () => recomputeFromCached());
+
+  // compute tables on effectiveEvents
+  const opMap = buildOperatorMap(effectiveEvents);
+  const rows = [];
+  for (const [operator, evs] of opMap.entries()) {
+    const stats = computeOperatorStats(evs);
+    rows.push({ operator, ...stats });
+  }
+  rows.sort((a,b) => b.time.work - a.time.work);
+
+  renderSummary(rows);
+  renderKpi(rows);
+
+  // se il filtro cambia, non “sporchiamo” la vista: chiudiamo drilldown (utente riclicca)
+  currentOperator = null;
+  $("drilldownSection").style.display = "none";
 }
 
-// -------------------- Main recompute --------------------
-async function recompute() {
-  setBusy(true, "caricamento eventi (paginato)...");
+async function loadBaseRangeAndRender() {
+  const fromDay = $("fromDate").value;
+  const toDay = $("toDate").value;
+  if (!fromDay || !toDay) return;
+
+  setBusy(true);
   try {
-    currentRange = computeRangeFromUI();
-
-    cachedEvents = await fetchEventsAll(currentRange);
-    log(`Loaded events: ${cachedEvents.length}`);
-
-    const opMap = buildOperatorMap(cachedEvents);
-    const rows = [];
-
-    for (const [operator, evs] of opMap.entries()) {
-      const stats = computeOperatorStats(evs);
-      rows.push({ operator, ...stats });
-    }
-
-    rows.sort((a,b) => b.time.work - a.time.work);
-
-    renderSummary(rows);
-    renderKpi(rows);
-
-    // reset drilldown view
-    currentOperator = null;
-    $("ddInfo").textContent = "Seleziona un operatore…";
-    $("tblBlocks").querySelector("tbody").innerHTML = "";
-    $("tblIntervals").querySelector("tbody").innerHTML = "";
-    $("timelineRow").innerHTML = "";
-    $("timelineTicks").innerHTML = "";
-    $("axisLeft").textContent = "";
-    $("axisRight").textContent = "";
-    $("daySelect").innerHTML = "";
+    cachedEvents = await fetchEventsAll(fromDay, toDay);
+    log(`Loaded events (base range): ${cachedEvents.length}`);
+    recomputeFromCached();
   } catch (e) {
-    log("❌ recompute error:", e?.message ?? String(e));
+    log("❌ load error:", e?.message ?? String(e));
   } finally {
-    setBusy(false, "");
+    setBusy(false);
   }
+}
+
+// -------------------- CSV export --------------------
+function exportIntervalsCsv() {
+  if (!currentOperator || !drillDay) return;
+
+  const opEvents = effectiveEvents
+    .filter(e => e.operator_code === currentOperator)
+    .sort((a,b) => parseDT(a.event_dt) - parseDT(b.event_dt));
+
+  const intervalsAll = buildIntervalsForOperator(opEvents);
+  const intervalsDay = sliceIntervalsToDay(intervalsAll, drillDay);
+
+  const lines = [];
+  lines.push(["operator","day","start","end","category","duration_hhmm","warehouse_order"].join(","));
+  for (const it of intervalsDay) {
+    const wo = it.nextEvent?.warehouse_order ?? "";
+    lines.push([
+      currentOperator,
+      drillDay,
+      fmtDT(it.start),
+      fmtDT(it.end),
+      it.category,
+      secToHHMM(it.sec),
+      String(wo).replaceAll(",", " "),
+    ].join(","));
+  }
+
+  const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `intervals_${currentOperator}_${drillDay}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 // -------------------- Init --------------------
 (async function init() {
   log("Init overview...");
+
   try {
     currentUser = await ensureAnonymousSession();
     log("✅ Session:", currentUser.id);
 
+    // strip arrows
+    attachStripArrows("sumLeft","sumRight","sumScroll");
+    attachStripArrows("kpiLeft","kpiRight","kpiScroll");
+    attachStripArrows("ddLeft","ddRight","ddScroll");
+
+    // default date range: last 7 days
     const now = new Date();
-    const yyyy = now.getFullYear();
-    const mm = String(now.getMonth()+1).padStart(2,"0");
-    const dd = String(now.getDate()).padStart(2,"0");
-    $("endDate").value = `${yyyy}-${mm}-${dd}`;
+    const to = dayKey(now);
+    const fromD = new Date(now);
+    fromD.setDate(fromD.getDate() - 6);
+    const from = dayKey(fromD);
 
-    $("btnApply").addEventListener("click", recompute);
-    $("btnRefresh").addEventListener("click", recompute);
+    $("fromDate").value = from;
+    $("toDate").value = to;
+
+    // build items
+    rebuildRangeItems();
+
+    $("rangeType").addEventListener("change", () => {
+      rebuildRangeItems();
+    });
+    $("fromDate").addEventListener("change", rebuildRangeItems);
+    $("toDate").addEventListener("change", rebuildRangeItems);
+
+    $("btnApply").addEventListener("click", async () => {
+      // reset chip filter when applying a new range selection
+      selectedChipDays.clear();
+      await loadBaseRangeAndRender();
+    });
+
+    $("btnRefresh").addEventListener("click", loadBaseRangeAndRender);
     $("btnReset").addEventListener("click", resetSession);
-
-    $("btnExportCsv").addEventListener("click", exportIntervalsCsv);
-
-    $("daySelect").addEventListener("change", rerenderTimeline);
-    $("shiftSelect").addEventListener("change", rerenderTimeline);
-    $("btnViewSequence").addEventListener("click", rerenderTimeline);
 
     // support modal
     $("btnCloseSupport").addEventListener("click", closeSupportModal);
     $("btnAddSupport").addEventListener("click", addSupportRange);
     $("btnRecalc").addEventListener("click", async () => {
       closeSupportModal();
-      await recompute();
+      await loadBaseRangeAndRender();
     });
 
     // activity modal
@@ -919,7 +1015,18 @@ async function recompute() {
     $("btnCloseActivity2").addEventListener("click", closeActivityModal);
     $("btnAddActivity").addEventListener("click", addManualActivity);
 
-    await recompute();
+    // shift change re-renders drill timeline (if open)
+    $("shiftSelect").addEventListener("change", () => {
+      if (!currentOperator) return;
+      const days = getDrillDays();
+      const opEvents = effectiveEvents.filter(e => e.operator_code === currentOperator).sort((a,b)=>parseDT(a.event_dt)-parseDT(b.event_dt));
+      renderMultiDayTimeline(buildIntervalsForOperator(opEvents), days, $("shiftSelect").value);
+    });
+
+    $("btnExportCsv").addEventListener("click", exportIntervalsCsv);
+
+    // initial load
+    await loadBaseRangeAndRender();
   } catch (e) {
     log("❌ init failed:", e?.message ?? String(e));
     setAuthUI(false, "AUTH ERROR", "-");
