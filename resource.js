@@ -10,13 +10,11 @@ const logEl = $("log");
 const PAUSE_THRESHOLD_SEC = 30 * 60;
 const BREAK_SEC_PER_DAY = 30 * 60;
 
-// Alias “preimpostati”: UI alias rimossa
 const ALIAS_MAP = new Map([
   ["S.TAZANOU", "R.SOLL"],
   ["F.SAADANI", "S.FETHIA"],
 ]);
 
-// Standard shift times (se vuoi usarli in edit cell)
 const SHIFT_TIMES = {
   AM: { start: "05:00", end: "13:00" },
   C:  { start: "08:00", end: "16:00" },
@@ -25,24 +23,23 @@ const SHIFT_TIMES = {
 
 let user = null;
 
-let resources = [];            // tutte le risorse in tabella resources
-let guaranteed = [];           // counter/specialist/teamleader
-let supportSegments = [];      // support_work_segments per settimana
-let weekSchedule = [];         // resource_schedule_segments per settimana
-let weekEvents = [];           // v_operator_events_effective per settimana (solo per calcolo)
-let lastActMap = new Map();    // account -> last_event_dt
+let resources = [];
+let guaranteed = [];
+let supportSegments = [];
+let weekSchedule = [];
+let weekEvents = [];
+let lastActMap = new Map();
 
-let selectedWeekStart = null;  // yyyy-mm-dd (lun)
-let importPreviewRows = [];    // schedule rows preview per import
+let selectedWeekStart = null;
+let importPreviewRows = [];
 let editingResourceId = null;
 
-// ------------ utils ------------
+// ---------- utils ----------
 function log(...args) {
   const line = args.map(a => (typeof a === "string" ? a : JSON.stringify(a, null, 2))).join(" ");
   logEl.textContent += line + "\n";
   logEl.scrollTop = logEl.scrollHeight;
 }
-
 function setAuthUI(ok, statusText, userId) {
   $("authStatus").textContent = statusText;
   $("userId").textContent = userId ?? "-";
@@ -50,13 +47,17 @@ function setAuthUI(ok, statusText, userId) {
   dot.classList.remove("ok","bad");
   dot.classList.add(ok ? "ok" : "bad");
 }
+function norm(s){ return String(s ?? "").trim().toUpperCase(); }
+function canon(code){ const c = norm(code); return ALIAS_MAP.get(c) ?? c; }
 
-function norm(s) {
-  return String(s ?? "").trim().toUpperCase();
+function uiShift(db){ // display label
+  if (!db) return "";
+  return db === "OM" ? "PM" : db;
 }
-function canon(code) {
-  const c = norm(code);
-  return ALIAS_MAP.get(c) ?? c;
+function dbShift(ui){ // stored label
+  if (!ui) return null;
+  const u = norm(ui);
+  return u === "PM" ? "OM" : u;
 }
 
 function fmtDT(d) {
@@ -69,21 +70,6 @@ function fmtDT(d) {
   const mi = String(dd.getMinutes()).padStart(2,"0");
   return `${y}-${m}-${da} ${hh}:${mi}`;
 }
-
-function secToHHMM(sec) {
-  const s = Math.max(0, Math.floor(sec));
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`;
-}
-
-function parseDT(s) {
-  if (!s) return null;
-  const iso = String(s).includes("T") ? String(s) : String(s).replace(" ", "T");
-  const d = new Date(iso);
-  return isNaN(d.getTime()) ? null : d;
-}
-
 function dayKey(d) {
   const dd = new Date(d);
   const y = dd.getFullYear();
@@ -91,42 +77,70 @@ function dayKey(d) {
   const da = String(dd.getDate()).padStart(2,"0");
   return `${y}-${m}-${da}`;
 }
-
 function addDays(yyyy_mm_dd, n) {
   const d = new Date(`${yyyy_mm_dd}T00:00:00`);
   d.setDate(d.getDate() + n);
   return dayKey(d);
 }
-
 function getWeekStart(yyyy_mm_dd) {
-  // Monday-based
   const d = new Date(`${yyyy_mm_dd}T00:00:00`);
-  const day = d.getDay(); // 0..6 (Sun..Sat)
-  const diff = (day === 0 ? -6 : 1 - day); // shift to Monday
+  const day = d.getDay();
+  const diff = (day === 0 ? -6 : 1 - day);
   d.setDate(d.getDate() + diff);
   return dayKey(d);
 }
-
 function weekDays(weekStart) {
   return Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
 }
-
-function timeToSec(hhmm) {
-  const [h,m] = hhmm.split(":").map(Number);
-  return h*3600 + m*60;
+function secToHHMM(sec) {
+  const s = Math.max(0, Math.floor(sec));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`;
 }
-
-function durationSec(startHHMM, endHHMM) {
-  return Math.max(0, timeToSec(endHHMM) - timeToSec(startHHMM));
+function parseDT(s) {
+  if (!s) return null;
+  const iso = String(s).includes("T") ? String(s) : String(s).replace(" ", "T");
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? null : d;
 }
-
 function escapeHtml(str) {
   return String(str ?? "")
     .replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;")
     .replaceAll('"',"&quot;").replaceAll("'","&#039;");
 }
+function timeToSec(hhmm) {
+  const [h,m] = hhmm.split(":").map(Number);
+  return h*3600 + m*60;
+}
+function durationSec(startHHMM, endHHMM) {
+  return Math.max(0, timeToSec(endHHMM) - timeToSec(startHHMM));
+}
+function roleUpper(r){
+  if (r === "counter") return "COUNTER";
+  if (r === "specialist") return "SPECIALIST";
+  if (r === "teamleader") return "TEAM LEADER";
+  if (r === "support") return "SUPPORT";
+  return String(r ?? "").toUpperCase();
+}
 
-// ------------ auth ------------
+// ISO week label
+function isoWeekInfo(dateStr /* yyyy-mm-dd */) {
+  const d = new Date(`${dateStr}T00:00:00`);
+  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dayNum = date.getUTCDay() || 7;
+  date.setUTCDate(date.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
+  return { year: date.getUTCFullYear(), week: weekNo };
+}
+function setWeekLabel() {
+  const { week } = isoWeekInfo(selectedWeekStart);
+  const end = addDays(selectedWeekStart, 6);
+  $("weekLabel").textContent = `W${String(week).padStart(2,"0")}  ${selectedWeekStart} → ${end}`;
+}
+
+// ---------- auth ----------
 async function ensureAnon() {
   setAuthUI(false, "checking session...", "-");
   const { data: s } = await supabase.auth.getSession();
@@ -139,17 +153,16 @@ async function ensureAnon() {
   setAuthUI(true, "signed-in (anon)", data.user.id);
   return data.user;
 }
-
 async function resetSession() {
   await supabase.auth.signOut();
   location.reload();
 }
 
-// ------------ load data ------------
+// ---------- load ----------
 async function loadResources() {
   const { data, error } = await supabase
     .from("resources")
-    .select("id,operator_code,role,current_week_shift,active")
+    .select("id,operator_code,role,current_week_shift,shift_override,active")
     .order("role", { ascending: true })
     .order("operator_code", { ascending: true });
 
@@ -174,7 +187,7 @@ async function loadSupportSegments(weekStart) {
     .order("start_dt", { ascending: true });
 
   if (error) throw error;
-  supportSegments = data ?? [];
+  supportSegments = (data ?? []).map(s => ({ ...s, account_used: canon(s.account_used) }));
 }
 
 async function loadWeekSchedule(weekStart) {
@@ -202,8 +215,6 @@ async function loadWeekEvents(weekStart) {
   const from = `${weekStart}T00:00:00`;
   const to = `${addDays(weekStart, 6)}T23:59:59`;
 
-  // prendiamo gli eventi “effettivi” e calcoliamo last act e lavoro
-  // operator_code in view già “effective”; normalizziamo comunque
   const PAGE = 1000;
   let fromIx = 0;
   let all = [];
@@ -224,8 +235,8 @@ async function loadWeekEvents(weekStart) {
       created_by: e.created_by ? canon(e.created_by) : null,
       counter: e.counter ? canon(e.counter) : null,
     }));
-
     all = all.concat(batch);
+
     if (batch.length < PAGE) break;
     fromIx += PAGE;
     if (fromIx > 60000) break;
@@ -233,23 +244,57 @@ async function loadWeekEvents(weekStart) {
 
   weekEvents = all;
 
-  // last act per account (consideriamo operator_code + created_by + counter)
   lastActMap = new Map();
   for (const e of weekEvents) {
     const dt = parseDT(e.event_dt);
     if (!dt) continue;
-
-    const accounts = [e.operator_code, e.created_by, e.counter].filter(Boolean).map(canon);
-    for (const a of accounts) {
+    const accs = [e.operator_code, e.created_by, e.counter].filter(Boolean).map(canon);
+    for (const a of accs) {
       const prev = lastActMap.get(a);
       if (!prev || dt > prev) lastActMap.set(a, dt);
     }
   }
 }
 
-// ------------ compute time over ------------
+// ---------- schedule -> resources sync ----------
+function deriveWeekShiftFromSchedule(operator_code) {
+  const acc = canon(operator_code);
+  const counts = new Map(); // shift => count
+  for (const s of weekSchedule) {
+    if (canon(s.operator_code) !== acc) continue;
+    if (s.status !== "present") continue;
+    if (!s.shift) continue;
+    counts.set(s.shift, (counts.get(s.shift) ?? 0) + 1);
+  }
+  if (counts.size === 0) return null;
+  let best = null, bestN = -1;
+  for (const [sh, n] of counts.entries()) {
+    if (n > bestN) { bestN = n; best = sh; }
+  }
+  return best; // AM/C/OM
+}
+
+async function syncWeekShiftsToResources() {
+  // aggiorna resources.current_week_shift SOLO se shift_override=false
+  const updates = [];
+  for (const r of guaranteed) {
+    const derived = deriveWeekShiftFromSchedule(r.operator_code);
+    if (!derived) continue;
+    if (r.shift_override) continue;
+
+    if (r.current_week_shift !== derived) {
+      updates.push({ id: r.id, current_week_shift: derived });
+    }
+  }
+
+  for (const u of updates) {
+    const { error } = await supabase.from("resources").update(u).eq("id", u.id);
+    if (error) log("❌ sync shift:", error.message);
+  }
+}
+
+// ---------- support calc ----------
 function buildAccountEventsMap() {
-  // qui scegliamo “account” = operator_code (coerente con Overview)
   const m = new Map();
   for (const e of weekEvents) {
     const acc = canon(e.operator_code);
@@ -264,7 +309,6 @@ function buildAccountEventsMap() {
 }
 
 function computeWorkSecondsForAccount(events) {
-  // lavoro = somma dt fra eventi consecutivi se <= 30 min (gap oltre soglia = pausa/non conteggio)
   let work = 0;
   for (let i = 0; i < events.length - 1; i++) {
     const a = parseDT(events[i].event_dt);
@@ -279,36 +323,44 @@ function computeWorkSecondsForAccount(events) {
 }
 
 function scheduleExpectedSecondsForAccount(account, days) {
-  // expected = somma segmenti “present” - break 30m per giorno se presente almeno un segmento present
   const acc = canon(account);
-
   let total = 0;
   let presentDays = 0;
 
   for (const d of days) {
     const segs = weekSchedule.filter(s => canon(s.operator_code) === acc && s.work_date === d);
-
     const presentSegs = segs.filter(s => s.status === "present" && s.start_time && s.end_time);
+
     if (presentSegs.length > 0) {
       let daySec = 0;
-      for (const s of presentSegs) daySec += durationSec(String(s.start_time).slice(0,5), String(s.end_time).slice(0,5));
+      for (const s of presentSegs) {
+        daySec += durationSec(String(s.start_time).slice(0,5), String(s.end_time).slice(0,5));
+      }
       total += daySec;
       presentDays += 1;
-      continue;
     }
-
-    // se non abbiamo schedule per quel giorno: expected 0 (così l’utente capisce che deve impostare/importare turni)
   }
 
   total -= presentDays * BREAK_SEC_PER_DAY;
   return Math.max(0, total);
 }
 
+function allocatedSupportSeconds(account) {
+  const acc = canon(account);
+  let sec = 0;
+  for (const s of supportSegments) {
+    if (canon(s.account_used) !== acc) continue;
+    const a = parseDT(s.start_dt), b = parseDT(s.end_dt);
+    if (!a || !b) continue;
+    sec += Math.floor((b - a)/1000);
+  }
+  return sec;
+}
+
 function computeSupportiTable(weekStart) {
   const days = weekDays(weekStart);
   const accEvents = buildAccountEventsMap();
 
-  // set accounts = eventi + support accounts (role support) + guaranteed accounts
   const set = new Set();
   for (const k of accEvents.keys()) set.add(k);
   for (const r of resources) set.add(canon(r.operator_code));
@@ -318,28 +370,24 @@ function computeSupportiTable(weekStart) {
     const evs = accEvents.get(acc) ?? [];
     const workSec = computeWorkSecondsForAccount(evs);
 
-    // expected solo se è risorsa garantita (o se ha schedule comunque)
     const isGuaranteed = guaranteed.some(r => canon(r.operator_code) === acc);
     const hasAnySchedule = weekSchedule.some(s => canon(s.operator_code) === acc);
-
     const expectedSec = (isGuaranteed || hasAnySchedule) ? scheduleExpectedSecondsForAccount(acc, days) : 0;
-    const over = Math.max(0, workSec - expectedSec);
 
-    // regole di popolamento:
-    // - se over > 0 => mostra
-    // - oppure se è account support (role='support') e ha workSec>0 => mostra (expected 0)
+    const overSec = Math.max(0, workSec - expectedSec);
+    const allocSec = allocatedSupportSeconds(acc);
+    const residualSec = Math.max(0, overSec - allocSec);
+
     const isSupportAcc = resources.some(r => canon(r.operator_code) === acc && r.role === "support");
-    if (over > 0 || (isSupportAcc && workSec > 0)) {
-      rows.push({ account: acc, overSec: over, workSec, expectedSec });
+    if (overSec > 0 || (isSupportAcc && workSec > 0)) {
+      rows.push({ account: acc, overSec, allocSec, residualSec });
     }
   }
-
-  // ordina per over desc
-  rows.sort((a,b) => b.overSec - a.overSec);
+  rows.sort((a,b) => b.residualSec - a.residualSec);
   return rows;
 }
 
-// ------------ render ------------
+// ---------- render ----------
 function renderKpi(rowsSupporti) {
   $("kpiGuaranteed").textContent = String(guaranteed.length);
   $("kpiCounters").textContent = String(guaranteed.filter(x => x.role === "counter").length);
@@ -351,15 +399,14 @@ function renderKpi(rowsSupporti) {
   ).length;
   $("kpiAbsent").textContent = String(absent);
 
-  const totOver = rowsSupporti.reduce((sum,r)=>sum + r.overSec, 0);
-  $("kpiOver").textContent = secToHHMM(totOver);
+  const totResidual = rowsSupporti.reduce((sum,r)=>sum + r.residualSec, 0);
+  $("kpiOver").textContent = secToHHMM(totResidual);
 
   $("kpiSegments").textContent = String(supportSegments.length);
 }
 
 function renderResourcesTable() {
   const group = $("resGroup").value;
-
   let rows = guaranteed.slice();
   if (group !== "all") rows = rows.filter(r => r.role === group);
 
@@ -370,11 +417,15 @@ function renderResourcesTable() {
     const last = lastActMap.get(canon(r.operator_code));
     const lastTxt = last ? fmtDT(last) : "";
 
+    // shift displayed: se schedule dà un shift, lo mostriamo; fallback a current_week_shift
+    const derived = deriveWeekShiftFromSchedule(r.operator_code);
+    const shiftDb = derived ?? r.current_week_shift ?? null;
+
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td class="mono"><span class="link" data-edit="${r.id}">${escapeHtml(r.operator_code)}</span></td>
-      <td>${escapeHtml(r.role)}</td>
-      <td class="mono">${escapeHtml(r.current_week_shift ?? "")}</td>
+      <td>${escapeHtml(roleUpper(r.role))}</td>
+      <td class="mono">${escapeHtml(uiShift(shiftDb))}</td>
       <td class="mono">${escapeHtml(lastTxt)}</td>
       <td>
         <select data-man="${r.id}">
@@ -387,10 +438,7 @@ function renderResourcesTable() {
     tb.appendChild(tr);
   }
 
-  tb.querySelectorAll("[data-edit]").forEach(el => {
-    el.addEventListener("click", () => openResModal(el.getAttribute("data-edit")));
-  });
-
+  tb.querySelectorAll("[data-edit]").forEach(el => el.addEventListener("click", () => openResModal(el.getAttribute("data-edit"))));
   tb.querySelectorAll("[data-man]").forEach(sel => {
     sel.addEventListener("change", async () => {
       const id = sel.getAttribute("data-man");
@@ -410,21 +458,46 @@ function renderSupportiTable(rows) {
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td class="mono">${escapeHtml(r.account)}</td>
-      <td class="mono">${secToHHMM(r.overSec)}</td>
+      <td class="mono" title="Over - Allocated = Residual">
+        ${secToHHMM(r.overSec)} <span style="color:rgba(255,255,255,.55)"> (res ${secToHHMM(r.residualSec)})</span>
+      </td>
       <td><button class="btn primary small" data-set="${escapeHtml(r.account)}">Set supporto</button></td>
     `;
     tb.appendChild(tr);
   }
+  tb.querySelectorAll("[data-set]").forEach(btn => btn.addEventListener("click", () => openSupportModal(btn.getAttribute("data-set"))));
+}
 
-  tb.querySelectorAll("[data-set]").forEach(btn => {
-    btn.addEventListener("click", () => openSupportModal(btn.getAttribute("data-set")));
+function renderSupportSegmentsTable() {
+  const tb = $("tblSupportSeg").querySelector("tbody");
+  tb.innerHTML = "";
+
+  for (const s of supportSegments) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td class="mono">${escapeHtml(canon(s.account_used))}</td>
+      <td>${escapeHtml(s.kind)}</td>
+      <td class="mono">${escapeHtml(fmtDT(s.start_dt))}</td>
+      <td class="mono">${escapeHtml(fmtDT(s.end_dt))}</td>
+      <td>${escapeHtml(s.real_name ?? "")}</td>
+      <td><button class="btn danger small" data-del="${s.id}">Del</button></td>
+    `;
+    tb.appendChild(tr);
+  }
+
+  tb.querySelectorAll("[data-del]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const id = btn.getAttribute("data-del");
+      if (!confirm("Eliminare segmento supporto?")) return;
+      const { error } = await supabase.from("support_work_segments").delete().eq("id", id);
+      if (error) { log("❌ delete segment:", error.message); return; }
+      await reloadWeek();
+    });
   });
 }
 
 function renderWeekTable(weekStart) {
   const days = weekDays(weekStart);
-
-  // header
   const head = $("weekHead");
   head.innerHTML = `
     <tr>
@@ -443,9 +516,7 @@ function renderWeekTable(weekStart) {
       ${days.map(d => {
         const segs = weekSchedule.filter(s => canon(s.operator_code) === canon(r.operator_code) && s.work_date === d);
         let txt = "";
-        if (segs.length === 0) txt = "";
-        else {
-          // compress: if present show time, else status label
+        if (segs.length) {
           const parts = segs.map(s => {
             if (s.status === "present") return `${String(s.start_time).slice(0,5)}-${String(s.end_time).slice(0,5)}`;
             if (s.status === "vacation") return "ferie";
@@ -469,7 +540,7 @@ function renderWeekTable(weekStart) {
   });
 }
 
-// ------------ resource modal ------------
+// ---------- resource modal ----------
 function openResModal(id = null) {
   editingResourceId = id;
 
@@ -484,12 +555,14 @@ function openResModal(id = null) {
     $("resTitle").textContent = `Modifica risorsa: ${r.operator_code}`;
     $("resCode").value = r.operator_code;
     $("resRole").value = r.role;
-    $("resWeekShift").value = r.current_week_shift ?? "";
+
+    const derived = deriveWeekShiftFromSchedule(r.operator_code);
+    const shiftDb = derived ?? r.current_week_shift ?? "";
+    $("resWeekShift").value = uiShift(shiftDb) || "";
   }
 
   $("resOverlay").style.display = "flex";
 }
-
 function closeResModal() {
   $("resOverlay").style.display = "none";
   editingResourceId = null;
@@ -498,7 +571,8 @@ function closeResModal() {
 async function saveResource() {
   const operator_code = canon($("resCode").value);
   const role = $("resRole").value;
-  const current_week_shift = $("resWeekShift").value || null;
+  const ui = $("resWeekShift").value || "";
+  const current_week_shift = ui ? dbShift(ui) : null;
 
   if (!operator_code) { log("⚠️ Account richiesto"); return; }
 
@@ -508,6 +582,9 @@ async function saveResource() {
     role,
     current_week_shift,
     active: true,
+    // se l’utente imposta shift da qui => override = true
+    // se lo lascia vuoto => override = false (torna a seguire schedule)
+    shift_override: !!current_week_shift
   };
 
   if (editingResourceId) payload.id = editingResourceId;
@@ -535,7 +612,7 @@ async function removeResource(id) {
   log("✅ risorsa rimossa");
 }
 
-// ------------ support modal / segments ------------
+// ---------- support modal ----------
 function showHideSupportFields() {
   const kind = $("supKind").value;
   const isSupport = kind === "support";
@@ -544,12 +621,10 @@ function showHideSupportFields() {
 }
 
 function openSupportModal(account) {
-  $("supAccount").value = account;
-  $("supTitle").textContent = `Set supporto — ${account}`;
+  $("supAccount").value = canon(account);
+  $("supTitle").textContent = `Set supporto — ${canon(account)}`;
 
-  // default: oggi dentro la settimana
-  const d = selectedWeekStart;
-  $("supDay").value = d;
+  $("supDay").value = selectedWeekStart;
   $("supStart").value = "08:00";
   $("supEnd").value = "12:00";
   $("supKind").value = "overtime_counter";
@@ -559,7 +634,7 @@ function openSupportModal(account) {
   $("supNote").value = "";
   showHideSupportFields();
 
-  renderSupportSegmentsForAccount(account);
+  renderSupportSegmentsForAccount(canon(account));
   $("supOverlay").style.display = "flex";
 }
 
@@ -567,24 +642,11 @@ function closeSupportModal() {
   $("supOverlay").style.display = "none";
 }
 
-function weekRangeTs(weekStart) {
-  const from = new Date(`${weekStart}T00:00:00`);
-  const to = new Date(`${addDays(weekStart, 6)}T23:59:59`);
-  return { from, to };
-}
-
 function renderSupportSegmentsForAccount(account) {
   const tb = $("tblSupSeg").querySelector("tbody");
   tb.innerHTML = "";
 
-  const { from, to } = weekRangeTs(selectedWeekStart);
-  const rows = supportSegments
-    .filter(s => canon(s.account_used) === canon(account))
-    .filter(s => {
-      const a = parseDT(s.start_dt), b = parseDT(s.end_dt);
-      return a && b && a >= from && b <= to;
-    });
-
+  const rows = supportSegments.filter(s => canon(s.account_used) === canon(account));
   for (const s of rows) {
     const tr = document.createElement("tr");
     tr.innerHTML = `
@@ -603,9 +665,8 @@ function renderSupportSegmentsForAccount(account) {
       if (!confirm("Eliminare segmento supporto?")) return;
       const { error } = await supabase.from("support_work_segments").delete().eq("id", id);
       if (error) { log("❌ delete segment:", error.message); return; }
-      await loadSupportSegments(selectedWeekStart);
+      await reloadWeek();
       renderSupportSegmentsForAccount(account);
-      await recalcSupporti();
     });
   });
 }
@@ -620,15 +681,12 @@ async function saveSupportSegment() {
 
   if (!account || !day || !startT || !endT) { log("⚠️ account/giorno/start/end richiesti"); return; }
 
-  const start_dt = `${day}T${startT}:00`;
-  const end_dt = `${day}T${endT}:00`;
-
   const payload = {
     user_id: user.id,
     account_used: account,
     kind,
-    start_dt,
-    end_dt,
+    start_dt: `${day}T${startT}:00`,
+    end_dt: `${day}T${endT}:00`,
     note: $("supNote").value.trim() || null,
     real_name: null,
     dept: null,
@@ -644,29 +702,12 @@ async function saveSupportSegment() {
   const { error } = await supabase.from("support_work_segments").insert(payload);
   if (error) { log("❌ save support segment:", error.message); return; }
 
-  await loadSupportSegments(selectedWeekStart);
+  await reloadWeek();
   renderSupportSegmentsForAccount(account);
-  await recalcSupporti();
   log("✅ support segment salvato");
 }
 
-// ------------ schedule cell edit (minimal) ------------
-function openScheduleCellModal(account, date) {
-  // edit rapido: prompt (per restare vanilla e veloce)
-  // valori: AM / C / OM / ferie / perm / empty / custom 08:30-16:30
-  const currentSegs = weekSchedule.filter(s => canon(s.operator_code)===canon(account) && s.work_date===date);
-  const curTxt = currentSegs.map(s => s.status==="present" ? `${String(s.start_time).slice(0,5)}-${String(s.end_time).slice(0,5)}` : (s.status==="vacation"?"ferie":(s.status==="permission"?"perm":s.status))).join(" | ");
-  const val = prompt(
-    `Imposta turno per ${account} @ ${date}\n`+
-    `Esempi: AM | C | OM | ferie | perm | 08:30-16:30 | (vuoto per cancellare)\n\nAttuale: ${curTxt}`,
-    curTxt
-  );
-
-  if (val === null) return;
-  const v = String(val).trim().toLowerCase();
-  saveScheduleCell(account, date, v);
-}
-
+// ---------- schedule cell edit ----------
 function parseTimeRange(cell) {
   const t = String(cell ?? "").trim();
   const m = t.match(/(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})/);
@@ -676,22 +717,36 @@ function parseTimeRange(cell) {
   return { start, end };
 }
 
-async function saveScheduleCell(account, date, valLower) {
+function openScheduleCellModal(account, date) {
+  const currentSegs = weekSchedule.filter(s => canon(s.operator_code)===canon(account) && s.work_date===date);
+  const curTxt = currentSegs.map(s => s.status==="present"
+    ? `${String(s.start_time).slice(0,5)}-${String(s.end_time).slice(0,5)}`
+    : (s.status==="vacation"?"ferie":(s.status==="permission"?"perm":s.status))
+  ).join(" | ");
+
+  const val = prompt(
+    `Imposta turno per ${account} @ ${date}\n`+
+    `Esempi: AM | C | PM | ferie | perm | 08:30-16:30 | (vuoto per cancellare)\n\nAttuale: ${curTxt}`,
+    curTxt
+  );
+  if (val === null) return;
+
+  saveScheduleCell(account, date, String(val).trim());
+}
+
+async function saveScheduleCell(account, date, val) {
   const acc = canon(account);
 
-  // delete existing segments for (acc,date) for simplicity (segment_no=1 only)
-  // (se poi vuoi multi-segmento, lo estendiamo)
+  // delete existing segments for (acc,date) for simplicity
   const toDel = weekSchedule.filter(s => canon(s.operator_code)===acc && s.work_date===date);
-  for (const s of toDel) {
-    await supabase.from("resource_schedule_segments").delete().eq("id", s.id);
-  }
+  for (const s of toDel) await supabase.from("resource_schedule_segments").delete().eq("id", s.id);
 
-  if (!valLower) {
-    await loadWeekSchedule(selectedWeekStart);
-    renderWeekTable(selectedWeekStart);
-    await recalcSupporti();
+  if (!val) {
+    await reloadWeek();
     return;
   }
+
+  const v = val.trim().toLowerCase();
 
   let row = {
     user_id: user.id,
@@ -705,43 +760,40 @@ async function saveScheduleCell(account, date, valLower) {
     raw_text: null
   };
 
-  if (valLower === "ferie") {
+  if (v === "ferie") {
     row.status = "vacation";
     row.raw_text = "ferie";
-  } else if (valLower === "perm") {
+  } else if (v === "perm") {
     row.status = "permission";
     row.raw_text = "perm";
-  } else if (["am","c","om"].includes(valLower)) {
-    const sh = valLower.toUpperCase();
+  } else if (["am","c","pm","om"].includes(v)) {
+    const sh = (v === "pm") ? "OM" : v.toUpperCase();
     row.status = "present";
     row.shift = sh;
     row.start_time = SHIFT_TIMES[sh].start;
     row.end_time = SHIFT_TIMES[sh].end;
     row.raw_text = `${row.start_time}-${row.end_time}`;
   } else {
-    const tr = parseTimeRange(valLower);
+    const tr = parseTimeRange(val);
     if (tr) {
       row.status = "present";
       row.start_time = tr.start;
       row.end_time = tr.end;
       row.raw_text = `${tr.start}-${tr.end}`;
-      // shift opzionale: inferisci da start
       row.shift = tr.start.startsWith("05:") ? "AM" : (tr.start.startsWith("14:") ? "OM" : "C");
     } else {
       row.status = "other";
-      row.raw_text = valLower;
+      row.raw_text = val;
     }
   }
 
   const { error } = await supabase.from("resource_schedule_segments").insert(row);
   if (error) { log("❌ save schedule cell:", error.message); return; }
 
-  await loadWeekSchedule(selectedWeekStart);
-  renderWeekTable(selectedWeekStart);
-  await recalcSupporti();
+  await reloadWeek();
 }
 
-// ------------ import schedule (paste/xlsx) ------------
+// ---------- import schedule ----------
 function parseDateToken(tok) {
   const t = String(tok ?? "").trim();
   const m = t.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
@@ -792,9 +844,9 @@ function parseScheduleTSV(tsv) {
     const line = grid[r];
     const opRaw = String(line[0] ?? "").trim();
     if (!opRaw) continue;
-    const op = canon(opRaw);
 
-    // import SOLO per risorse garantite (come vuoi tu)
+    const op = canon(opRaw);
+    // import SOLO guaranteed
     if (!guaranteed.some(x => canon(x.operator_code) === op)) continue;
 
     for (let i = 0; i < dates.length; i++) {
@@ -804,67 +856,30 @@ function parseScheduleTSV(tsv) {
       const lower = cell.toLowerCase();
 
       if (lower.includes("ferie")) {
-        out.push({
-          user_id: user.id,
-          operator_code: op,
-          work_date: dates[i],
-          segment_no: 1,
-          status: "vacation",
-          raw_text: "ferie",
-          start_time: null,
-          end_time: null,
-          shift: null
-        });
+        out.push({ user_id:user.id, operator_code:op, work_date:dates[i], segment_no:1, status:"vacation", raw_text:"ferie", start_time:null, end_time:null, shift:null });
         continue;
       }
       if (lower.includes("perm")) {
-        out.push({
-          user_id: user.id,
-          operator_code: op,
-          work_date: dates[i],
-          segment_no: 1,
-          status: "permission",
-          raw_text: "perm",
-          start_time: null,
-          end_time: null,
-          shift: null
-        });
+        out.push({ user_id:user.id, operator_code:op, work_date:dates[i], segment_no:1, status:"permission", raw_text:"perm", start_time:null, end_time:null, shift:null });
         continue;
       }
 
       const tr = parseTimeRange(cell);
       if (tr) {
         const shift = tr.start.startsWith("05:") ? "AM" : (tr.start.startsWith("14:") ? "OM" : "C");
-        out.push({
-          user_id: user.id,
-          operator_code: op,
-          work_date: dates[i],
-          segment_no: 1,
-          status: "present",
-          start_time: tr.start,
-          end_time: tr.end,
-          shift,
-          raw_text: `${tr.start}-${tr.end}`
-        });
+        out.push({ user_id:user.id, operator_code:op, work_date:dates[i], segment_no:1, status:"present", start_time:tr.start, end_time:tr.end, shift, raw_text:`${tr.start}-${tr.end}` });
         continue;
       }
 
-      out.push({
-        user_id: user.id,
-        operator_code: op,
-        work_date: dates[i],
-        segment_no: 1,
-        status: "other",
-        raw_text: cell,
-        start_time: null,
-        end_time: null,
-        shift: null
-      });
+      out.push({ user_id:user.id, operator_code:op, work_date:dates[i], segment_no:1, status:"other", raw_text:cell, start_time:null, end_time:null, shift:null });
     }
   }
 
   return { dates, rows: out };
 }
+
+function openImpModal(){ $("impOverlay").style.display = "flex"; }
+function closeImpModal(){ $("impOverlay").style.display = "none"; }
 
 async function parseImportPaste() {
   const tsv = $("impPaste").value;
@@ -872,10 +887,8 @@ async function parseImportPaste() {
   importPreviewRows = rows;
 
   if (dates.length) {
-    // auto weekStart = monday of first date
-    const ws = getWeekStart(dates[0]);
-    $("weekStart").value = ws;
-    selectedWeekStart = ws;
+    selectedWeekStart = getWeekStart(dates[0]);
+    setWeekLabel();
   }
 
   $("btnSaveImp").disabled = importPreviewRows.length === 0;
@@ -900,7 +913,6 @@ async function saveImportRows() {
 
   if (error) { log("❌ save import:", error.message); return; }
 
-  log(`✅ saved schedule rows: ${importPreviewRows.length}`);
   importPreviewRows = [];
   $("btnSaveImp").disabled = true;
   closeImpModal();
@@ -908,15 +920,14 @@ async function saveImportRows() {
   await reloadWeek();
 }
 
-// ------------ Supporti recalc ------------
+// ---------- reload flows ----------
 async function recalcSupporti() {
-  await loadSupportSegments(selectedWeekStart);
   const rows = computeSupportiTable(selectedWeekStart);
   renderSupportiTable(rows);
+  renderSupportSegmentsTable();
   renderKpi(rows);
 }
 
-// ------------ reload flows ------------
 async function reloadWeek() {
   await Promise.all([
     loadWeekSchedule(selectedWeekStart),
@@ -924,6 +935,11 @@ async function reloadWeek() {
     loadSupportSegments(selectedWeekStart),
   ]);
 
+  // sync schedule->resources (solo non override)
+  await syncWeekShiftsToResources();
+  await loadResources(); // ricarico per riflettere sync su current_week_shift
+
+  setWeekLabel();
   renderResourcesTable();
   renderWeekTable(selectedWeekStart);
   await recalcSupporti();
@@ -934,11 +950,7 @@ async function reloadAll() {
   await reloadWeek();
 }
 
-// ------------ modal import ------------
-function openImpModal() { $("impOverlay").style.display = "flex"; }
-function closeImpModal() { $("impOverlay").style.display = "none"; }
-
-// ------------ init ------------
+// ---------- init ----------
 (async function init() {
   try {
     user = await ensureAnon();
@@ -946,26 +958,21 @@ function closeImpModal() { $("impOverlay").style.display = "none"; }
 
     $("btnReset").addEventListener("click", resetSession);
 
-    // init week inputs: today -> monday
     const today = new Date().toISOString().slice(0,10);
     selectedWeekStart = getWeekStart(today);
+    setWeekLabel();
 
-    $("weekStart").value = selectedWeekStart;
-    $("supWeek").value = selectedWeekStart;
-
-    $("btnLoadWeek").addEventListener("click", async () => {
-      selectedWeekStart = getWeekStart($("weekStart").value || selectedWeekStart);
-      $("weekStart").value = selectedWeekStart;
-      $("supWeek").value = selectedWeekStart;
+    // schedule week arrows
+    $("btnPrevWeek").addEventListener("click", async () => {
+      selectedWeekStart = addDays(selectedWeekStart, -7);
+      await reloadWeek();
+    });
+    $("btnNextWeek").addEventListener("click", async () => {
+      selectedWeekStart = addDays(selectedWeekStart, 7);
       await reloadWeek();
     });
 
-    $("btnReloadSupporti").addEventListener("click", async () => {
-      selectedWeekStart = getWeekStart($("supWeek").value || selectedWeekStart);
-      $("weekStart").value = selectedWeekStart;
-      await reloadWeek();
-    });
-
+    // resources group filter
     $("resGroup").addEventListener("change", renderResourcesTable);
 
     // resource modal
@@ -988,6 +995,11 @@ function closeImpModal() { $("impOverlay").style.display = "none"; }
       if (!f) return;
       await parseImportXlsx(f);
     });
+
+    // Supporti panel recalc (se hai ancora il bottone)
+    if ($("btnReloadSupporti")) {
+      $("btnReloadSupporti").addEventListener("click", reloadWeek);
+    }
 
     await reloadAll();
   } catch (e) {
