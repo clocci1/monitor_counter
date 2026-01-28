@@ -7,10 +7,6 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 const $ = (id) => document.getElementById(id);
 const logEl = $("log");
 
-function todayRomeYYYYMMDD() {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Rome" }).format(new Date());
-}
-
 function dt(dateStr, timeStr) {
   return new Date(`${dateStr}T${String(timeStr).slice(0,5)}:00`);
 }
@@ -103,17 +99,6 @@ function hasSchedule(windowsMap, operator, day) {
   return (windowsMap.get(`${operator}__${day}`) ?? []).length > 0;
 }
 
-// quando selezioni operatore + giorno:
-if (hasSchedule(windowsMap, operator, day)) {
-  shiftSelect.disabled = true;
-  shiftSelect.style.display = "none";     // oppure lo disabiliti e lo lasci visibile
-  shiftLabel.textContent = "Shift da schedule";
-} else {
-  shiftSelect.disabled = false;
-  shiftSelect.style.display = "";
-  shiftLabel.textContent = "Shift manuale";
-}
-
 
 
 const PAUSE_THRESHOLD_SEC = 30 * 60;
@@ -125,6 +110,8 @@ const SHIFTS = {
 };
 
 let currentUser = null;
+let windowsMap = new Map(); // schedule/support windows (popolato in loadBaseRangeAndRender)
+
 let cachedEvents = [];          // fetched for base range
 let effectiveEvents = [];       // after items + chip filter
 let currentOperator = null;
@@ -226,22 +213,22 @@ function categoryToCssBg(cat) {
 // -------------------- Auth --------------------
 async function ensureAnonymousSession() {
   setAuthUI(false, "checking session...", "-");
-  const { data: s, error } = await supabase.auth.getSession();
-  if (error) throw error;
-  const user = s?.session?.user;
-  if (!user) {
-    setAuthUI(false, "signed-out", "-");
-    const next = encodeURIComponent("overview.html");
-    location.href = `./login.html?next=${next}`;
-    throw new Error("Not signed in");
+  const { data: s } = await supabase.auth.getSession();
+  if (s?.session?.user) {
+    setAuthUI(true, "signed-in (anon)", s.session.user.id);
+    return s.session.user;
   }
-  setAuthUI(true, "signed-in", user.email ?? user.id);
-  return user;
+  const { data, error } = await supabase.auth.signInAnonymously();
+  if (error) throw error;
+  setAuthUI(true, "signed-in (anon)", data.user?.id);
+  return data.user;
 }
 
 async function resetSession() {
+  setBusy(true);
   await supabase.auth.signOut();
-  location.href = "./login.html?next=overview.html";
+  setBusy(false);
+  location.reload();
 }
 
 // -------------------- Right sidebar filter (type + items) --------------------
@@ -325,6 +312,7 @@ function computeEffectiveDays() {
   return baseDays.filter(d => picked.includes(monthKey(new Date(`${d}T00:00:00`))));
 }
 
+
 // -------------------- Fetch ALL events for base range (pagination) --------------------
 async function fetchEventsAll(fromDay, toDay) {
   const start = `${fromDay}T00:00:00`;
@@ -339,7 +327,7 @@ async function fetchEventsAll(fromDay, toDay) {
 
     const { data, error } = await supabase
       .from("v_operator_events_effective_plus_support")
-      .select("event_dt, source, category, warehouse_order, operator_code_effective, operator_base, operator_code")
+      .select("event_dt, source, category, warehouse_order, created_by, counter, operator_code_effective, operator_base, operator_code")
       .gte("event_dt", start)
       .lte("event_dt", end)
       .order("operator_code", { ascending: true })
@@ -353,18 +341,20 @@ async function fetchEventsAll(fromDay, toDay) {
 
     if (batch.length < PAGE) break;
     from += PAGE;
-    if (from > 100000) break;
+    if (from > 150000) break;
   }
 
-  // normalize
-  all = (all ?? []).map(e => ({
-    ...e,
-    operator: String(e.operator_code_effective ?? e.operator_code ?? "").trim(),
-    account_used: String(e.operator_base ?? e.operator_code ?? "").trim(),
-  }));
+  // normalizza campi attesi dall'app
+  for (const e of all) {
+    e.operator_code = String(e.operator_code_effective ?? e.operator_code ?? "").trim().toUpperCase(); // persona "effettiva"
+    e.operator_base = String(e.operator_base ?? "").trim().toUpperCase(); // account usato
+    e.created_by = e.created_by ? String(e.created_by).trim().toUpperCase() : null;
+    e.counter = e.counter ? String(e.counter).trim().toUpperCase() : null;
+  }
 
   return all;
 }
+
 
 // -------------------- Category mapping --------------------
 function mapCatForUI(ev) {
@@ -1022,6 +1012,35 @@ function recomputeFromCached() {
   $("drilldownSection").style.display = "none";
 }
 
+async function loadWindowsMap(fromDay, toDay) {
+  try {
+    const { data: sched, error: schedErr } = await supabase
+      .from("resource_schedule_segments")
+      .select("operator_code, work_date, status, start_time, end_time, shift")
+      .gte("work_date", fromDay)
+      .lte("work_date", toDay);
+
+    if (schedErr) throw schedErr;
+
+    const { data: supSeg, error: supErr } = await supabase
+      .from("support_work_segments")
+      .select("account_used, real_name, start_dt, end_dt, kind")
+      .gte("start_dt", fromDay + "T00:00:00")
+      .lte("end_dt", toDay + "T23:59:59")
+      .eq("kind", "support");
+
+    if (supErr) throw supErr;
+
+    windowsMap = buildWindowsMap(sched ?? [], supSeg ?? []);
+    log(`windowsMap loaded: ${windowsMap.size} keys`);
+  } catch (e) {
+    // non bloccare overview se schedule/support non disponibili
+    windowsMap = new Map();
+    log("⚠️ windowsMap not loaded:", e?.message ?? String(e));
+  }
+}
+
+
 async function loadBaseRangeAndRender() {
   const fromDay = $("fromDate").value;
   const toDay = $("toDate").value;
@@ -1031,6 +1050,9 @@ async function loadBaseRangeAndRender() {
   try {
     cachedEvents = await fetchEventsAll(fromDay, toDay);
     log(`Loaded events (base range): ${cachedEvents.length}`);
+
+    await loadWindowsMap(fromDay, toDay);
+
     recomputeFromCached();
   } catch (e) {
     log("❌ load error:", e?.message ?? String(e));
@@ -1087,10 +1109,15 @@ function exportIntervalsCsv() {
     attachStripArrows("kpiLeft","kpiRight","kpiScroll");
     attachStripArrows("ddLeft","ddRight","ddScroll");
 
-    // default date range: today (Rome)
-    const today = todayRomeYYYYMMDD();
-    $("fromDate").value = today;
-    $("toDate").value = today;
+    // default date range: last 7 days
+    const now = new Date();
+    const to = dayKey(now);
+    const fromD = new Date(now);
+    fromD.setDate(fromD.getDate() - 6);
+    const from = dayKey(fromD);
+
+    $("fromDate").value = from;
+    $("toDate").value = to;
 
     // build items
     rebuildRangeItems();
