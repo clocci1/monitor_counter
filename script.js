@@ -124,22 +124,33 @@ function escapeHtml(str) {
 }
 
 // ---------------------------
-// Auth: anonymous sign-in
+// Auth: email/password session
 // ---------------------------
-async function ensureAnonymousSession() {
+async function requireSession() {
   setAuthUI(false, "checking session...", "-");
-  const { data: s } = await supabase.auth.getSession();
-
-  if (s?.session?.user) {
-    setAuthUI(true, "signed-in (anon)", s.session.user.id);
-    return s.session.user;
-  }
-
-  const { data, error } = await supabase.auth.signInAnonymously();
+  const { data, error } = await supabase.auth.getSession();
   if (error) throw error;
 
-  setAuthUI(true, "signed-in (anon)", data.user?.id);
-  return data.user;
+  const user = data?.session?.user;
+  if (!user) {
+    setAuthUI(false, "signed-out", "-");
+    const next = encodeURIComponent("index.html");
+    location.href = `./login.html?next=${next}`;
+    throw new Error("No session");
+  }
+
+  setAuthUI(true, "signed-in", user.email ?? user.id);
+  return user;
+}
+
+async function signOut() {
+  setBusy(true, "sign-out...");
+  const { error } = await supabase.auth.signOut();
+  if (error) log("❌ signOut error:", error.message);
+  else log("✅ signed out");
+  setAuthUI(false, "signed-out", "-");
+  setBusy(false, "");
+  location.href = "./login.html?next=index.html";
 }
 
 async function signOut() {
@@ -511,7 +522,7 @@ function setupDropzone(kind, dzEl) {
   log("Init...");
 
   try {
-    const user = await ensureAnonymousSession();
+    const user = await requireSession();
     log("✅ Session ready:", user.id);
 
     // Multi-select inputs

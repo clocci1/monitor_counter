@@ -141,21 +141,31 @@ function setWeekLabel() {
 }
 
 // ---------- auth ----------
-async function ensureAnon() {
+async function requireSession() {
   setAuthUI(false, "checking session...", "-");
-  const { data: s } = await supabase.auth.getSession();
-  if (s?.session?.user) {
-    setAuthUI(true, "signed-in (anon)", s.session.user.id);
-    return s.session.user;
-  }
-  const { data, error } = await supabase.auth.signInAnonymously();
+
+  const { data, error } = await supabase.auth.getSession();
   if (error) throw error;
-  setAuthUI(true, "signed-in (anon)", data.user.id);
-  return data.user;
+
+  const user = data?.session?.user;
+  if (!user) {
+    setAuthUI(false, "signed-out", "-");
+    const next = encodeURIComponent("resource.html");
+    location.href = `./login.html?next=${next}`;
+    throw new Error("No session");
+  }
+
+  setAuthUI(true, "signed-in", user.email ?? user.id);
+  return user;
+}
+
+async function signOut() {
+  const { error } = await supabase.auth.signOut();
+  if (error) log("❌ signOut:", error.message);
+  location.href = "./login.html?next=resource.html";
 }
 async function resetSession() {
-  await supabase.auth.signOut();
-  location.reload();
+  await signOut();
 }
 
 // ---------- load ----------
@@ -953,7 +963,7 @@ async function reloadAll() {
 // ---------- init ----------
 (async function init() {
   try {
-    user = await ensureAnon();
+    user = await requireSession();
     log("✅ user:", user.id);
 
     $("btnReset").addEventListener("click", resetSession);

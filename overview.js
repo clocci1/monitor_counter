@@ -99,19 +99,6 @@ function hasSchedule(windowsMap, operator, day) {
   return (windowsMap.get(`${operator}__${day}`) ?? []).length > 0;
 }
 
-// quando selezioni operatore + giorno:
-if (hasSchedule(windowsMap, operator, day)) {
-  shiftSelect.disabled = true;
-  shiftSelect.style.display = "none";     // oppure lo disabiliti e lo lasci visibile
-  shiftLabel.textContent = "Shift da schedule";
-} else {
-  shiftSelect.disabled = false;
-  shiftSelect.style.display = "";
-  shiftLabel.textContent = "Shift manuale";
-}
-
-
-
 const PAUSE_THRESHOLD_SEC = 30 * 60;
 
 const SHIFTS = {
@@ -220,24 +207,29 @@ function categoryToCssBg(cat) {
 }
 
 // -------------------- Auth --------------------
-async function ensureAnonymousSession() {
+async function requireSession() {
   setAuthUI(false, "checking session...", "-");
-  const { data: s } = await supabase.auth.getSession();
-  if (s?.session?.user) {
-    setAuthUI(true, "signed-in (anon)", s.session.user.id);
-    return s.session.user;
-  }
-  const { data, error } = await supabase.auth.signInAnonymously();
+
+  const { data, error } = await supabase.auth.getSession();
   if (error) throw error;
-  setAuthUI(true, "signed-in (anon)", data.user?.id);
-  return data.user;
+
+  const user = data?.session?.user;
+  if (!user) {
+    setAuthUI(false, "signed-out", "-");
+    const next = encodeURIComponent(location.pathname.split("/").pop() || "index.html");
+    location.href = `./login.html?next=${next}`;
+    throw new Error("No session");
+  }
+
+  setAuthUI(true, "signed-in", user.email ?? user.id);
+  return user;
 }
 
 async function resetSession() {
   setBusy(true);
   await supabase.auth.signOut();
   setBusy(false);
-  location.reload();
+  location.href = "./login.html?next=overview.html";
 }
 
 // -------------------- Right sidebar filter (type + items) --------------------
@@ -305,29 +297,6 @@ function computeEffectiveDays() {
 
   if (!from || !to) return [];
 
-  // 1) Schedule (turni) nel range
-const { data: sched, error: schedErr } = await supabase
-  .from("resource_schedule_segments")
-  .select("operator_code, work_date, status, start_time, end_time, shift")
-  .gte("work_date", from)
-  .lte("work_date", to);
-
-if (schedErr) throw schedErr;
-
-// 2) Support segments reali nel range
-const { data: supSeg, error: supErr } = await supabase
-  .from("support_work_segments")
-  .select("account_used, real_name, start_dt, end_dt, kind")
-  .gte("start_dt", from + "T00:00:00")
-  .lte("end_dt", to + "T23:59:59")
-  .eq("kind", "support");
-
-if (supErr) throw supErr;
-
-// 3) Build windows map (turni effettivi per persona)
-const windowsMap = buildWindowsMap(sched, supSeg);
-
-
   const baseDays = dateRangeList(from, to);
 
   if (picked.length === 0) return baseDays;
@@ -344,7 +313,7 @@ const windowsMap = buildWindowsMap(sched, supSeg);
   return baseDays.filter(d => picked.includes(monthKey(new Date(`${d}T00:00:00`))));
 }
 
-// -------------------- Fetch ALL events for base range (pagination) --------------------
+// -------------------- Fetch ALL events for base range (pagination) -------------------- for base range (pagination) --------------------
 async function fetchEventsAll(fromDay, toDay) {
   const start = `${fromDay}T00:00:00`;
   const end = `${toDay}T23:59:59`;
@@ -375,17 +344,11 @@ async function fetchEventsAll(fromDay, toDay) {
     if (from > 100000) break;
   }
 
-events.forEach(e => {
-  e.operator = (e.operator_code_effective ?? e.operator_code ?? "").trim();
-  e.account_used = (e.operator_base ?? e.operator_code ?? "").trim(); // account realmente usato
-});
-
-
-  // tieni anche la base (account usato)
-  e.operator_base = String(e.operator_base ?? e.operator_original ?? "").trim();
-});
-
-
+  // Normalizza: operator_code = persona effettiva, operator_base = account usato
+  all.forEach(e => {
+    e.operator_code = String(e.operator_code_effective ?? e.operator_code ?? "").trim() || "-";
+    e.operator_base = String(e.operator_base ?? e.operator_code ?? "").trim() || "-";
+  });
   return all;
 }
 
@@ -1102,7 +1065,7 @@ function exportIntervalsCsv() {
   log("Init overview...");
 
   try {
-    currentUser = await ensureAnonymousSession();
+    currentUser = await requireSession();
     log("✅ Session:", currentUser.id);
 
     // strip arrows

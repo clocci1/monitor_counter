@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Login — Stock Control - Productivity</title>
+  <style>
+    :root{
+      --bg:#0b0f14;
+      --panel:rgba(255,255,255,.06);
+      --stroke:rgba(255,255,255,.10);
+      --text:rgba(255,255,255,.92);
+      --muted:rgba(255,255,255,.62);
+      --accent:#7c5cff;
+      --danger:#ff4d6d;
+      --ok:#2dd4bf;
+      --shadow:0 18px 55px rgba(0,0,0,.55);
+      --radius:16px;
+    }
+    *{box-sizing:border-box;}
+    body{
+      margin:0; min-height:100vh;
+      background:
+        radial-gradient(1000px 500px at 10% -10%, rgba(124,92,255,.35), transparent 60%),
+        radial-gradient(800px 500px at 100% 0%, rgba(45,212,191,.18), transparent 60%),
+        var(--bg);
+      color:var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+      display:flex; align-items:center; justify-content:center;
+      padding:22px;
+    }
+    .card{
+      width:min(520px, 100%);
+      background:var(--panel);
+      border:1px solid var(--stroke);
+      border-radius:var(--radius);
+      box-shadow:var(--shadow);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      overflow:hidden;
+    }
+    .top{
+      padding:18px 18px 10px;
+      border-bottom:1px solid rgba(255,255,255,.08);
+    }
+    h1{margin:0;font-size:18px;letter-spacing:.2px;}
+    .sub{margin-top:6px;color:var(--muted);font-size:13px;line-height:1.45;}
+    .body{padding:18px;}
+    label{display:block;color:var(--muted);font-size:12px;margin:10px 0 6px;}
+    input{
+      width:100%;
+      padding:12px 12px;
+      border-radius:12px;
+      border:1px solid rgba(255,255,255,.14);
+      background:rgba(0,0,0,.22);
+      color:var(--text);
+      outline:none;
+    }
+    input:focus{border-color:rgba(124,92,255,.6);}
+    .row{display:flex; gap:10px; align-items:center; margin-top:14px;}
+    .btn{
+      appearance:none;
+      border:1px solid rgba(255,255,255,.14);
+      background:rgba(255,255,255,.06);
+      color:var(--text);
+      padding:11px 12px;
+      border-radius:999px;
+      cursor:pointer;
+      font-weight:700;
+      font-size:13px;
+      flex:1;
+    }
+    .btn.primary{
+      border-color:rgba(124,92,255,.55);
+      background:rgba(124,92,255,.18);
+    }
+    .btn:disabled{opacity:.55; cursor:not-allowed;}
+    .msg{margin-top:12px;font-size:13px;color:var(--muted); min-height:18px;}
+    .msg.err{color:var(--danger);}
+    .pill{
+      display:flex; gap:8px; align-items:center; justify-content:space-between;
+      padding:10px 12px;
+      background:rgba(255,255,255,.04);
+      border:1px solid rgba(255,255,255,.08);
+      border-radius:999px;
+      margin-top:12px;
+      font-size:12px;
+      color:var(--muted);
+    }
+    .dot{width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.25);}
+    .dot.ok{background:var(--ok);}
+    .dot.bad{background:var(--danger);}
+    .mono{font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="top">
+      <h1>Stock Control - Productivity</h1>
+      <div class="sub">Accesso riservato (Specialist / Team Leader / Dev).</div>
+      <div class="pill">
+        <div style="display:flex;gap:8px;align-items:center;">
+          <span id="authDot" class="dot"></span>
+          <span id="authStatus">checking...</span>
+        </div>
+        <span id="userId" class="mono">-</span>
+      </div>
+    </div>
+
+    <div class="body">
+      <form id="frm">
+        <label>Email</label>
+        <input id="email" type="email" autocomplete="username" placeholder="nome.cognome@azienda.it" required>
+        <label>Password</label>
+        <input id="password" type="password" autocomplete="current-password" placeholder="••••••••" required>
+        <div class="row">
+          <button id="btnLogin" class="btn primary" type="submit">Login</button>
+          <button id="btnLogout" class="btn" type="button">Logout</button>
+        </div>
+        <div id="msg" class="msg"></div>
+      </form>
+    </div>
+  </div>
+
+  <script type="module" src="./login.js"></script>
+</body>
+</html>
