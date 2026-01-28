@@ -124,33 +124,21 @@ function escapeHtml(str) {
 }
 
 // ---------------------------
-// Auth: email/password session
+// Auth: anonymous sign-in
 // ---------------------------
-async function requireSession() {
+async function ensureAnonymousSession() {
   setAuthUI(false, "checking session...", "-");
-  const { data, error } = await supabase.auth.getSession();
+  const { data: s, error } = await supabase.auth.getSession();
   if (error) throw error;
-
-  const user = data?.session?.user;
+  const user = s?.session?.user;
   if (!user) {
     setAuthUI(false, "signed-out", "-");
     const next = encodeURIComponent("index.html");
     location.href = `./login.html?next=${next}`;
-    throw new Error("No session");
+    throw new Error("Not signed in");
   }
-
   setAuthUI(true, "signed-in", user.email ?? user.id);
   return user;
-}
-
-async function signOut() {
-  setBusy(true, "sign-out...");
-  const { error } = await supabase.auth.signOut();
-  if (error) log("❌ signOut error:", error.message);
-  else log("✅ signed out");
-  setAuthUI(false, "signed-out", "-");
-  setBusy(false, "");
-  location.href = "./login.html?next=index.html";
 }
 
 async function signOut() {
@@ -522,7 +510,7 @@ function setupDropzone(kind, dzEl) {
   log("Init...");
 
   try {
-    const user = await requireSession();
+    const user = await ensureAnonymousSession();
     log("✅ Session ready:", user.id);
 
     // Multi-select inputs

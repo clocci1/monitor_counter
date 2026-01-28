@@ -141,31 +141,23 @@ function setWeekLabel() {
 }
 
 // ---------- auth ----------
-async function requireSession() {
+async function ensureAnon() {
   setAuthUI(false, "checking session...", "-");
-
-  const { data, error } = await supabase.auth.getSession();
+  const { data: s, error } = await supabase.auth.getSession();
   if (error) throw error;
-
-  const user = data?.session?.user;
+  const user = s?.session?.user;
   if (!user) {
     setAuthUI(false, "signed-out", "-");
     const next = encodeURIComponent("resource.html");
     location.href = `./login.html?next=${next}`;
-    throw new Error("No session");
+    throw new Error("Not signed in");
   }
-
   setAuthUI(true, "signed-in", user.email ?? user.id);
   return user;
 }
-
-async function signOut() {
-  const { error } = await supabase.auth.signOut();
-  if (error) log("❌ signOut:", error.message);
-  location.href = "./login.html?next=resource.html";
-}
 async function resetSession() {
-  await signOut();
+  await supabase.auth.signOut();
+  location.href = "./login.html?next=resource.html";
 }
 
 // ---------- load ----------
@@ -963,7 +955,7 @@ async function reloadAll() {
 // ---------- init ----------
 (async function init() {
   try {
-    user = await requireSession();
+    user = await ensureAnon();
     log("✅ user:", user.id);
 
     $("btnReset").addEventListener("click", resetSession);

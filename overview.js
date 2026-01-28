@@ -7,6 +7,10 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 const $ = (id) => document.getElementById(id);
 const logEl = $("log");
 
+function todayRomeYYYYMMDD() {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Rome" }).format(new Date());
+}
+
 function dt(dateStr, timeStr) {
   return new Date(`${dateStr}T${String(timeStr).slice(0,5)}:00`);
 }
@@ -98,6 +102,19 @@ function intervalsFromEventsInWindows(events, windows, pauseThresholdMin=30) {
 function hasSchedule(windowsMap, operator, day) {
   return (windowsMap.get(`${operator}__${day}`) ?? []).length > 0;
 }
+
+// quando selezioni operatore + giorno:
+if (hasSchedule(windowsMap, operator, day)) {
+  shiftSelect.disabled = true;
+  shiftSelect.style.display = "none";     // oppure lo disabiliti e lo lasci visibile
+  shiftLabel.textContent = "Shift da schedule";
+} else {
+  shiftSelect.disabled = false;
+  shiftSelect.style.display = "";
+  shiftLabel.textContent = "Shift manuale";
+}
+
+
 
 const PAUSE_THRESHOLD_SEC = 30 * 60;
 
@@ -207,28 +224,23 @@ function categoryToCssBg(cat) {
 }
 
 // -------------------- Auth --------------------
-async function requireSession() {
+async function ensureAnonymousSession() {
   setAuthUI(false, "checking session...", "-");
-
-  const { data, error } = await supabase.auth.getSession();
+  const { data: s, error } = await supabase.auth.getSession();
   if (error) throw error;
-
-  const user = data?.session?.user;
+  const user = s?.session?.user;
   if (!user) {
     setAuthUI(false, "signed-out", "-");
-    const next = encodeURIComponent(location.pathname.split("/").pop() || "index.html");
+    const next = encodeURIComponent("overview.html");
     location.href = `./login.html?next=${next}`;
-    throw new Error("No session");
+    throw new Error("Not signed in");
   }
-
   setAuthUI(true, "signed-in", user.email ?? user.id);
   return user;
 }
 
 async function resetSession() {
-  setBusy(true);
   await supabase.auth.signOut();
-  setBusy(false);
   location.href = "./login.html?next=overview.html";
 }
 
@@ -313,7 +325,7 @@ function computeEffectiveDays() {
   return baseDays.filter(d => picked.includes(monthKey(new Date(`${d}T00:00:00`))));
 }
 
-// -------------------- Fetch ALL events for base range (pagination) -------------------- for base range (pagination) --------------------
+// -------------------- Fetch ALL events for base range (pagination) --------------------
 async function fetchEventsAll(fromDay, toDay) {
   const start = `${fromDay}T00:00:00`;
   const end = `${toDay}T23:59:59`;
@@ -344,11 +356,13 @@ async function fetchEventsAll(fromDay, toDay) {
     if (from > 100000) break;
   }
 
-  // Normalizza: operator_code = persona effettiva, operator_base = account usato
-  all.forEach(e => {
-    e.operator_code = String(e.operator_code_effective ?? e.operator_code ?? "").trim() || "-";
-    e.operator_base = String(e.operator_base ?? e.operator_code ?? "").trim() || "-";
-  });
+  // normalize
+  all = (all ?? []).map(e => ({
+    ...e,
+    operator: String(e.operator_code_effective ?? e.operator_code ?? "").trim(),
+    account_used: String(e.operator_base ?? e.operator_code ?? "").trim(),
+  }));
+
   return all;
 }
 
@@ -1065,7 +1079,7 @@ function exportIntervalsCsv() {
   log("Init overview...");
 
   try {
-    currentUser = await requireSession();
+    currentUser = await ensureAnonymousSession();
     log("✅ Session:", currentUser.id);
 
     // strip arrows
@@ -1073,15 +1087,10 @@ function exportIntervalsCsv() {
     attachStripArrows("kpiLeft","kpiRight","kpiScroll");
     attachStripArrows("ddLeft","ddRight","ddScroll");
 
-    // default date range: last 7 days
-    const now = new Date();
-    const to = dayKey(now);
-    const fromD = new Date(now);
-    fromD.setDate(fromD.getDate() - 6);
-    const from = dayKey(fromD);
-
-    $("fromDate").value = from;
-    $("toDate").value = to;
+    // default date range: today (Rome)
+    const today = todayRomeYYYYMMDD();
+    $("fromDate").value = today;
+    $("toDate").value = today;
 
     // build items
     rebuildRangeItems();
