@@ -143,21 +143,19 @@ function setWeekLabel() {
 // ---------- auth ----------
 async function ensureAnon() {
   setAuthUI(false, "checking session...", "-");
-  const { data: s, error } = await supabase.auth.getSession();
-  if (error) throw error;
-  const user = s?.session?.user;
-  if (!user) {
-    setAuthUI(false, "signed-out", "-");
-    const next = encodeURIComponent("resource.html");
-    location.href = `./login.html?next=${next}`;
-    throw new Error("Not signed in");
+  const { data: s } = await supabase.auth.getSession();
+  if (s?.session?.user) {
+    setAuthUI(true, "signed-in (anon)", s.session.user.id);
+    return s.session.user;
   }
-  setAuthUI(true, "signed-in", user.email ?? user.id);
-  return user;
+  const { data, error } = await supabase.auth.signInAnonymously();
+  if (error) throw error;
+  setAuthUI(true, "signed-in (anon)", data.user.id);
+  return data.user;
 }
 async function resetSession() {
   await supabase.auth.signOut();
-  location.href = "./login.html?next=resource.html";
+  location.reload();
 }
 
 // ---------- load ----------
@@ -682,13 +680,17 @@ async function saveSupportSegment() {
   const endT = $("supEnd").value;
 
   if (!account || !day || !startT || !endT) { log("⚠️ account/giorno/start/end richiesti"); return; }
+  // evita segmenti invertiti / zero-length
+  const startIso = new Date(`${day}T${startT}:00`).toISOString();
+  const endIso = new Date(`${day}T${endT}:00`).toISOString();
+  if (new Date(endIso) <= new Date(startIso)) { log("⚠️ End deve essere > Start"); return; }
 
   const payload = {
     user_id: user.id,
     account_used: account,
     kind,
-    start_dt: `${day}T${startT}:00`,
-    end_dt: `${day}T${endT}:00`,
+    start_dt: startIso,
+    end_dt: endIso,
     note: $("supNote").value.trim() || null,
     real_name: null,
     dept: null,
