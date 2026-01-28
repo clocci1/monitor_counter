@@ -141,18 +141,23 @@ function setWeekLabel() {
 }
 
 // ---------- auth ----------
-async function ensureAnon() {
+async function requireSession() {
   setAuthUI(false, "checking session...", "-");
-  const { data: s } = await supabase.auth.getSession();
-  if (s?.session?.user) {
-    setAuthUI(true, "signed-in (anon)", s.session.user.id);
-    return s.session.user;
-  }
-  const { data, error } = await supabase.auth.signInAnonymously();
+  const { data, error } = await supabase.auth.getSession();
   if (error) throw error;
-  setAuthUI(true, "signed-in (anon)", data.user.id);
-  return data.user;
+
+  const user = data?.session?.user;
+  if (!user) {
+    setAuthUI(false, "signed-out", "-");
+    const next = encodeURIComponent("resource.html");
+    location.href = `./login.html?next=${next}`;
+    throw new Error("No session");
+  }
+
+  setAuthUI(true, "signed-in", user.email ?? user.id);
+  return user;
 }
+
 async function resetSession() {
   await supabase.auth.signOut();
   location.reload();
@@ -177,8 +182,8 @@ async function loadResources() {
 }
 
 async function loadSupportSegments(weekStart) {
-  const from = `${weekStart}T00:00:00`;
-  const to = `${addDays(weekStart, 6)}T23:59:59`;
+  const from = `${weekStart}T00:00:00Z`;
+  const to = `${addDays(weekStart, 6)}T23:59:59Z`;
   const { data, error } = await supabase
     .from("support_work_segments")
     .select("*")
@@ -212,8 +217,8 @@ async function loadWeekSchedule(weekStart) {
 }
 
 async function loadWeekEvents(weekStart) {
-  const from = `${weekStart}T00:00:00`;
-  const to = `${addDays(weekStart, 6)}T23:59:59`;
+  const from = `${weekStart}T00:00:00Z`;
+  const to = `${addDays(weekStart, 6)}T23:59:59Z`;
 
   const PAGE = 1000;
   let fromIx = 0;
@@ -680,17 +685,13 @@ async function saveSupportSegment() {
   const endT = $("supEnd").value;
 
   if (!account || !day || !startT || !endT) { log("⚠️ account/giorno/start/end richiesti"); return; }
-  // evita segmenti invertiti / zero-length
-  const startIso = new Date(`${day}T${startT}:00`).toISOString();
-  const endIso = new Date(`${day}T${endT}:00`).toISOString();
-  if (new Date(endIso) <= new Date(startIso)) { log("⚠️ End deve essere > Start"); return; }
 
   const payload = {
     user_id: user.id,
     account_used: account,
     kind,
-    start_dt: startIso,
-    end_dt: endIso,
+    start_dt: `${day}T${startT}:00`,
+    end_dt: `${day}T${endT}:00`,
     note: $("supNote").value.trim() || null,
     real_name: null,
     dept: null,
@@ -957,7 +958,7 @@ async function reloadAll() {
 // ---------- init ----------
 (async function init() {
   try {
-    user = await ensureAnon();
+    user = await requireSession();
     log("✅ user:", user.id);
 
     $("btnReset").addEventListener("click", resetSession);

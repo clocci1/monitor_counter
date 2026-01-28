@@ -7,6 +7,8 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 const $ = (id) => document.getElementById(id);
 const logEl = $("log");
 
+function canon(v){ return String(v ?? "").trim().toUpperCase(); }
+
 function dt(dateStr, timeStr) {
   return new Date(`${dateStr}T${String(timeStr).slice(0,5)}:00`);
 }
@@ -32,7 +34,7 @@ function buildWindowsMap(sched, supSeg) {
 
   // schedule -> garantiti
   for (const s of (sched ?? [])) {
-    const op = (s.operator_code ?? "").trim();
+    const op = canon(s.operator_code);
     if (!op) continue;
     if (s.status !== "present") continue;
     if (!s.start_time || !s.end_time) continue;
@@ -42,7 +44,7 @@ function buildWindowsMap(sched, supSeg) {
 
   // support segments -> persone reali
   for (const seg of (supSeg ?? [])) {
-    const real = (seg.real_name ?? "").trim();
+    const real = canon(seg.real_name);
     if (!real) continue;
 
     const a = new Date(seg.start_dt);
@@ -111,6 +113,7 @@ const SHIFTS = {
 
 let currentUser = null;
 let windowsMap = new Map(); // schedule/support windows (popolato in loadBaseRangeAndRender)
+let supportSegCache = [];
 
 let cachedEvents = [];          // fetched for base range
 let effectiveEvents = [];       // after items + chip filter
@@ -211,18 +214,23 @@ function categoryToCssBg(cat) {
 }
 
 // -------------------- Auth --------------------
-async function ensureAnonymousSession() {
+async function requireSession() {
   setAuthUI(false, "checking session...", "-");
-  const { data: s } = await supabase.auth.getSession();
-  if (s?.session?.user) {
-    setAuthUI(true, "signed-in (anon)", s.session.user.id);
-    return s.session.user;
-  }
-  const { data, error } = await supabase.auth.signInAnonymously();
+  const { data, error } = await supabase.auth.getSession();
   if (error) throw error;
-  setAuthUI(true, "signed-in (anon)", data.user?.id);
-  return data.user;
+
+  const user = data?.session?.user;
+  if (!user) {
+    setAuthUI(false, "signed-out", "-");
+    const next = encodeURIComponent("overview.html");
+    location.href = `./login.html?next=${next}`;
+    throw new Error("No session");
+  }
+
+  setAuthUI(true, "signed-in", user.email ?? user.id);
+  return user;
 }
+
 
 async function resetSession() {
   setBusy(true);
@@ -326,8 +334,8 @@ async function fetchEventsAll(fromDay, toDay) {
     const to = from + PAGE - 1;
 
     const { data, error } = await supabase
-      .from("v_operator_events_effective_plus_support")
-      .select("event_dt, source, category, warehouse_order, created_by, counter, operator_code_effective, operator_base, operator_code")
+      .from("v_operator_events_effective")
+      .select("event_dt, source, category, warehouse_order, created_by, counter, operator_code")
       .gte("event_dt", start)
       .lte("event_dt", end)
       .order("operator_code", { ascending: true })
@@ -346,14 +354,67 @@ async function fetchEventsAll(fromDay, toDay) {
 
   // normalizza campi attesi dall'app
   for (const e of all) {
-    e.operator_code = String(e.operator_code_effective ?? e.operator_code ?? "").trim().toUpperCase(); // persona "effettiva"
-    e.operator_base = String(e.operator_base ?? "").trim().toUpperCase(); // account usato
-    e.created_by = e.created_by ? String(e.created_by).trim().toUpperCase() : null;
-    e.counter = e.counter ? String(e.counter).trim().toUpperCase() : null;
+    e.operator_code = canon(e.operator_code); // account usato (per ora)
+    e.operator_base = e.operator_code;        // alias compatibilità
+    e.created_by = e.created_by ? canon(e.created_by) : null;
+    e.counter = e.counter ? canon(e.counter) : null;
   }
+
+  // rimappa su "persona effettiva" se c'è un segmento Supporto
+  applySupportMappingInPlace(all);
 
   return all;
 }
+
+function applySupportMappingInPlace(events) {
+  // indicizza segmenti: account -> [ {start,end,real}... ] (ordinati per start)
+  const byAcc = new Map();
+
+  for (const s of (supportSegCache ?? [])) {
+    const acc = canon(s.account_used);
+    const real = canon(s.real_name);
+    if (!acc || !real) continue;
+
+    const a = new Date(s.start_dt);
+    const b = new Date(s.end_dt);
+    if (isNaN(a.getTime()) || isNaN(b.getTime())) continue;
+
+    if (!byAcc.has(acc)) byAcc.set(acc, []);
+    byAcc.get(acc).push({ start: a, end: b, real });
+  }
+
+  for (const [acc, list] of byAcc.entries()) {
+    list.sort((x, y) => x.start - y.start);
+    byAcc.set(acc, list);
+  }
+
+  // events sono già ordinati per account e tempo -> scansione lineare per account
+  let curAcc = null;
+  let segs = null;
+  let j = 0;
+
+  for (const e of events) {
+    const base = canon(e.operator_base ?? e.operator_code);
+    const t = new Date(e.event_dt);
+    if (isNaN(t.getTime())) continue;
+
+    if (base !== curAcc) {
+      curAcc = base;
+      segs = byAcc.get(base) ?? null;
+      j = 0;
+    }
+
+    let eff = base;
+    if (segs) {
+      while (j < segs.length && t >= segs[j].end) j++;
+      if (j < segs.length && t >= segs[j].start && t < segs[j].end) eff = segs[j].real;
+    }
+
+    e.operator_base = base;
+    e.operator_code = eff;
+  }
+}
+
 
 
 // -------------------- Category mapping --------------------
@@ -846,9 +907,9 @@ async function loadSupportRanges() {
   if (!supportAccountOpen) return;
 
   const { data, error } = await supabase
-    .from("support_assignments")
-    .select("id,real_operator,start_dt,end_dt")
-    .eq("support_account", supportAccountOpen)
+    .from("support_work_segments")
+    .select("id,real_name,start_dt,end_dt,dept")
+    .eq("account_used", supportAccountOpen).eq("kind","support")
     .order("start_dt", { ascending: false });
 
   if (error) { log("❌ loadSupportRanges:", error.message); return; }
@@ -856,7 +917,7 @@ async function loadSupportRanges() {
   for (const r of (data ?? [])) {
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td>${escapeHtml(r.real_operator)}</td>
+      <td>${escapeHtml(r.real_name ?? "")}</td>
       <td class="mono">${escapeHtml(String(r.start_dt))}</td>
       <td class="mono">${escapeHtml(String(r.end_dt))}</td>
       <td><button class="btn danger" data-del="${r.id}">Elimina</button></td>
@@ -867,7 +928,7 @@ async function loadSupportRanges() {
   tb.querySelectorAll("[data-del]").forEach(btn => {
     btn.addEventListener("click", async () => {
       const id = btn.getAttribute("data-del");
-      await supabase.from("support_assignments").delete().eq("id", id);
+      await supabase.from("support_work_segments").delete().eq("id", id);
       await loadSupportRanges();
     });
   });
@@ -882,10 +943,11 @@ async function addSupportRange() {
 
   if (!realOperator || !start || !end) { log("⚠️ Compila Supporto reale + Start + End"); return; }
 
-  const { error } = await supabase.from("support_assignments").insert({
+  const { error } = await supabase.from("support_work_segments").insert({
     user_id: currentUser.id,
-    support_account: supportAccountOpen,
-    real_operator: realOperator,
+    account_used: supportAccountOpen,
+    kind: "support",
+    real_name: realOperator,
     start_dt: start,
     end_dt: end,
   });
@@ -1025,13 +1087,14 @@ async function loadWindowsMap(fromDay, toDay) {
     const { data: supSeg, error: supErr } = await supabase
       .from("support_work_segments")
       .select("account_used, real_name, start_dt, end_dt, kind")
-      .gte("start_dt", fromDay + "T00:00:00")
-      .lte("end_dt", toDay + "T23:59:59")
+      .gte("start_dt", fromDay + "T00:00:00Z")
+      .lte("end_dt", toDay + "T23:59:59Z")
       .eq("kind", "support");
 
     if (supErr) throw supErr;
 
-    windowsMap = buildWindowsMap(sched ?? [], supSeg ?? []);
+    supportSegCache = (supSeg ?? []);
+    windowsMap = buildWindowsMap(sched ?? [], supportSegCache);
     log(`windowsMap loaded: ${windowsMap.size} keys`);
   } catch (e) {
     // non bloccare overview se schedule/support non disponibili
@@ -1048,10 +1111,11 @@ async function loadBaseRangeAndRender() {
 
   setBusy(true);
   try {
+    await loadWindowsMap(fromDay, toDay);
+
     cachedEvents = await fetchEventsAll(fromDay, toDay);
     log(`Loaded events (base range): ${cachedEvents.length}`);
 
-    await loadWindowsMap(fromDay, toDay);
 
     recomputeFromCached();
   } catch (e) {
@@ -1101,7 +1165,7 @@ function exportIntervalsCsv() {
   log("Init overview...");
 
   try {
-    currentUser = await ensureAnonymousSession();
+    currentUser = await requireSession();
     log("✅ Session:", currentUser.id);
 
     // strip arrows
