@@ -307,6 +307,37 @@ function computeExpectedMinutesForAccount(opNorm){
   }
   return expected;
 }
+function overlapSeconds(events, winStart, winEnd) {
+  let sec = 0;
+  for (let i = 0; i < events.length - 1; i++) {
+    const a = parseDT(events[i].event_dt);
+    const b = parseDT(events[i + 1].event_dt);
+    if (!a || !b) continue;
+
+    const dt = Math.floor((b - a) / 1000);
+    if (dt <= 0) continue;
+    if (dt > PAUSE_THRESHOLD_SEC) continue; // pausa = non conteggio lavoro
+
+    // overlap dell’intervallo [a,b] con [winStart,winEnd]
+    const s = Math.max(a.getTime(), winStart.getTime());
+    const e = Math.min(b.getTime(), winEnd.getTime());
+    if (e > s) sec += Math.floor((e - s) / 1000);
+  }
+  return sec;
+}
+
+function allocatedSupportSeconds(account, eventsForAccount) {
+  const acc = canon(account);
+  let sec = 0;
+
+  for (const s of supportSegments) {
+    if (canon(s.account_used) !== acc) continue;
+    const a = parseDT(s.start_dt), b = parseDT(s.end_dt);
+    if (!a || !b) continue;
+    sec += overlapSeconds(eventsForAccount, a, b);
+  }
+  return sec;
+}
 
 function computeActualMinutesForAccount(baseAccountNorm){
   const events = weekEvents.filter(e => e.operator_base === baseAccountNorm);
@@ -376,6 +407,8 @@ function openResModal(r){
   $("resOverlay").style.display="flex";
 }
 function closeResModal(){ $("resOverlay").style.display="none"; editingResId=null; }
+const allocSec = allocatedSupportSeconds(acc);
+const allocSec = allocatedSupportSeconds(acc, evs);
 
 async function saveResModal(){
   const operator_code = $("resCode").value.trim();
