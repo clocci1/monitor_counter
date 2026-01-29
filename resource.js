@@ -407,7 +407,6 @@ function openResModal(r){
   $("resOverlay").style.display="flex";
 }
 function closeResModal(){ $("resOverlay").style.display="none"; editingResId=null; }
-
 const allocSec = allocatedSupportSeconds(acc, evs);
 
 async function saveResModal(){
