@@ -1,591 +1,309 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const SUPABASE_URL = "https://wndlmkjhzgqdwsfylvmh.supabase.co";
-const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_sf8tAbDNmRLtCGu9xsesSQ_JWmIyQHI";
+const SUPABASE_KEY = "sb_publishable_sf8tAbDNmRLtCGu9xsesSQ_JWmIyQHI";
+export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
-
-// ---------------------------
-// UI helpers
-// ---------------------------
 const $ = (id) => document.getElementById(id);
-const logEl = $("log");
+const canon = (s) => (s ?? "").toString().trim().toUpperCase().replace(/\s+/g, "");
 
-function log(...args) {
-  const line = args
-    .map((a) => (typeof a === "string" ? a : JSON.stringify(a, null, 2)))
-    .join(" ");
-  logEl.textContent += line + "\n";
+const logEl = $("log");
+function log(...args){
+  console.log(...args);
+  if(!logEl) return;
+  const msg = args.map(a => typeof a === "string" ? a : JSON.stringify(a)).join(" ");
+  logEl.textContent += msg + "\n";
   logEl.scrollTop = logEl.scrollHeight;
 }
 
-function setBusy(isBusy, msg = "") {
-  $("btnImportAll").disabled = isBusy;
-  $("btnImportPI").disabled = isBusy;
-  $("btnImportWT").disabled = isBusy;
-  $("btnPreview").disabled = isBusy;
-  $("btnSignOut").disabled = isBusy;
-  $("btnClearPI").disabled = isBusy;
-  $("btnClearWT").disabled = isBusy;
-  $("filePI").disabled = isBusy;
-  $("fileWT").disabled = isBusy;
-  $("busyLabel").textContent = msg;
+function safeFilename(name){
+  return name.replace(/[^a-zA-Z0-9._-]/g,"_");
 }
 
-function setAuthUI(ok, statusText, userId) {
-  $("authStatus").textContent = statusText;
-  $("userId").textContent = userId ?? "-";
-  const dot = $("authDot");
-  dot.classList.remove("ok", "bad");
-  dot.classList.add(ok ? "ok" : "bad");
-}
-
-// ---------------------------
-// Selected files state (multi-file)
-// ---------------------------
-let selectedPI = [];
-let selectedWT = [];
-
-function humanFileSize(bytes) {
-  const u = ["B", "KB", "MB", "GB"];
-  let n = bytes;
-  let i = 0;
-  while (n >= 1024 && i < u.length - 1) {
-    n /= 1024;
-    i++;
-  }
-  return `${n.toFixed(i === 0 ? 0 : 1)} ${u[i]}`;
-}
-
-function renderFileList(kind) {
-  const listEl = kind === "PI" ? $("listPI") : $("listWT");
-  const arr = kind === "PI" ? selectedPI : selectedWT;
-
-  listEl.innerHTML = "";
-
-  if (arr.length === 0) return;
-
-  arr.forEach((f, idx) => {
-    const li = document.createElement("li");
-    li.className = "fileItem";
-
-    li.innerHTML = `
-      <div class="fileLeft">
-        <div class="fileName">${escapeHtml(f.name)}</div>
-        <div class="fileMeta">${humanFileSize(f.size)}</div>
-      </div>
-      <button class="btn danger" data-kind="${kind}" data-idx="${idx}">Rimuovi</button>
-    `;
-
-    listEl.appendChild(li);
-  });
-
-  // bind remove buttons
-  listEl.querySelectorAll("button[data-idx]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const k = btn.getAttribute("data-kind");
-      const i = Number(btn.getAttribute("data-idx"));
-      if (k === "PI") selectedPI.splice(i, 1);
-      else selectedWT.splice(i, 1);
-      renderFileList(k);
+async function uploadToStorage(file, batchId, tag){
+  try{
+    const ext = file.name.toLowerCase().endsWith(".xls") ? "xls" : "xlsx";
+    const path = `${batchId}/${tag}__${safeFilename(file.name)}.${ext}`;
+    const { error } = await supabase.storage.from("uploads").upload(path, file, {
+      upsert: false,
+      contentType: file.type || "application/octet-stream"
     });
+    if(error) throw error;
+    return { bucket:"uploads", path };
+  }catch(e){
+    log("⚠️ Storage upload skipped:", e?.message || e);
+    return { bucket:null, path:null };
+  }
+}
+
+async function createBatch(source, file, storageMeta){
+  const payload = {
+    source,
+    file_name: file.name,
+    storage_bucket: storageMeta.bucket,
+    storage_path: storageMeta.path,
+    rows_inserted: 0
+  };
+  const { data, error } = await supabase.from("import_batches").insert(payload).select("id").single();
+  if(error) throw error;
+  return data.id;
+}
+
+function parseExcel(file){
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try{
+        const data = new Uint8Array(e.target.result);
+        const wb = XLSX.read(data, { type:"array", cellDates:true });
+        const sheetName = wb.SheetNames[0];
+        const ws = wb.Sheets[sheetName];
+        const rows = XLSX.utils.sheet_to_json(ws, { defval: null });
+        resolve(rows);
+      }catch(err){
+        reject(err);
+      }
+    };
+    reader.onerror = reject;
+    reader.readAsArrayBuffer(file);
   });
 }
 
-function addFiles(kind, files) {
-  const incoming = Array.from(files || []);
-  if (incoming.length === 0) return;
-
-  // Evita doppioni nello "staging" UI (stesso name+size)
-  const key = (f) => `${f.name}__${f.size}`;
-  const existing = new Set((kind === "PI" ? selectedPI : selectedWT).map(key));
-
-  const merged = incoming.filter((f) => !existing.has(key(f)));
-
-  if (kind === "PI") selectedPI = selectedPI.concat(merged);
-  else selectedWT = selectedWT.concat(merged);
-
-  renderFileList(kind);
-}
-
-function clearFiles(kind) {
-  if (kind === "PI") selectedPI = [];
-  else selectedWT = [];
-  renderFileList(kind);
-}
-
-function escapeHtml(str) {
-  return String(str)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
-// ---------------------------
-// Auth: anonymous sign-in
-// ---------------------------
-async function ensureAnonymousSession() {
-  setAuthUI(false, "checking session...", "-");
-  const { data: s } = await supabase.auth.getSession();
-
-  if (s?.session?.user) {
-    setAuthUI(true, "signed-in (anon)", s.session.user.id);
-    return s.session.user;
+function toDateOnly(v){
+  if(!v) return null;
+  if(v instanceof Date){
+    const y=v.getFullYear();
+    const m=String(v.getMonth()+1).padStart(2,"0");
+    const d=String(v.getDate()).padStart(2,"0");
+    return `${y}-${m}-${d}`;
   }
-
-  const { data, error } = await supabase.auth.signInAnonymously();
-  if (error) throw error;
-
-  setAuthUI(true, "signed-in (anon)", data.user?.id);
-  return data.user;
+  const s=String(v).trim();
+  const m = s.match(/^(\d{4}-\d{2}-\d{2})/);
+  if(m) return m[1];
+  return s;
 }
-
-async function signOut() {
-  setBusy(true, "reset session...");
-  const { error } = await supabase.auth.signOut();
-  if (error) log("❌ signOut error:", error.message);
-  else log("✅ signed out");
-  setAuthUI(false, "signed-out", "-");
-  setBusy(false, "");
-}
-
-// ---------------------------
-// Excel parsing (SheetJS)
-// ---------------------------
-function normHeader(h) {
-  return String(h ?? "")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, " ")
-    .replace(/[.]/g, "")
-    .replace(/[^a-z0-9 ]/g, "");
-}
-
-function normalizeText(v) {
-  if (v === null || v === undefined) return null;
-  const s = String(v).trim();
-  return s === "" ? null : s;
-}
-
-function normalizeKey(v) {
-  if (v === null || v === undefined) return null;
-  const s = String(v).trim().toUpperCase();
-  return s === "" ? null : s;
-}
-
-function pad2(n) {
-  const x = Number(n);
-  return x < 10 ? `0${x}` : String(x);
-}
-
-function toISODate(d) {
-  const y = d.getFullYear();
-  const m = pad2(d.getMonth() + 1);
-  const day = pad2(d.getDate());
-  return `${y}-${m}-${day}`;
-}
-
-function toISOTime(d) {
-  const hh = pad2(d.getHours());
-  const mm = pad2(d.getMinutes());
-  const ss = pad2(d.getSeconds());
-  return `${hh}:${mm}:${ss}`;
-}
-
-function parseExcelDate(value) {
-  if (value === null || value === undefined || value === "") return null;
-
-  if (value instanceof Date && !isNaN(value.getTime())) {
-    return toISODate(value);
+function toTimeOnly(v){
+  if(!v) return null;
+  if(v instanceof Date){
+    const hh=String(v.getHours()).padStart(2,"0");
+    const mm=String(v.getMinutes()).padStart(2,"0");
+    const ss=String(v.getSeconds()).padStart(2,"0");
+    return `${hh}:${mm}:${ss}`;
   }
-
-  if (typeof value === "number") {
-    const d = XLSX.SSF.parse_date_code(value);
-    if (!d) return null;
-    const dt = new Date(d.y, d.m - 1, d.d);
-    return toISODate(dt);
+  const s=String(v).trim();
+  const m=s.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if(m){
+    const hh=String(m[1]).padStart(2,"0");
+    const mm=m[2];
+    const ss=String(m[3]||"00").padStart(2,"0");
+    return `${hh}:${mm}:${ss}`;
   }
-
-  const s = String(value).trim();
-  const m1 = s.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/);
-  if (m1) {
-    const dd = pad2(m1[1]);
-    const mm = pad2(m1[2]);
-    const yyyy = m1[3];
-    return `${yyyy}-${mm}-${dd}`;
-  }
-
-  const m2 = s.match(/^(\d{4})[\/.-](\d{1,2})[\/.-](\d{1,2})$/);
-  if (m2) {
-    const yyyy = m2[1];
-    const mm = pad2(m2[2]);
-    const dd = pad2(m2[3]);
-    return `${yyyy}-${mm}-${dd}`;
-  }
-
-  const parsed = new Date(s);
-  if (!isNaN(parsed.getTime())) return toISODate(parsed);
-
-  return null;
+  return s;
 }
-
-function parseExcelTime(value) {
-  if (value === null || value === undefined || value === "") return null;
-
-  if (value instanceof Date && !isNaN(value.getTime())) {
-    return toISOTime(value);
-  }
-
-  if (typeof value === "number") {
-    const d = XLSX.SSF.parse_date_code(value);
-    if (!d) return null;
-    return `${pad2(d.H)}:${pad2(d.M)}:${pad2(d.S)}`;
-  }
-
-  const s = String(value).trim();
-  const m = s.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
-  if (m) {
-    return `${pad2(m[1])}:${pad2(m[2])}:${pad2(m[3] ?? "00")}`;
-  }
-
-  const parsed = new Date(s);
-  if (!isNaN(parsed.getTime())) return toISOTime(parsed);
-
-  return null;
-}
-
-async function readExcelRows(file) {
-  const buf = await file.arrayBuffer();
-  const wb = XLSX.read(buf, { type: "array", cellDates: true });
-  const sheet = wb.Sheets[wb.SheetNames[0]];
-  return XLSX.utils.sheet_to_json(sheet, { defval: null });
-}
-
-function buildHeaderIndex(rowObj) {
-  const map = new Map();
-  for (const k of Object.keys(rowObj || {})) {
-    map.set(normHeader(k), k);
-  }
-  return map;
-}
-
-function pickField(row, headerIndex, wanted) {
-  for (const w of wanted) {
-    const original = headerIndex.get(w);
-    if (original !== undefined) return row[original];
+function pick(obj, keys){
+  for(const k of keys){
+    if(obj[k] !== undefined) return obj[k];
   }
   return null;
 }
 
-// ---------------------------
-// PI mapper
-// ---------------------------
-function mapPI(rows, userId, batchId) {
-  if (!rows.length) return [];
-  const headerIndex = buildHeaderIndex(rows[0]);
-
-  const out = [];
-  for (const r of rows) {
-    const warehouseOrder = normalizeKey(pickField(r, headerIndex, ["warehouse order"]));
-    const storageBin = normalizeKey(pickField(r, headerIndex, ["storage bin"]));
-    if (!warehouseOrder || !storageBin) continue;
-
-    const countDate = parseExcelDate(pickField(r, headerIndex, ["count date"]));
-    const countTime = parseExcelTime(pickField(r, headerIndex, ["count time"]));
-    if (!countDate || !countTime) continue;
-
-    const status = normalizeText(
-      pickField(r, headerIndex, ["physiscal inventory status", "physical inventory status"])
-    );
-
-    const counter = normalizeText(pickField(r, headerIndex, ["counter"]));
-    const createdBy = normalizeText(pickField(r, headerIndex, ["created by"]));
-
+function mapPI(rawRows, importBatchId){
+  const out=[];
+  for(const r of rawRows){
+    const wo = pick(r, ["Warehouse Order","WarehouseOrder","WAREHOUSE ORDER"]);
+    const bin = pick(r, ["Storage Bin","StorageBin","STORAGE BIN"]);
+    if(!wo || !bin) continue;
     out.push({
-      user_id: userId,
-      batch_id: batchId,
-      warehouse_order: warehouseOrder,
-      storage_bin: storageBin,
-      physical_inventory_status: status,
-      count_date: countDate,
-      count_time: countTime,
-      counter,
-      created_by: createdBy,
-      raw: r,
+      import_batch_id: importBatchId,
+      warehouse_order: String(wo).trim(),
+      storage_bin: String(bin).trim(),
+      physical_inventory_status: pick(r, ["Physiscal Inventory Status","Physical Inventory Status","PI Status"]),
+      count_date: toDateOnly(pick(r, ["Count Date","CountDate"])),
+      count_time: toTimeOnly(pick(r, ["Count Time","CountTime"])),
+      counter: pick(r, ["Counter"]),
+      created_by: pick(r, ["Created By","CreatedBy"])
     });
   }
-
-  out.sort((a, b) => Date.parse(`${a.count_date}T${a.count_time}`) - Date.parse(`${b.count_date}T${b.count_time}`));
   return out;
 }
 
-// ---------------------------
-// WT mapper
-// ---------------------------
-function mapWT(rows, userId, batchId) {
-  if (!rows.length) return [];
-  const headerIndex = buildHeaderIndex(rows[0]);
-
-  const out = [];
-  for (const r of rows) {
-    const warehouseOrder = normalizeKey(pickField(r, headerIndex, ["warehouse order"]));
-    const procType = normalizeText(pickField(r, headerIndex, ["whse proc type"]));
-    const sourceBin = normalizeKey(pickField(r, headerIndex, ["source storage bin"]));
-
-    if (!warehouseOrder || !sourceBin || !procType) continue;
-
-    const confDate = parseExcelDate(pickField(r, headerIndex, ["confirmation date"]));
-    const confTime = parseExcelTime(pickField(r, headerIndex, ["confirmation time"]));
-    if (!confDate || !confTime) continue;
-
-    const createdBy = normalizeText(pickField(r, headerIndex, ["created by"]));
-    const confirmedBy = normalizeText(pickField(r, headerIndex, ["confirmed by"]));
-    const destBin = normalizeText(pickField(r, headerIndex, ["original dest bin"]));
-
+function mapWT(rawRows, importBatchId){
+  const out=[];
+  for(const r of rawRows){
+    const wo = pick(r, ["Warehouse Order","WarehouseOrder","WAREHOUSE ORDER"]);
+    const srcBin = pick(r, ["Source Storage Bin","SourceStorageBin","SOURCE STORAGE BIN"]);
+    if(!wo || !srcBin) continue;
     out.push({
-      user_id: userId,
-      batch_id: batchId,
-      warehouse_order: warehouseOrder,
-      whse_proc_type: String(procType).trim(),
-      created_by: createdBy,
-      confirmation_date: confDate,
-      confirmation_time: confTime,
-      confirmed_by: confirmedBy,
-      source_storage_bin: sourceBin,
-      original_dest_bin: destBin,
-      raw: r,
+      import_batch_id: importBatchId,
+      warehouse_order: String(wo).trim(),
+      whse_proc_type: pick(r, ["Whse Proc. Type","Whse Proc Type","WhseProcType"]),
+      created_by: pick(r, ["Created By","CreatedBy"]),
+      confirmation_date: toDateOnly(pick(r, ["Confirmation Date","ConfirmationDate"])),
+      confirmation_time: toTimeOnly(pick(r, ["Confirmation Time","ConfirmationTime"])),
+      confirmed_by: pick(r, ["Confirmed By","ConfirmedBy"]),
+      source_storage_bin: String(srcBin).trim(),
+      original_dest_bin: pick(r, ["Original Dest. Bin","Original Dest Bin","OriginalDestBin"])
     });
   }
-
-  out.sort((a, b) => Date.parse(`${a.confirmation_date}T${a.confirmation_time}`) - Date.parse(`${b.confirmation_date}T${b.confirmation_time}`));
   return out;
 }
 
-// ---------------------------
-// Supabase upload + insert + upsert
-// ---------------------------
-function safeFilename(name) {
-  return String(name)
-    .replaceAll(" ", "_")
-    .replaceAll(/[^a-zA-Z0-9._-]/g, "")
-    .slice(0, 70);
-}
-
-async function uploadToStorage(file, userId, batchId, sourceTag) {
-  const ext = file.name.toLowerCase().endsWith(".xls") ? "xls" : "xlsx";
-  const path = `${userId}/${batchId}/${sourceTag}__${safeFilename(file.name)}.${ext}`;
-
-  const { error } = await supabase.storage
-    .from("uploads")
-    .upload(path, file, { upsert: false, contentType: file.type || "application/octet-stream" });
-
-  if (error) throw error;
-  return { bucket: "uploads", path };
-}
-
-async function insertBatch(batchId, userId, source, originalFilename, storageBucket, storagePath, rowCount) {
-  const { error } = await supabase
-    .from("import_batches")
-    .insert({
-      id: batchId,
-      user_id: userId,
-      source,
-      original_filename: originalFilename,
-      storage_bucket: storageBucket,
-      storage_path: storagePath,
-      row_count: rowCount,
+async function upsertRows(table, rows, onConflict){
+  if(!rows.length) return 0;
+  const chunkSize=500;
+  for(let i=0;i<rows.length;i+=chunkSize){
+    const chunk=rows.slice(i,i+chunkSize);
+    const { error } = await supabase.from(table).upsert(chunk, {
+      onConflict,
+      ignoreDuplicates: true
     });
-
-  if (error) throw error;
-}
-
-async function upsertChunked(tableName, rows, onConflict) {
-  const CHUNK = 500;
-  for (let i = 0; i < rows.length; i += CHUNK) {
-    const chunk = rows.slice(i, i + CHUNK);
-    const { error } = await supabase
-      .from(tableName)
-      .upsert(chunk, { onConflict, ignoreDuplicates: true });
-    if (error) throw error;
+    if(error) throw error;
   }
+  return rows.length;
 }
 
-// ---------------------------
-// Import per singolo file (batch per file)
-// ---------------------------
-async function importSinglePI(file, user) {
-  const batchId = crypto.randomUUID();
-  log(`\n=== PI import | ${file.name} | batch ${batchId} ===`);
-
-  const excelRows = await readExcelRows(file);
-  const mapped = mapPI(excelRows, user.id, batchId);
-
-  log(`Excel rows: ${excelRows.length} | Valid rows: ${mapped.length}`);
-
-  const up = await uploadToStorage(file, user.id, batchId, "PI");
-  await insertBatch(batchId, user.id, "PI", file.name, up.bucket, up.path, mapped.length);
-
-  await upsertChunked("pi_rows", mapped, "user_id,warehouse_order_key,storage_bin_key");
-  log("✅ PI upsert OK (dedupe attiva)");
-}
-
-async function importSingleWT(file, user) {
-  const batchId = crypto.randomUUID();
-  log(`\n=== WT import | ${file.name} | batch ${batchId} ===`);
-
-  const excelRows = await readExcelRows(file);
-  const mapped = mapWT(excelRows, user.id, batchId);
-
-  log(`Excel rows: ${excelRows.length} | Valid rows: ${mapped.length}`);
-
-  const up = await uploadToStorage(file, user.id, batchId, "WT");
-  await insertBatch(batchId, user.id, "WT", file.name, up.bucket, up.path, mapped.length);
-
-  await upsertChunked("wt_rows", mapped, "user_id,warehouse_order_key,source_storage_bin_key");
-  log("✅ WT upsert OK (dedupe attiva)");
-}
-
-// ---------------------------
-// Preview events
-// ---------------------------
-async function loadPreview() {
-  const tbody = $("previewTable").querySelector("tbody");
-  tbody.innerHTML = "";
-
+async function refreshPreview(){
+  const tbody = $("previewTable")?.querySelector("tbody");
+  if(tbody) tbody.innerHTML = "";
   const { data, error } = await supabase
     .from("v_operator_events")
     .select("source,event_dt,operator_code,warehouse_order,bin_from,bin_to,category")
-    .order("event_dt", { ascending: false })
+    .order("event_dt", { ascending:false })
     .limit(50);
-
-  if (error) {
+  if(error){
     log("❌ Preview error:", error.message);
     return;
   }
-
-  for (const r of data) {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${escapeHtml(r.source ?? "")}</td>
-      <td>${escapeHtml(r.event_dt ?? "")}</td>
-      <td>${escapeHtml(r.operator_code ?? "")}</td>
-      <td>${escapeHtml(r.warehouse_order ?? "")}</td>
-      <td>${escapeHtml(r.bin_from ?? "")}</td>
-      <td>${escapeHtml(r.bin_to ?? "")}</td>
-      <td>${escapeHtml(r.category ?? "")}</td>
-    `;
+  if(!tbody) return;
+  for(const r of data){
+    const tr=document.createElement("tr");
+    const cells=[
+      r.source,
+      r.event_dt,
+      r.operator_code,
+      r.warehouse_order,
+      r.bin_from||"",
+      r.bin_to||"",
+      r.category||""
+    ];
+    for(const c of cells){
+      const td=document.createElement("td");
+      td.textContent=c ?? "";
+      tr.appendChild(td);
+    }
     tbody.appendChild(tr);
   }
-
-  log(`✅ Preview loaded: ${data.length} rows`);
 }
 
-// ---------------------------
-// Drag & drop
-// ---------------------------
-function setupDropzone(kind, dzEl) {
-  const add = (files) => addFiles(kind, files);
+async function importFile(file, source){
+  const storageMeta = await uploadToStorage(file, crypto.randomUUID?.() || String(Date.now()), source);
+  const batchId = await createBatch(source, file, storageMeta);
+  log(`✅ Batch ${source} created: ${batchId}`);
 
-  dzEl.addEventListener("dragover", (e) => {
-    e.preventDefault();
-    dzEl.classList.add("dragover");
-  });
+  const raw = await parseExcel(file);
+  log(`📄 ${file.name}: ${raw.length} rows`);
 
-  dzEl.addEventListener("dragleave", () => {
-    dzEl.classList.remove("dragover");
-  });
-
-  dzEl.addEventListener("drop", (e) => {
-    e.preventDefault();
-    dzEl.classList.remove("dragover");
-    if (e.dataTransfer?.files?.length) add(e.dataTransfer.files);
-  });
-}
-
-// ---------------------------
-// Init + wiring
-// ---------------------------
-(async function init() {
-  log("Init...");
-
-  try {
-    const user = await ensureAnonymousSession();
-    log("✅ Session ready:", user.id);
-
-    // Multi-select inputs
-    $("filePI").addEventListener("change", (e) => addFiles("PI", e.target.files));
-    $("fileWT").addEventListener("change", (e) => addFiles("WT", e.target.files));
-
-    // Clear buttons
-    $("btnClearPI").addEventListener("click", () => clearFiles("PI"));
-    $("btnClearWT").addEventListener("click", () => clearFiles("WT"));
-
-    // Dropzones
-    setupDropzone("PI", $("dzPI"));
-    setupDropzone("WT", $("dzWT"));
-
-    // Import actions
-    $("btnImportAll").addEventListener("click", async () => {
-      if (selectedPI.length === 0 && selectedWT.length === 0) {
-        log("⚠️ Seleziona almeno un file PI o WT.");
-        return;
-      }
-
-      setBusy(true, "Import in corso...");
-      try {
-        for (const f of selectedPI) await importSinglePI(f, user);
-        for (const f of selectedWT) await importSingleWT(f, user);
-        await loadPreview();
-      } catch (e) {
-        log("❌ Import error:", e?.message ?? String(e));
-      } finally {
-        setBusy(false, "");
-      }
-    });
-
-    $("btnImportPI").addEventListener("click", async () => {
-      if (selectedPI.length === 0) return log("⚠️ Seleziona almeno un file PI.");
-      setBusy(true, "Import PI in corso...");
-      try {
-        for (const f of selectedPI) await importSinglePI(f, user);
-        await loadPreview();
-      } catch (e) {
-        log("❌ PI import error:", e?.message ?? String(e));
-      } finally {
-        setBusy(false, "");
-      }
-    });
-
-    $("btnImportWT").addEventListener("click", async () => {
-      if (selectedWT.length === 0) return log("⚠️ Seleziona almeno un file WT.");
-      setBusy(true, "Import WT in corso...");
-      try {
-        for (const f of selectedWT) await importSingleWT(f, user);
-        await loadPreview();
-      } catch (e) {
-        log("❌ WT import error:", e?.message ?? String(e));
-      } finally {
-        setBusy(false, "");
-      }
-    });
-
-    $("btnPreview").addEventListener("click", async () => {
-      setBusy(true, "Caricamento preview...");
-      try {
-        await loadPreview();
-      } finally {
-        setBusy(false, "");
-      }
-    });
-
-    $("btnSignOut").addEventListener("click", signOut);
-
-    // First preview
-    await loadPreview();
-  } catch (e) {
-    log("❌ init failed:", e?.message ?? String(e));
-    setAuthUI(false, "AUTH ERROR", "-");
+  if(source==="PI"){
+    const mapped = mapPI(raw, batchId);
+    log(`➡️ PI mapped: ${mapped.length}`);
+    await upsertRows("pi_rows", mapped, "workspace_id,warehouse_order_key,storage_bin_key");
+  }else{
+    const mapped = mapWT(raw, batchId);
+    log(`➡️ WT mapped: ${mapped.length}`);
+    await upsertRows("wt_rows", mapped, "workspace_id,warehouse_order_key,source_storage_bin_key");
   }
-})();
+}
+
+let piFiles=[];
+let wtFiles=[];
+
+function renderFileList(listEl, files){
+  if(!listEl) return;
+  listEl.innerHTML="";
+  for(const f of files){
+    const li=document.createElement("li");
+    li.textContent = `${f.name} (${Math.round(f.size/1024)} KB)`;
+    listEl.appendChild(li);
+  }
+}
+
+function addFiles(arr, newFiles){
+  for(const f of Array.from(newFiles||[])){
+    if(!arr.find(x=>x.name===f.name && x.size===f.size && x.lastModified===f.lastModified)){
+      arr.push(f);
+    }
+  }
+}
+
+function wireDropZone(zoneEl, onFiles){
+  if(!zoneEl) return;
+  zoneEl.addEventListener("dragover", (e)=>{ e.preventDefault(); zoneEl.classList.add("drag"); });
+  zoneEl.addEventListener("dragleave", ()=>zoneEl.classList.remove("drag"));
+  zoneEl.addEventListener("drop", (e)=>{
+    e.preventDefault();
+    zoneEl.classList.remove("drag");
+    const files = e.dataTransfer?.files;
+    if(files?.length) onFiles(files);
+  });
+}
+
+function setBusy(b){
+  const lbl=$("busyLabel");
+  if(lbl) lbl.textContent = b ? "Working…" : "";
+  document.body.classList.toggle("busy", !!b);
+}
+
+async function runImport(source){
+  try{
+    setBusy(true);
+    const files = source==="PI" ? piFiles : wtFiles;
+    if(!files.length){ log(`⚠️ Nessun file ${source}`); return; }
+    for(const f of files){
+      log("—");
+      log(`Import ${source}: ${f.name}`);
+      await importFile(f, source);
+    }
+    log(`✅ Done ${source}`);
+    await refreshPreview();
+  }catch(e){
+    log("❌ Import failed:", e?.message || e);
+    console.error(e);
+  }finally{
+    setBusy(false);
+  }
+}
+
+async function runImportAll(){
+  await runImport("PI");
+  await runImport("WT");
+}
+
+function wire(){
+  const inpPI=$("filePI");
+  const inpWT=$("fileWT");
+  inpPI?.addEventListener("change", ()=>{
+    addFiles(piFiles, inpPI.files);
+    renderFileList($("listPI"), piFiles);
+  });
+  inpWT?.addEventListener("change", ()=>{
+    addFiles(wtFiles, inpWT.files);
+    renderFileList($("listWT"), wtFiles);
+  });
+
+  wireDropZone($("dzPI"), (files)=>{ addFiles(piFiles, files); renderFileList($("listPI"), piFiles); });
+  wireDropZone($("dzWT"), (files)=>{ addFiles(wtFiles, files); renderFileList($("listWT"), wtFiles); });
+
+  $("btnClearPI")?.addEventListener("click", ()=>{ piFiles=[]; if(inpPI) inpPI.value=""; renderFileList($("listPI"), piFiles); });
+  $("btnClearWT")?.addEventListener("click", ()=>{ wtFiles=[]; if(inpWT) inpWT.value=""; renderFileList($("listWT"), wtFiles); });
+
+  $("btnImportPI")?.addEventListener("click", ()=>runImport("PI"));
+  $("btnImportWT")?.addEventListener("click", ()=>runImport("WT"));
+  $("btnImportAll")?.addEventListener("click", ()=>runImportAll());
+  $("btnPreview")?.addEventListener("click", refreshPreview);
+
+  $("btnSignOut")?.addEventListener("click", ()=>{ /* login later */ });
+
+  refreshPreview().catch(()=>{});
+}
+
+wire();

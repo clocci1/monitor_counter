@@ -1,1011 +1,509 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const SUPABASE_URL = "https://wndlmkjhzgqdwsfylvmh.supabase.co";
-const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_sf8tAbDNmRLtCGu9xsesSQ_JWmIyQHI";
-const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+const SUPABASE_KEY = "sb_publishable_sf8tAbDNmRLtCGu9xsesSQ_JWmIyQHI";
+export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const $ = (id) => document.getElementById(id);
+const canon = (s) => (s ?? "").toString().trim().toUpperCase().replace(/\s+/g, "");
+
 const logEl = $("log");
-
-const PAUSE_THRESHOLD_SEC = 30 * 60;
-const BREAK_SEC_PER_DAY = 30 * 60;
-
-const ALIAS_MAP = new Map([
-  ["S.TAZANOU", "R.SOLL"],
-  ["F.SAADANI", "S.FETHIA"],
-]);
-
-const SHIFT_TIMES = {
-  AM: { start: "05:00", end: "13:00" },
-  C:  { start: "08:00", end: "16:00" },
-  PM: { start: "14:00", end: "22:00" },
-  OM: { start: "14:00", end: "22:00" }, // compat
-
-};
-
-let user = null;
-
-let resources = [];
-let guaranteed = [];
-let supportSegments = [];
-let weekSchedule = [];
-let weekEvents = [];
-let lastActMap = new Map();
-
-let selectedWeekStart = null;
-let importPreviewRows = [];
-let editingResourceId = null;
-
-// ---------- utils ----------
-function log(...args) {
-  const line = args.map(a => (typeof a === "string" ? a : JSON.stringify(a, null, 2))).join(" ");
-  logEl.textContent += line + "\n";
+function log(...args){
+  console.log(...args);
+  if(!logEl) return;
+  const msg = args.map(a => typeof a === "string" ? a : JSON.stringify(a)).join(" ");
+  logEl.textContent += msg + "\n";
   logEl.scrollTop = logEl.scrollHeight;
 }
-function setAuthUI(ok, statusText, userId) {
-  $("authStatus").textContent = statusText;
-  $("userId").textContent = userId ?? "-";
-  const dot = $("authDot");
-  dot.classList.remove("ok","bad");
-  dot.classList.add(ok ? "ok" : "bad");
-}
-function norm(s){ return String(s ?? "").trim().toUpperCase(); }
-function canon(code){ const c = norm(code); return ALIAS_MAP.get(c) ?? c; }
 
-function uiShift(db){ // display label
-  if (!db) return "";
-  return db === "OM" ? "PM" : db;
+function isoDate(d){
+  const y=d.getFullYear();
+  const m=String(d.getMonth()+1).padStart(2,"0");
+  const day=String(d.getDate()).padStart(2,"0");
+  return `${y}-${m}-${day}`;
 }
-function dbShift(ui){ // stored label
-  if (!ui) return null;
-  const u = norm(ui);
-  return u === "PM" ? "OM" : u;
+function weekStart(d){
+  const x=new Date(d);
+  const day=(x.getDay()+6)%7; // monday=0
+  x.setDate(x.getDate()-day);
+  x.setHours(0,0,0,0);
+  return x;
 }
-
-function fmtDT(d) {
-  const dd = new Date(d);
-  if (isNaN(dd.getTime())) return "";
-  const y = dd.getFullYear();
-  const m = String(dd.getMonth()+1).padStart(2,"0");
-  const da = String(dd.getDate()).padStart(2,"0");
-  const hh = String(dd.getHours()).padStart(2,"0");
-  const mi = String(dd.getMinutes()).padStart(2,"0");
-  return `${y}-${m}-${da} ${hh}:${mi}`;
-}
-function dayKey(d) {
-  const dd = new Date(d);
-  const y = dd.getFullYear();
-  const m = String(dd.getMonth()+1).padStart(2,"0");
-  const da = String(dd.getDate()).padStart(2,"0");
-  return `${y}-${m}-${da}`;
-}
-function addDays(yyyy_mm_dd, n) {
-  const d = new Date(`${yyyy_mm_dd}T00:00:00`);
-  d.setDate(d.getDate() + n);
-  return dayKey(d);
-}
-function getWeekStart(yyyy_mm_dd) {
-  const d = new Date(`${yyyy_mm_dd}T00:00:00`);
-  const day = d.getDay();
-  const diff = (day === 0 ? -6 : 1 - day);
-  d.setDate(d.getDate() + diff);
-  return dayKey(d);
-}
-function weekDays(weekStart) {
-  return Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
-}
-function secToHHMM(sec) {
-  const s = Math.max(0, Math.floor(sec));
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`;
-}
-function parseDT(s) {
-  if (!s) return null;
-  const iso = String(s).includes("T") ? String(s) : String(s).replace(" ", "T");
-  const d = new Date(iso);
-  return isNaN(d.getTime()) ? null : d;
-}
-function escapeHtml(str) {
-  return String(str ?? "")
-    .replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;")
-    .replaceAll('"',"&quot;").replaceAll("'","&#039;");
-}
-function timeToSec(hhmm) {
-  const [h,m] = hhmm.split(":").map(Number);
-  return h*3600 + m*60;
-}
-function durationSec(startHHMM, endHHMM) {
-  return Math.max(0, timeToSec(endHHMM) - timeToSec(startHHMM));
-}
-function roleUpper(r){
-  if (r === "counter") return "COUNTER";
-  if (r === "specialist") return "SPECIALIST";
-  if (r === "teamleader") return "TEAM LEADER";
-  if (r === "support") return "SUPPORT";
-  return String(r ?? "").toUpperCase();
+function addDays(d,n){ const x=new Date(d); x.setDate(x.getDate()+n); return x; }
+function fmtWeekLabel(ws){ return `${isoDate(ws)} → ${isoDate(addDays(ws,6))}`; }
+function minutesToHHMM(mins){
+  const m=Math.max(0, Math.round(mins));
+  const hh=Math.floor(m/60);
+  const mm=m%60;
+  return `${String(hh).padStart(2,"0")}:${String(mm).padStart(2,"0")}`;
 }
 
-// ISO week label
-function isoWeekInfo(dateStr /* yyyy-mm-dd */) {
-  const d = new Date(`${dateStr}T00:00:00`);
-  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
-  const dayNum = date.getUTCDay() || 7;
-  date.setUTCDate(date.getUTCDate() + 4 - dayNum);
-  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
-  const weekNo = Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
-  return { year: date.getUTCFullYear(), week: weekNo };
-}
-function setWeekLabel() {
-  const { week } = isoWeekInfo(selectedWeekStart);
-  const end = addDays(selectedWeekStart, 6);
-  $("weekLabel").textContent = `W${String(week).padStart(2,"0")}  ${selectedWeekStart} → ${end}`;
-}
+let currentWeek = weekStart(new Date());
+let resources = [];
+let schedule = [];
+let supportSegs = [];
+let lastActMap = new Map();
+let weekEvents = []; // effective events for week (base account)
 
-// ---------- auth ----------
-async function ensureAnon() {
-  setAuthUI(false, "checking session...", "-");
-  const { data: s } = await supabase.auth.getSession();
-  if (s?.session?.user) {
-    setAuthUI(true, "signed-in (anon)", s.session.user.id);
-    return s.session.user;
-  }
-  const { data, error } = await supabase.auth.signInAnonymously();
-  if (error) throw error;
-  setAuthUI(true, "signed-in (anon)", data.user.id);
-  return data.user;
-}
-async function resetSession() {
-  await supabase.auth.signOut();
-  location.reload();
-}
-
-// ---------- load ----------
-async function loadResources() {
+async function loadResources(){
   const { data, error } = await supabase
     .from("resources")
-    .select("id,operator_code,role,current_week_shift,shift_override,active")
-    .order("role", { ascending: true })
-    .order("operator_code", { ascending: true });
-
-  if (error) throw error;
-
-  resources = (data ?? []).map(r => ({
-    ...r,
-    operator_code: canon(r.operator_code),
-  }));
-
-  guaranteed = resources.filter(r => ["counter","specialist","teamleader"].includes(r.role) && r.active);
+    .select("id,operator_code,operator_norm,role,active,display_name")
+    .order("role", { ascending:true })
+    .order("operator_code", { ascending:true });
+  if(error) throw error;
+  resources = data ?? [];
 }
 
-async function loadSupportSegments(weekStart) {
-  const from = `${weekStart}T00:00:00`;
-  const to = `${addDays(weekStart, 6)}T23:59:59`;
+async function loadSchedule(){
+  const from = isoDate(currentWeek);
+  const to = isoDate(addDays(currentWeek,6));
+  const { data, error } = await supabase
+    .from("resource_schedule_segments")
+    .select("id,operator_code,operator_norm,work_date,shift,status,start_time,end_time,note")
+    .gte("work_date", from)
+    .lte("work_date", to);
+  if(error) throw error;
+  schedule = data ?? [];
+}
+
+async function loadSupportSegments(){
+  const from = isoDate(currentWeek) + "T00:00:00";
+  const to = isoDate(addDays(currentWeek,6)) + "T23:59:59";
   const { data, error } = await supabase
     .from("support_work_segments")
-    .select("*")
+    .select("id,account_used,kind,real_name,start_dt,end_dt,note")
     .gte("start_dt", from)
-    .lte("end_dt", to)
-    .order("start_dt", { ascending: true });
-
-  if (error) throw error;
-  supportSegments = (data ?? []).map(s => ({ ...s, account_used: canon(s.account_used) }));
+    .lte("start_dt", to)
+    .order("start_dt", { ascending:true });
+  if(error) throw error;
+  supportSegs = data ?? [];
 }
 
-async function loadWeekSchedule(weekStart) {
-  const from = weekStart;
-  const to = addDays(weekStart, 6);
-
+async function loadLastActivity(){
   const { data, error } = await supabase
-    .from("resource_schedule_segments")
-    .select("id,operator_code,work_date,segment_no,status,start_time,end_time,shift,raw_text")
-    .gte("work_date", from)
-    .lte("work_date", to)
-    .order("operator_code", { ascending: true })
-    .order("work_date", { ascending: true })
-    .order("segment_no", { ascending: true });
-
-  if (error) throw error;
-
-  weekSchedule = (data ?? []).map(x => ({
-    ...x,
-    operator_code: canon(x.operator_code),
-  }));
+    .from("v_account_last_activity")
+    .select("operator_code,last_activity");
+  if(error) throw error;
+  lastActMap = new Map((data ?? []).map(r => [r.operator_code, r.last_activity]));
 }
 
-async function loadWeekEvents(weekStart) {
-  const from = `${weekStart}T00:00:00`;
-  const to = `${addDays(weekStart, 6)}T23:59:59`;
+async function loadWeekEvents(){
+  const from = isoDate(currentWeek) + "T00:00:00";
+  const to = isoDate(addDays(currentWeek,6)) + "T23:59:59";
+  const { data, error } = await supabase
+    .from("v_operator_events_effective")
+    .select("event_dt,operator_base,category")
+    .gte("event_dt", from)
+    .lte("event_dt", to)
+    .order("operator_base", { ascending:true })
+    .order("event_dt", { ascending:true })
+    .limit(20000);
+  if(error) throw error;
+  weekEvents = data ?? [];
+}
 
-  const PAGE = 1000;
-  let fromIx = 0;
-  let all = [];
-  while (true) {
-    const { data, error } = await supabase
-      .from("v_operator_events_effective")
-      .select("source,event_dt,operator_code,created_by,counter,warehouse_order,category")
-      .gte("event_dt", from)
-      .lte("event_dt", to)
-      .order("event_dt", { ascending: true })
-      .range(fromIx, fromIx + PAGE - 1);
-
-    if (error) throw error;
-
-    const batch = (data ?? []).map(e => ({
-      ...e,
-      operator_code: canon(e.operator_code),
-      created_by: e.created_by ? canon(e.created_by) : null,
-      counter: e.counter ? canon(e.counter) : null,
-    }));
-    all = all.concat(batch);
-
-    if (batch.length < PAGE) break;
-    fromIx += PAGE;
-    if (fromIx > 60000) break;
-  }
-
-  weekEvents = all;
-
-  lastActMap = new Map();
-  for (const e of weekEvents) {
-    const dt = parseDT(e.event_dt);
-    if (!dt) continue;
-    const accs = [e.operator_code, e.created_by, e.counter].filter(Boolean).map(canon);
-    for (const a of accs) {
-      const prev = lastActMap.get(a);
-      if (!prev || dt > prev) lastActMap.set(a, dt);
-    }
+async function loadAccountsIntoSelect(){
+  const sel = $("supAccount");
+  if(!sel) return;
+  sel.innerHTML="";
+  const { data, error } = await supabase
+    .from("v_all_operator_accounts")
+    .select("operator_code")
+    .order("operator_code");
+  if(error){ log("⚠️ accounts:", error.message); return; }
+  for(const r of data ?? []){
+    const opt=document.createElement("option");
+    opt.value=r.operator_code;
+    opt.textContent=r.operator_code;
+    sel.appendChild(opt);
   }
 }
 
-// ---------- schedule -> resources sync ----------
-function deriveWeekShiftFromSchedule(operator_code) {
-  const acc = canon(operator_code);
-  const counts = new Map(); // shift => count
-  for (const s of weekSchedule) {
-    if (canon(s.operator_code) !== acc) continue;
-    if (s.status !== "present") continue;
-    if (!s.shift) continue;
-    counts.set(s.shift, (counts.get(s.shift) ?? 0) + 1);
+// ---------- Rendering helpers ----------
+function getSchedRows(opNorm){
+  return schedule.filter(s => s.operator_norm===opNorm);
+}
+function computeWeekShift(opNorm){
+  const rows = getSchedRows(opNorm).filter(r => r.shift);
+  if(!rows.length) return "";
+  const freq = new Map();
+  for(const r of rows){
+    const k = r.shift;
+    freq.set(k, (freq.get(k)||0)+1);
   }
-  if (counts.size === 0) return null;
-  let best = null, bestN = -1;
-  for (const [sh, n] of counts.entries()) {
-    if (n > bestN) { bestN = n; best = sh; }
+  let best=""; let bestN=0;
+  for(const [k,n] of freq.entries()){
+    if(n>bestN){ best=k; bestN=n; }
   }
-  return best; // AM/C/OM
+  return best;
+}
+function getLastAct(opNorm){
+  // last activity view stores operator_code as operator_base (canonical norm). We use opNorm as already canonical.
+  return lastActMap.get(opNorm) || "";
 }
 
-async function syncWeekShiftsToResources() {
-  // aggiorna resources.current_week_shift SOLO se shift_override=false
-  const updates = [];
-  for (const r of guaranteed) {
-    const derived = deriveWeekShiftFromSchedule(r.operator_code);
-    if (!derived) continue;
-    if (r.shift_override) continue;
+function renderResources(){
+  const tbody = $("tblRes")?.querySelector("tbody");
+  if(!tbody) return;
+  tbody.innerHTML="";
+  for(const r of resources.filter(x=>x.active)){
+    const tr=document.createElement("tr");
+    // WORKER column: show account
+    const tdWorker=document.createElement("td");
+    tdWorker.textContent = r.operator_code;
+    tr.appendChild(tdWorker);
 
-    if (r.current_week_shift !== derived) {
-      updates.push({ id: r.id, current_week_shift: derived });
-    }
-  }
+    const tdRole=document.createElement("td");
+    tdRole.textContent = r.role;
+    tr.appendChild(tdRole);
 
-  for (const u of updates) {
-    const { error } = await supabase.from("resources").update(u).eq("id", u.id);
-    if (error) log("❌ sync shift:", error.message);
+    const tdShift=document.createElement("td");
+    tdShift.textContent = computeWeekShift(r.operator_norm);
+    tr.appendChild(tdShift);
+
+    const tdLast=document.createElement("td");
+    tdLast.textContent = getLastAct(r.operator_norm);
+    tr.appendChild(tdLast);
+
+    const tdMng=document.createElement("td");
+    const btn=document.createElement("button");
+    btn.className="btn small";
+    btn.textContent="Modifica";
+    btn.onclick=()=>openResModal(r);
+    tdMng.appendChild(btn);
+    tr.appendChild(tdMng);
+
+    tbody.appendChild(tr);
   }
 }
 
-// ---------- support calc ----------
-function buildAccountEventsMap() {
-  const m = new Map();
-  for (const e of weekEvents) {
-    const acc = canon(e.operator_code);
-    if (!m.has(acc)) m.set(acc, []);
-    m.get(acc).push(e);
-  }
-  for (const [k, arr] of m.entries()) {
-    arr.sort((a,b) => parseDT(a.event_dt) - parseDT(b.event_dt));
-    m.set(k, arr);
-  }
-  return m;
+function getSched(opNorm, dateStr){
+  return schedule.find(s => s.operator_norm===opNorm && s.work_date===dateStr);
 }
 
-function computeWorkSecondsForAccount(events) {
-  let work = 0;
-  for (let i = 0; i < events.length - 1; i++) {
-    const a = parseDT(events[i].event_dt);
-    const b = parseDT(events[i+1].event_dt);
-    if (!a || !b) continue;
-    const dt = Math.floor((b - a)/1000);
-    if (dt <= 0) continue;
-    if (dt > PAUSE_THRESHOLD_SEC) continue;
-    work += dt;
-  }
-  return work;
-}
+function renderSchedule(){
+  const table = $("tblWeek");
+  const tbody = table?.querySelector("tbody");
+  const thead = table?.querySelector("thead");
+  if(!tbody || !thead) return;
 
-function scheduleExpectedSecondsForAccount(account, days) {
-  const acc = canon(account);
-  let total = 0;
-  let presentDays = 0;
+  const days=[0,1,2,3,4,5,6].map(i=>addDays(currentWeek,i));
+  thead.innerHTML="";
+  const hr=document.createElement("tr");
+  hr.innerHTML = "<th>Risorsa</th>" + days.map(d=>`<th>${isoDate(d)}</th>`).join("");
+  thead.appendChild(hr);
 
-  for (const d of days) {
-    const segs = weekSchedule.filter(s => canon(s.operator_code) === acc && s.work_date === d);
-    const presentSegs = segs.filter(s => s.status === "present" && s.start_time && s.end_time);
+  tbody.innerHTML="";
+  for(const r of resources.filter(x=>x.active)){
+    const tr=document.createElement("tr");
+    const td0=document.createElement("td");
+    td0.textContent = r.operator_code;
+    tr.appendChild(td0);
 
-    if (presentSegs.length > 0) {
-      let daySec = 0;
-      for (const s of presentSegs) {
-        daySec += durationSec(String(s.start_time).slice(0,5), String(s.end_time).slice(0,5));
+    for(const d of days){
+      const dateStr=isoDate(d);
+      const td=document.createElement("td");
+      const sel=document.createElement("select");
+      sel.className="cellSelect";
+      const opts=["","AM","C","PM","OFF"];
+      for(const o of opts){
+        const op=document.createElement("option");
+        op.value=o; op.textContent=o===""?"—":o;
+        sel.appendChild(op);
       }
-      total += daySec;
-      presentDays += 1;
+      const existing = getSched(r.operator_norm, dateStr);
+      if(existing?.status==="other" && existing?.note==="OFF") sel.value="OFF";
+      else sel.value = existing?.shift || "";
+      sel.dataset.op = r.operator_code;
+      sel.dataset.opnorm = r.operator_norm;
+      sel.dataset.date = dateStr;
+      td.appendChild(sel);
+      tr.appendChild(td);
+    }
+    tbody.appendChild(tr);
+  }
+
+  // support panel week indicator is a date input; set to Monday
+  if($("supWeek")) $("supWeek").value = isoDate(currentWeek);
+}
+
+async function saveSchedule(){
+  const selects = Array.from(document.querySelectorAll("#tblWeek select.cellSelect"));
+  const rows=[];
+  for(const sel of selects){
+    const shift = sel.value;
+    const operator_code=sel.dataset.op;
+    const operator_norm=sel.dataset.opnorm;
+    const work_date=sel.dataset.date;
+
+    if(shift==="") continue;
+
+    if(shift==="OFF"){
+      rows.push({ operator_code, operator_norm, work_date, status:"other", shift:null, start_time:null, end_time:null, note:"OFF" });
+    }else{
+      let start="05:00:00", end="13:00:00";
+      if(shift==="C"){ start="08:00:00"; end="16:00:00"; }
+      if(shift==="PM"){ start="14:00:00"; end="22:00:00"; }
+      rows.push({ operator_code, operator_norm, work_date, status:"present", shift, start_time:start, end_time:end, note:null });
     }
   }
-
-  total -= presentDays * BREAK_SEC_PER_DAY;
-  return Math.max(0, total);
-}
-
-function allocatedSupportSeconds(account) {
-  const acc = canon(account);
-  let sec = 0;
-  for (const s of supportSegments) {
-    if (canon(s.account_used) !== acc) continue;
-    const a = parseDT(s.start_dt), b = parseDT(s.end_dt);
-    if (!a || !b) continue;
-    sec += Math.floor((b - a)/1000);
+  if(rows.length){
+    const { error } = await supabase
+      .from("resource_schedule_segments")
+      .upsert(rows, { onConflict:"workspace_id,operator_norm,work_date" });
+    if(error) throw error;
   }
-  return sec;
+  await loadSchedule();
+  renderSchedule();
+  renderResources();
+  log("✅ Schedule salvato.");
 }
 
-function computeSupportiTable(weekStart) {
-  const days = weekDays(weekStart);
-  const accEvents = buildAccountEventsMap();
-
-  const set = new Set();
-  for (const k of accEvents.keys()) set.add(k);
-  for (const r of resources) set.add(canon(r.operator_code));
-
-  const rows = [];
-  for (const acc of Array.from(set).sort()) {
-    const evs = accEvents.get(acc) ?? [];
-    const workSec = computeWorkSecondsForAccount(evs);
-
-    const isGuaranteed = guaranteed.some(r => canon(r.operator_code) === acc);
-    const hasAnySchedule = weekSchedule.some(s => canon(s.operator_code) === acc);
-    const expectedSec = (isGuaranteed || hasAnySchedule) ? scheduleExpectedSecondsForAccount(acc, days) : 0;
-
-    const overSec = Math.max(0, workSec - expectedSec);
-    const allocSec = allocatedSupportSeconds(acc);
-    const residualSec = Math.max(0, overSec - allocSec);
-
-    const isSupportAcc = resources.some(r => canon(r.operator_code) === acc && r.role === "support");
-    if (overSec > 0 || (isSupportAcc && workSec > 0)) {
-      rows.push({ account: acc, overSec, allocSec, residualSec });
+function renderSupportSegments(){
+  const tbody = $("tblSupportSeg")?.querySelector("tbody");
+  if(!tbody) return;
+  tbody.innerHTML="";
+  for(const s of supportSegs){
+    const tr=document.createElement("tr");
+    const cells=[s.account_used, s.kind, s.start_dt, s.end_dt, s.real_name||""];
+    for(const c of cells){
+      const td=document.createElement("td");
+      td.textContent = c ?? "";
+      tr.appendChild(td);
     }
+    const td=document.createElement("td");
+    const del=document.createElement("button");
+    del.className="btn small danger";
+    del.textContent="Del";
+    del.onclick=async ()=>{
+      const ok=confirm("Eliminare segmento?");
+      if(!ok) return;
+      const { error } = await supabase.from("support_work_segments").delete().eq("id", s.id);
+      if(error) return log("❌ delete:", error.message);
+      await loadSupportSegments();
+      renderSupportSegments();
+      await reloadSupportiTable(); // refresh time-over
+    };
+    td.appendChild(del);
+    tr.appendChild(td);
+    tbody.appendChild(tr);
   }
-  rows.sort((a,b) => b.residualSec - a.residualSec);
-  return rows;
+  $("kpiSegments").textContent = String(supportSegs.length);
 }
 
-// ---------- render ----------
-function renderKpi(rowsSupporti) {
-  $("kpiGuaranteed").textContent = String(guaranteed.length);
-  $("kpiCounters").textContent = String(guaranteed.filter(x => x.role === "counter").length);
-  $("kpiSpecialist").textContent = String(guaranteed.filter(x => x.role === "specialist").length);
-
-  const absent = weekSchedule.filter(s =>
-    guaranteed.some(r => canon(r.operator_code) === canon(s.operator_code)) &&
-    ["vacation","permission","absent"].includes(s.status)
-  ).length;
-  $("kpiAbsent").textContent = String(absent);
-
-  const totResidual = rowsSupporti.reduce((sum,r)=>sum + r.residualSec, 0);
-  $("kpiOver").textContent = secToHHMM(totResidual);
-
-  $("kpiSegments").textContent = String(supportSegments.length);
-}
-
-function renderResourcesTable() {
-  const group = $("resGroup").value;
-  let rows = guaranteed.slice();
-  if (group !== "all") rows = rows.filter(r => r.role === group);
-
-  const tb = $("tblRes").querySelector("tbody");
-  tb.innerHTML = "";
-
-  for (const r of rows) {
-    const last = lastActMap.get(canon(r.operator_code));
-    const lastTxt = last ? fmtDT(last) : "";
-
-    // shift displayed: se schedule dà un shift, lo mostriamo; fallback a current_week_shift
-    const derived = deriveWeekShiftFromSchedule(r.operator_code);
-    const shiftDb = derived ?? r.current_week_shift ?? null;
-
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td class="mono"><span class="link" data-edit="${r.id}">${escapeHtml(r.operator_code)}</span></td>
-      <td>${escapeHtml(roleUpper(r.role))}</td>
-      <td class="mono">${escapeHtml(uiShift(shiftDb))}</td>
-      <td class="mono">${escapeHtml(lastTxt)}</td>
-      <td>
-        <select data-man="${r.id}">
-          <option value="">—</option>
-          <option value="edit">Modifica</option>
-          <option value="remove">Rimuovi</option>
-        </select>
-      </td>
-    `;
-    tb.appendChild(tr);
+function computeExpectedMinutesForAccount(opNorm){
+  // expected = sum shift minutes - 30 min pause per present day
+  const rows = getSchedRows(opNorm);
+  let expected = 0;
+  for(const r of rows){
+    if(r.status !== "present") continue;
+    if(!r.start_time || !r.end_time) continue;
+    // times are strings 'HH:MM:SS'
+    const [sh,sm] = String(r.start_time).split(":").map(Number);
+    const [eh,em] = String(r.end_time).split(":").map(Number);
+    const dur = (eh*60+em) - (sh*60+sm);
+    if(dur>0) expected += Math.max(0, dur - 30);
   }
-
-  tb.querySelectorAll("[data-edit]").forEach(el => el.addEventListener("click", () => openResModal(el.getAttribute("data-edit"))));
-  tb.querySelectorAll("[data-man]").forEach(sel => {
-    sel.addEventListener("change", async () => {
-      const id = sel.getAttribute("data-man");
-      const val = sel.value;
-      sel.value = "";
-      if (val === "edit") openResModal(id);
-      if (val === "remove") await removeResource(id);
-    });
-  });
+  return expected;
 }
 
-function renderSupportiTable(rows) {
-  const tb = $("tblSupporti").querySelector("tbody");
-  tb.innerHTML = "";
-
-  for (const r of rows) {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td class="mono">${escapeHtml(r.account)}</td>
-      <td class="mono" title="Over - Allocated = Residual">
-        ${secToHHMM(r.overSec)} <span style="color:rgba(255,255,255,.55)"> (res ${secToHHMM(r.residualSec)})</span>
-      </td>
-      <td><button class="btn primary small" data-set="${escapeHtml(r.account)}">Set supporto</button></td>
-    `;
-    tb.appendChild(tr);
+function computeActualMinutesForAccount(baseAccountNorm){
+  const events = weekEvents.filter(e => e.operator_base === baseAccountNorm);
+  if(events.length < 2) return 0;
+  let actual = 0;
+  for(let i=0;i<events.length-1;i++){
+    const t1 = new Date(events[i].event_dt).getTime();
+    const t2 = new Date(events[i+1].event_dt).getTime();
+    const delta = (t2-t1)/60000;
+    if(delta > 30) continue; // pause
+    if(delta > 0) actual += delta;
   }
-  tb.querySelectorAll("[data-set]").forEach(btn => btn.addEventListener("click", () => openSupportModal(btn.getAttribute("data-set"))));
+  return actual;
 }
 
-function renderSupportSegmentsTable() {
-  const tb = $("tblSupportSeg").querySelector("tbody");
-  tb.innerHTML = "";
+async function reloadSupportiTable(){
+  const tbody = $("tblSupporti")?.querySelector("tbody");
+  if(!tbody) return;
+  tbody.innerHTML="";
 
-  for (const s of supportSegments) {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td class="mono">${escapeHtml(canon(s.account_used))}</td>
-      <td>${escapeHtml(s.kind)}</td>
-      <td class="mono">${escapeHtml(fmtDT(s.start_dt))}</td>
-      <td class="mono">${escapeHtml(fmtDT(s.end_dt))}</td>
-      <td>${escapeHtml(s.real_name ?? "")}</td>
-      <td><button class="btn danger small" data-del="${s.id}">Del</button></td>
-    `;
-    tb.appendChild(tr);
+  // accounts observed in week events
+  const accSet = new Set(weekEvents.map(e => e.operator_base).filter(Boolean));
+  // include guaranteed resources even if no events
+  for(const r of resources.filter(x=>x.active)) accSet.add(r.operator_norm);
+
+  const rows=[];
+  for(const acc of accSet){
+    const actual = computeActualMinutesForAccount(acc);
+    const expected = computeExpectedMinutesForAccount(acc);
+    const over = actual - expected;
+    if(over <= 0) continue;
+    rows.push({ acc, over });
+  }
+  rows.sort((a,b)=>b.over-a.over);
+
+  for(const r of rows){
+    const tr=document.createElement("tr");
+    const tdAcc=document.createElement("td");
+    tdAcc.textContent = r.acc;
+    tr.appendChild(tdAcc);
+
+    const tdOver=document.createElement("td");
+    tdOver.textContent = minutesToHHMM(r.over);
+    tr.appendChild(tdOver);
+
+    const tdAct=document.createElement("td");
+    const btn=document.createElement("button");
+    btn.className="btn small";
+    btn.textContent="Set supporto";
+    btn.onclick=()=>openSupModal({ account_used:r.acc, kind:"support" });
+    tdAct.appendChild(btn);
+    tr.appendChild(tdAct);
+
+    tbody.appendChild(tr);
   }
 
-  tb.querySelectorAll("[data-del]").forEach(btn => {
-    btn.addEventListener("click", async () => {
-      const id = btn.getAttribute("data-del");
-      if (!confirm("Eliminare segmento supporto?")) return;
-      const { error } = await supabase.from("support_work_segments").delete().eq("id", id);
-      if (error) { log("❌ delete segment:", error.message); return; }
-      await reloadWeek();
-    });
-  });
+  $("kpiOver").textContent = String(rows.length);
 }
 
-function renderWeekTable(weekStart) {
-  const days = weekDays(weekStart);
-  const head = $("weekHead");
-  head.innerHTML = `
-    <tr>
-      <th>WORKER</th>
-      ${days.map((d,i)=>`<th class="mono">${["Mon","Tue","Wed","Thu","Fri","Sat","Sun"][i]}<br>${d}</th>`).join("")}
-    </tr>
-  `;
-
-  const body = $("weekBody");
-  body.innerHTML = "";
-
-  for (const r of guaranteed) {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td class="mono">${escapeHtml(r.operator_code)}</td>
-      ${days.map(d => {
-        const segs = weekSchedule.filter(s => canon(s.operator_code) === canon(r.operator_code) && s.work_date === d);
-        let txt = "";
-        if (segs.length) {
-          const parts = segs.map(s => {
-            if (s.status === "present") return `${String(s.start_time).slice(0,5)}-${String(s.end_time).slice(0,5)}`;
-            if (s.status === "vacation") return "ferie";
-            if (s.status === "permission") return "perm";
-            if (s.status === "absent") return "abs";
-            return s.raw_text ?? s.status;
-          });
-          txt = parts.join(" | ");
-        }
-        return `<td class="mono"><span class="link" data-cell="${escapeHtml(r.operator_code)}|${d}">${escapeHtml(txt)}</span></td>`;
-      }).join("")}
-    `;
-    body.appendChild(tr);
-  }
-
-  body.querySelectorAll("[data-cell]").forEach(el => {
-    el.addEventListener("click", () => {
-      const [acc, d] = el.getAttribute("data-cell").split("|");
-      openScheduleCellModal(acc, d);
-    });
-  });
+let editingResId=null;
+function openResModal(r){
+  editingResId = r?.id ?? null;
+  $("resTitle").textContent = editingResId ? "Modifica risorsa" : "Aggiungi risorsa";
+  $("resCode").value = r?.operator_code ?? "";
+  $("resRole").value = r?.role ?? "COUNTER";
+  $("resGroup").value = r?.display_name ?? "";
+  $("resOverlay").style.display="flex";
 }
+function closeResModal(){ $("resOverlay").style.display="none"; editingResId=null; }
+
+async function saveResModal(){
+  const operator_code = $("resCode").value.trim();
+  if(!operator_code){ alert("Inserisci account"); return; }
+  const role = ($("resRole").value || "COUNTER").toUpperCase();
+  const display_name = $("resGroup").value.trim() || null;
+  const operator_norm = canon(operator_code);
+
+  const payload = { operator_code, operator_norm, role, display_name, active:true };
+  const { error } = await supabase.from("resources").upsert(payload, { onConflict:"workspace_id,operator_norm" });
+  if(error) throw error;
 
-// ---------- resource modal ----------
-function openResModal(id = null) {
-  editingResourceId = id;
-
-  if (!id) {
-    $("resTitle").textContent = "Aggiungi risorsa";
-    $("resCode").value = "";
-    $("resRole").value = "counter";
-    $("resWeekShift").value = "";
-  } else {
-    const r = guaranteed.find(x => x.id === id);
-    if (!r) return;
-    $("resTitle").textContent = `Modifica risorsa: ${r.operator_code}`;
-    $("resCode").value = r.operator_code;
-    $("resRole").value = r.role;
-
-    const derived = deriveWeekShiftFromSchedule(r.operator_code);
-    const shiftDb = derived ?? r.current_week_shift ?? "";
-    $("resWeekShift").value = uiShift(shiftDb) || "";
-  }
-
-  $("resOverlay").style.display = "flex";
-}
-function closeResModal() {
-  $("resOverlay").style.display = "none";
-  editingResourceId = null;
-}
-
-async function saveResource() {
-  const operator_code = canon($("resCode").value);
-  const role = $("resRole").value;
-  const ui = $("resWeekShift").value || "";
-  const current_week_shift = ui ? dbShift(ui) : null;
-
-  if (!operator_code) { log("⚠️ Account richiesto"); return; }
-
-  const payload = {
-    user_id: user.id,
-    operator_code,
-    role,
-    current_week_shift,
-    active: true,
-    // se l’utente imposta shift da qui => override = true
-    // se lo lascia vuoto => override = false (torna a seguire schedule)
-    shift_override: !!current_week_shift
-  };
-
-  if (editingResourceId) payload.id = editingResourceId;
-
-  const { error } = await supabase
-    .from("resources")
-    .upsert(payload, { onConflict: "user_id,operator_code" });
-
-  if (error) { log("❌ saveResource:", error.message); return; }
-
-  closeResModal();
-  await reloadAll();
-  log("✅ risorsa salvata");
-}
-
-async function removeResource(id) {
-  const r = guaranteed.find(x => x.id === id);
-  if (!r) return;
-  if (!confirm(`Rimuovere ${r.operator_code}?`)) return;
-
-  const { error } = await supabase.from("resources").delete().eq("id", id);
-  if (error) { log("❌ removeResource:", error.message); return; }
-
-  await reloadAll();
-  log("✅ risorsa rimossa");
-}
-
-// ---------- support modal ----------
-function showHideSupportFields() {
-  const kind = $("supKind").value;
-  const isSupport = kind === "support";
-  $("supRealWrap").classList.toggle("hidden", !isSupport);
-  $("supUsedWrap").classList.toggle("hidden", !isSupport);
-}
-
-function openSupportModal(account) {
-  $("supAccount").value = canon(account);
-  $("supTitle").textContent = `Set supporto — ${canon(account)}`;
-
-  $("supDay").value = selectedWeekStart;
-  $("supStart").value = "08:00";
-  $("supEnd").value = "12:00";
-  $("supKind").value = "overtime_counter";
-  $("supReal").value = "";
-  $("supDept").value = "";
-  $("supUsed").value = "";
-  $("supNote").value = "";
-  showHideSupportFields();
-
-  renderSupportSegmentsForAccount(canon(account));
-  $("supOverlay").style.display = "flex";
-}
-
-function closeSupportModal() {
-  $("supOverlay").style.display = "none";
-}
-
-function renderSupportSegmentsForAccount(account) {
-  const tb = $("tblSupSeg").querySelector("tbody");
-  tb.innerHTML = "";
-
-  const rows = supportSegments.filter(s => canon(s.account_used) === canon(account));
-  for (const s of rows) {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${escapeHtml(s.kind)}</td>
-      <td class="mono">${escapeHtml(fmtDT(s.start_dt))}</td>
-      <td class="mono">${escapeHtml(fmtDT(s.end_dt))}</td>
-      <td>${escapeHtml(s.real_name ?? "")}</td>
-      <td><button class="btn danger small" data-del="${s.id}">Del</button></td>
-    `;
-    tb.appendChild(tr);
-  }
-
-  tb.querySelectorAll("[data-del]").forEach(btn => {
-    btn.addEventListener("click", async () => {
-      const id = btn.getAttribute("data-del");
-      if (!confirm("Eliminare segmento supporto?")) return;
-      const { error } = await supabase.from("support_work_segments").delete().eq("id", id);
-      if (error) { log("❌ delete segment:", error.message); return; }
-      await reloadWeek();
-      renderSupportSegmentsForAccount(account);
-    });
-  });
-}
-
-async function saveSupportSegment() {
-  const account = canon($("supAccount").value);
-  const kind = $("supKind").value;
-
-  const day = $("supDay").value;
-  const startT = $("supStart").value;
-  const endT = $("supEnd").value;
-
-  if (!account || !day || !startT || !endT) { log("⚠️ account/giorno/start/end richiesti"); return; }
-
-  const payload = {
-    user_id: user.id,
-    account_used: account,
-    kind,
-    start_dt: `${day}T${startT}:00`,
-    end_dt: `${day}T${endT}:00`,
-    note: $("supNote").value.trim() || null,
-    real_name: null,
-    dept: null,
-    used_resource: null,
-  };
-
-  if (kind === "support") {
-    payload.real_name = $("supReal").value.trim() || null;
-    payload.dept = $("supDept").value || null;
-    payload.used_resource = $("supUsed").value.trim() || null;
-  }
-
-  const { error } = await supabase.from("support_work_segments").insert(payload);
-  if (error) { log("❌ save support segment:", error.message); return; }
-
-  await reloadWeek();
-  renderSupportSegmentsForAccount(account);
-  log("✅ support segment salvato");
-}
-
-// ---------- schedule cell edit ----------
-function parseTimeRange(cell) {
-  const t = String(cell ?? "").trim();
-  const m = t.match(/(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})/);
-  if (!m) return null;
-  const start = m[1].padStart(5,"0");
-  const end = m[2].padStart(5,"0");
-  return { start, end };
-}
-
-function openScheduleCellModal(account, date) {
-  const currentSegs = weekSchedule.filter(s => canon(s.operator_code)===canon(account) && s.work_date===date);
-  const curTxt = currentSegs.map(s => s.status==="present"
-    ? `${String(s.start_time).slice(0,5)}-${String(s.end_time).slice(0,5)}`
-    : (s.status==="vacation"?"ferie":(s.status==="permission"?"perm":s.status))
-  ).join(" | ");
-
-  const val = prompt(
-    `Imposta turno per ${account} @ ${date}\n`+
-    `Esempi: AM | C | PM | ferie | perm | 08:30-16:30 | (vuoto per cancellare)\n\nAttuale: ${curTxt}`,
-    curTxt
-  );
-  if (val === null) return;
-
-  saveScheduleCell(account, date, String(val).trim());
-}
-
-async function saveScheduleCell(account, date, val) {
-  const acc = canon(account);
-
-  // delete existing segments for (acc,date) for simplicity
-  const toDel = weekSchedule.filter(s => canon(s.operator_code)===acc && s.work_date===date);
-  for (const s of toDel) await supabase.from("resource_schedule_segments").delete().eq("id", s.id);
-
-  if (!val) {
-    await reloadWeek();
-    return;
-  }
-
-  const v = val.trim().toLowerCase();
-
-  let row = {
-    user_id: user.id,
-    operator_code: acc,
-    work_date: date,
-    segment_no: 1,
-    status: "present",
-    start_time: null,
-    end_time: null,
-    shift: null,
-    raw_text: null
-  };
-
-  if (v === "ferie") {
-    row.status = "vacation";
-    row.raw_text = "ferie";
-  } else if (v === "perm") {
-    row.status = "permission";
-    row.raw_text = "perm";
-  } else if (["am","c","pm","om"].includes(v)) {
-    const sh = (v === "pm") ? "OM" : v.toUpperCase();
-    row.status = "present";
-    row.shift = sh;
-    row.start_time = SHIFT_TIMES[sh].start;
-    row.end_time = SHIFT_TIMES[sh].end;
-    row.raw_text = `${row.start_time}-${row.end_time}`;
-  } else {
-    const tr = parseTimeRange(val);
-    if (tr) {
-      row.status = "present";
-      row.start_time = tr.start;
-      row.end_time = tr.end;
-      row.raw_text = `${tr.start}-${tr.end}`;
-      row.shift = tr.start.startsWith("05:") ? "AM" : (tr.start.startsWith("14:") ? "OM" : "C");
-    } else {
-      row.status = "other";
-      row.raw_text = val;
-    }
-  }
-
-  const { error } = await supabase.from("resource_schedule_segments").insert(row);
-  if (error) { log("❌ save schedule cell:", error.message); return; }
-
-  await reloadWeek();
-}
-
-// ---------- import schedule ----------
-function parseDateToken(tok) {
-  const t = String(tok ?? "").trim();
-  const m = t.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
-  if (!m) return null;
-  const dd = m[1].padStart(2,"0");
-  const mm = m[2].padStart(2,"0");
-  const yyyy = m[3];
-  return `${yyyy}-${mm}-${dd}`;
-}
-
-function parseScheduleTSV(tsv) {
-  const lines = String(tsv ?? "")
-    .split(/\r?\n/)
-    .map(l => l.replace(/\u00A0/g, " "))
-    .filter(l => l.trim().length > 0);
-
-  const grid = lines.map(l => l.split("\t"));
-  if (grid.length < 3) return { dates: [], rows: [] };
-
-  let dateRow = -1;
-  for (let r = 0; r < grid.length; r++) {
-    const parsed = grid[r].map(parseDateToken).filter(Boolean);
-    if (parsed.length >= 3) { dateRow = r; break; }
-  }
-  if (dateRow === -1) return { dates: [], rows: [] };
-
-  const row = grid[dateRow];
-  let startCol = -1;
-  for (let c = 0; c < row.length; c++) {
-    if (parseDateToken(row[c])) { startCol = c; break; }
-  }
-
-  const dates = [];
-  for (let c = startCol; c < row.length; c++) {
-    const d = parseDateToken(row[c]);
-    if (!d) break;
-    dates.push(d);
-  }
-
-  let dataStartRow = dateRow + 1;
-  if (grid[dataStartRow]) {
-    const hasWeekday = grid[dataStartRow].some(x => /mon|tue|wed|thu|fri|sat|sun/i.test(String(x)));
-    if (hasWeekday) dataStartRow++;
-  }
-
-  const out = [];
-  for (let r = dataStartRow; r < grid.length; r++) {
-    const line = grid[r];
-    const opRaw = String(line[0] ?? "").trim();
-    if (!opRaw) continue;
-
-    const op = canon(opRaw);
-    // import SOLO guaranteed
-    if (!guaranteed.some(x => canon(x.operator_code) === op)) continue;
-
-    for (let i = 0; i < dates.length; i++) {
-      const cell = String(line[startCol + i] ?? "").trim();
-      if (!cell) continue;
-
-      const lower = cell.toLowerCase();
-
-      if (lower.includes("ferie")) {
-        out.push({ user_id:user.id, operator_code:op, work_date:dates[i], segment_no:1, status:"vacation", raw_text:"ferie", start_time:null, end_time:null, shift:null });
-        continue;
-      }
-      if (lower.includes("perm")) {
-        out.push({ user_id:user.id, operator_code:op, work_date:dates[i], segment_no:1, status:"permission", raw_text:"perm", start_time:null, end_time:null, shift:null });
-        continue;
-      }
-
-      const tr = parseTimeRange(cell);
-      if (tr) {
-        const shift = tr.start.startsWith("05:") ? "AM" : (tr.start.startsWith("14:") ? "OM" : "C");
-        out.push({ user_id:user.id, operator_code:op, work_date:dates[i], segment_no:1, status:"present", start_time:tr.start, end_time:tr.end, shift, raw_text:`${tr.start}-${tr.end}` });
-        continue;
-      }
-
-      out.push({ user_id:user.id, operator_code:op, work_date:dates[i], segment_no:1, status:"other", raw_text:cell, start_time:null, end_time:null, shift:null });
-    }
-  }
-
-  return { dates, rows: out };
-}
-
-function openImpModal(){ $("impOverlay").style.display = "flex"; }
-function closeImpModal(){ $("impOverlay").style.display = "none"; }
-
-async function parseImportPaste() {
-  const tsv = $("impPaste").value;
-  const { dates, rows } = parseScheduleTSV(tsv);
-  importPreviewRows = rows;
-
-  if (dates.length) {
-    selectedWeekStart = getWeekStart(dates[0]);
-    setWeekLabel();
-  }
-
-  $("btnSaveImp").disabled = importPreviewRows.length === 0;
-  log(`Import preview rows: ${importPreviewRows.length}`);
-}
-
-async function parseImportXlsx(file) {
-  const buf = await file.arrayBuffer();
-  const wb = XLSX.read(buf, { type: "array" });
-  const ws = wb.Sheets[wb.SheetNames[0]];
-  const tsv = XLSX.utils.sheet_to_csv(ws, { FS: "\t" });
-  $("impPaste").value = tsv;
-  await parseImportPaste();
-}
-
-async function saveImportRows() {
-  if (importPreviewRows.length === 0) return;
-
-  const { error } = await supabase
-    .from("resource_schedule_segments")
-    .upsert(importPreviewRows, { onConflict: "user_id,operator_code,work_date,segment_no" });
-
-  if (error) { log("❌ save import:", error.message); return; }
-
-  importPreviewRows = [];
-  $("btnSaveImp").disabled = true;
-  closeImpModal();
-
-  await reloadWeek();
-}
-
-// ---------- reload flows ----------
-async function recalcSupporti() {
-  const rows = computeSupportiTable(selectedWeekStart);
-  renderSupportiTable(rows);
-  renderSupportSegmentsTable();
-  renderKpi(rows);
-}
-
-async function reloadWeek() {
-  await Promise.all([
-    loadWeekSchedule(selectedWeekStart),
-    loadWeekEvents(selectedWeekStart),
-    loadSupportSegments(selectedWeekStart),
-  ]);
-
-  // sync schedule->resources (solo non override)
-  await syncWeekShiftsToResources();
-  await loadResources(); // ricarico per riflettere sync su current_week_shift
-
-  setWeekLabel();
-  renderResourcesTable();
-  renderWeekTable(selectedWeekStart);
-  await recalcSupporti();
-}
-
-async function reloadAll() {
   await loadResources();
-  await reloadWeek();
+  renderResources();
+  renderSchedule();
+  await loadAccountsIntoSelect();
+  closeResModal();
 }
 
-// ---------- init ----------
-(async function init() {
-  try {
-    user = await ensureAnon();
-    log("✅ user:", user.id);
+let editingSupId=null;
+function openSupModal(seg){
+  editingSupId = seg?.id ?? null;
+  $("supTitle").textContent = editingSupId ? "Modifica supporto" : "Aggiungi supporto";
+  $("supKind").value = seg?.kind ?? "support";
+  $("supAccount").value = seg?.account_used ?? "";
+  $("supReal").value = seg?.real_name ?? "";
+  $("supNote").value = seg?.note ?? "";
 
-    $("btnReset").addEventListener("click", resetSession);
+  // infer day from segment or currentWeek monday
+  const day = seg?.start_dt ? String(seg.start_dt).slice(0,10) : isoDate(currentWeek);
+  $("supDay").value = day;
+  $("supStart").value = seg?.start_dt ? String(seg.start_dt).slice(11,16) : "08:00";
+  $("supEnd").value = seg?.end_dt ? String(seg.end_dt).slice(11,16) : "12:00";
+  toggleSupFields();
+  $("supOverlay").style.display="flex";
+}
+function closeSupModal(){ $("supOverlay").style.display="none"; editingSupId=null; }
 
-    const today = new Date().toISOString().slice(0,10);
-    selectedWeekStart = getWeekStart(today);
-    setWeekLabel();
+function toggleSupFields(){
+  const kind = $("supKind").value;
+  $("supRealWrap").style.display = (kind==="support") ? "" : "none";
+}
 
-    // schedule week arrows
-    $("btnPrevWeek").addEventListener("click", async () => {
-      selectedWeekStart = addDays(selectedWeekStart, -7);
-      await reloadWeek();
-    });
-    $("btnNextWeek").addEventListener("click", async () => {
-      selectedWeekStart = addDays(selectedWeekStart, 7);
-      await reloadWeek();
-    });
+async function saveSupModal(){
+  const kind = $("supKind").value;
+  const account_used = $("supAccount").value.trim();
+  if(!account_used){ alert("Seleziona account"); return; }
+  const real = $("supReal").value.trim();
+  if(kind==="support" && !real){ alert("Inserisci nome reale (es. Hassan)"); return; }
+  const day = $("supDay").value;
+  const start = $("supStart").value;
+  const end = $("supEnd").value;
+  const start_dt = `${day}T${start}:00`;
+  const end_dt = `${day}T${end}:00`;
 
-    // resources group filter
-    $("resGroup").addEventListener("change", renderResourcesTable);
+  const payload = {
+    kind,
+    account_used,
+    account_used_norm: canon(account_used),
+    real_name: kind==="support" ? real : null,
+    real_name_norm: kind==="support" ? canon(real) : "",
+    note: $("supNote").value.trim() || null,
+    start_dt,
+    end_dt
+  };
 
-    // resource modal
-    $("btnAddRes").addEventListener("click", () => openResModal(null));
-    $("btnCloseRes").addEventListener("click", closeResModal);
-    $("btnSaveRes").addEventListener("click", saveResource);
-
-    // support modal
-    $("btnCloseSup").addEventListener("click", closeSupportModal);
-    $("supKind").addEventListener("change", showHideSupportFields);
-    $("btnSaveSupSeg").addEventListener("click", saveSupportSegment);
-
-    // import modal
-    $("btnOpenImport").addEventListener("click", openImpModal);
-    $("btnCloseImp").addEventListener("click", closeImpModal);
-    $("btnParseImp").addEventListener("click", parseImportPaste);
-    $("btnSaveImp").addEventListener("click", saveImportRows);
-    $("impFile").addEventListener("change", async (e) => {
-      const f = e.target.files?.[0];
-      if (!f) return;
-      await parseImportXlsx(f);
-    });
-
-    // Supporti panel recalc (se hai ancora il bottone)
-    if ($("btnReloadSupporti")) {
-      $("btnReloadSupporti").addEventListener("click", reloadWeek);
-    }
-
-    await reloadAll();
-  } catch (e) {
-    log("❌ init:", e?.message ?? String(e));
-    setAuthUI(false, "AUTH ERROR", "-");
+  let res;
+  if(editingSupId){
+    res = await supabase.from("support_work_segments").update(payload).eq("id", editingSupId);
+  }else{
+    res = await supabase.from("support_work_segments").insert(payload);
   }
-})();
+  if(res.error) throw res.error;
+
+  await loadSupportSegments();
+  renderSupportSegments();
+  await reloadSupportiTable();
+  closeSupModal();
+}
+
+function wire(){
+  $("btnPrevWeek")?.addEventListener("click", async ()=>{ currentWeek = addDays(currentWeek,-7); await reloadAll(); });
+  $("btnNextWeek")?.addEventListener("click", async ()=>{ currentWeek = addDays(currentWeek, 7); await reloadAll(); });
+
+  $("supWeek")?.addEventListener("change", async ()=>{
+    const v = $("supWeek").value;
+    if(!v) return;
+    currentWeek = weekStart(new Date(v+"T00:00:00"));
+    await reloadAll();
+  });
+
+  $("btnAddRes")?.addEventListener("click", ()=>openResModal(null));
+  $("btnCloseRes")?.addEventListener("click", closeResModal);
+  $("btnSaveRes")?.addEventListener("click", async ()=>{ try{ await saveResModal(); }catch(e){ log("❌ save resource:", e.message||e); } });
+
+  // schedule save button is btnSaveImp in this UI
+  $("btnSaveImp")?.addEventListener("click", async ()=>{ try{ await saveSchedule(); }catch(e){ log("❌ save schedule:", e.message||e); } });
+
+  // support modal
+  $("btnCloseSup")?.addEventListener("click", closeSupModal);
+  $("btnSaveSupSeg")?.addEventListener("click", async ()=>{ try{ await saveSupModal(); }catch(e){ log("❌ save segment:", e.message||e); } });
+  $("supKind")?.addEventListener("change", toggleSupFields);
+
+  $("btnReloadSupporti")?.addEventListener("click", async ()=>{ await reloadAll(); });
+  $("btnReset")?.addEventListener("click", ()=>{ logEl.textContent=""; });
+}
+
+async function reloadAll(){
+  try{
+    await loadResources();
+    await loadSchedule();
+    await loadSupportSegments();
+    await loadLastActivity();
+    await loadWeekEvents();
+    renderResources();
+    renderSchedule();
+    renderSupportSegments();
+    await loadAccountsIntoSelect();
+    await reloadSupportiTable();
+
+    $("kpiGuaranteed").textContent = String(resources.filter(r=>r.active).length);
+    $("kpiCounters").textContent = String(resources.filter(r=>r.role==="COUNTER" && r.active).length);
+    $("kpiSpecialist").textContent = String(resources.filter(r=>r.role==="SPECIALIST" && r.active).length);
+  }catch(e){
+    log("❌ init:", e.message||e);
+    console.error(e);
+  }
+}
+
+wire();
+reloadAll();
