@@ -128,17 +128,18 @@ function escapeHtml(str) {
 // ---------------------------
 async function ensureAnonymousSession() {
   setAuthUI(false, "checking session...", "-");
-  const { data: s, error } = await supabase.auth.getSession();
-  if (error) throw error;
-  const user = s?.session?.user;
-  if (!user) {
-    setAuthUI(false, "signed-out", "-");
-    const next = encodeURIComponent("index.html");
-    location.href = `./login.html?next=${next}`;
-    throw new Error("Not signed in");
+  const { data: s } = await supabase.auth.getSession();
+
+  if (s?.session?.user) {
+    setAuthUI(true, "signed-in (anon)", s.session.user.id);
+    return s.session.user;
   }
-  setAuthUI(true, "signed-in", user.email ?? user.id);
-  return user;
+
+  const { data, error } = await supabase.auth.signInAnonymously();
+  if (error) throw error;
+
+  setAuthUI(true, "signed-in (anon)", data.user?.id);
+  return data.user;
 }
 
 async function signOut() {

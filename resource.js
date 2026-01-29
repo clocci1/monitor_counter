@@ -141,23 +141,18 @@ function setWeekLabel() {
 }
 
 // ---------- auth ----------
-async function requireSession() {
+async function ensureAnon() {
   setAuthUI(false, "checking session...", "-");
-  const { data, error } = await supabase.auth.getSession();
-  if (error) throw error;
-
-  const user = data?.session?.user;
-  if (!user) {
-    setAuthUI(false, "signed-out", "-");
-    const next = encodeURIComponent("resource.html");
-    location.href = `./login.html?next=${next}`;
-    throw new Error("No session");
+  const { data: s } = await supabase.auth.getSession();
+  if (s?.session?.user) {
+    setAuthUI(true, "signed-in (anon)", s.session.user.id);
+    return s.session.user;
   }
-
-  setAuthUI(true, "signed-in", user.email ?? user.id);
-  return user;
+  const { data, error } = await supabase.auth.signInAnonymously();
+  if (error) throw error;
+  setAuthUI(true, "signed-in (anon)", data.user.id);
+  return data.user;
 }
-
 async function resetSession() {
   await supabase.auth.signOut();
   location.reload();
@@ -182,8 +177,8 @@ async function loadResources() {
 }
 
 async function loadSupportSegments(weekStart) {
-  const from = `${weekStart}T00:00:00Z`;
-  const to = `${addDays(weekStart, 6)}T23:59:59Z`;
+  const from = `${weekStart}T00:00:00`;
+  const to = `${addDays(weekStart, 6)}T23:59:59`;
   const { data, error } = await supabase
     .from("support_work_segments")
     .select("*")
@@ -217,8 +212,8 @@ async function loadWeekSchedule(weekStart) {
 }
 
 async function loadWeekEvents(weekStart) {
-  const from = `${weekStart}T00:00:00Z`;
-  const to = `${addDays(weekStart, 6)}T23:59:59Z`;
+  const from = `${weekStart}T00:00:00`;
+  const to = `${addDays(weekStart, 6)}T23:59:59`;
 
   const PAGE = 1000;
   let fromIx = 0;
@@ -630,10 +625,10 @@ function openSupportModal(account) {
   $("supTitle").textContent = `Set supporto — ${canon(account)}`;
 
   $("supDay").value = selectedWeekStart;
-  $("supStart").value = "08:00";
-  $("supEnd").value = "12:00";
-  $("supKind").value = "overtime_counter";
-  $("supReal").value = "";
+  $("supStart").value = "";
+  $("supEnd").value = "";
+  $("supKind").value = "support";
+    $("supReal").value = "";
   $("supDept").value = "";
   $("supUsed").value = "";
   $("supNote").value = "";
@@ -690,8 +685,8 @@ async function saveSupportSegment() {
     user_id: user.id,
     account_used: account,
     kind,
-    start_dt: `${day}T${startT}:00`,
-    end_dt: `${day}T${endT}:00`,
+    start_dt: `${day} ${startT}:00`,
+    end_dt: `${day} ${endT}:00`,
     note: $("supNote").value.trim() || null,
     real_name: null,
     dept: null,
@@ -958,7 +953,7 @@ async function reloadAll() {
 // ---------- init ----------
 (async function init() {
   try {
-    user = await requireSession();
+    user = await ensureAnon();
     log("✅ user:", user.id);
 
     $("btnReset").addEventListener("click", resetSession);

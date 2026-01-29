@@ -7,8 +7,6 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 const $ = (id) => document.getElementById(id);
 const logEl = $("log");
 
-function canon(v){ return String(v ?? "").trim().toUpperCase(); }
-
 function dt(dateStr, timeStr) {
   return new Date(`${dateStr}T${String(timeStr).slice(0,5)}:00`);
 }
@@ -34,7 +32,7 @@ function buildWindowsMap(sched, supSeg) {
 
   // schedule -> garantiti
   for (const s of (sched ?? [])) {
-    const op = canon(s.operator_code);
+    const op = (s.operator_code ?? "").trim();
     if (!op) continue;
     if (s.status !== "present") continue;
     if (!s.start_time || !s.end_time) continue;
@@ -44,7 +42,7 @@ function buildWindowsMap(sched, supSeg) {
 
   // support segments -> persone reali
   for (const seg of (supSeg ?? [])) {
-    const real = canon(seg.real_name);
+    const real = (seg.real_name ?? "").trim();
     if (!real) continue;
 
     const a = new Date(seg.start_dt);
@@ -101,6 +99,17 @@ function hasSchedule(windowsMap, operator, day) {
   return (windowsMap.get(`${operator}__${day}`) ?? []).length > 0;
 }
 
+// quando selezioni operatore + giorno:
+if (hasSchedule(windowsMap, operator, day)) {
+  shiftSelect.disabled = true;
+  shiftSelect.style.display = "none";     // oppure lo disabiliti e lo lasci visibile
+  shiftLabel.textContent = "Shift da schedule";
+} else {
+  shiftSelect.disabled = false;
+  shiftSelect.style.display = "";
+  shiftLabel.textContent = "Shift manuale";
+}
+
 
 
 const PAUSE_THRESHOLD_SEC = 30 * 60;
@@ -112,9 +121,6 @@ const SHIFTS = {
 };
 
 let currentUser = null;
-let windowsMap = new Map(); // schedule/support windows (popolato in loadBaseRangeAndRender)
-let supportSegCache = [];
-
 let cachedEvents = [];          // fetched for base range
 let effectiveEvents = [];       // after items + chip filter
 let currentOperator = null;
@@ -214,23 +220,18 @@ function categoryToCssBg(cat) {
 }
 
 // -------------------- Auth --------------------
-async function requireSession() {
+async function ensureAnonymousSession() {
   setAuthUI(false, "checking session...", "-");
-  const { data, error } = await supabase.auth.getSession();
-  if (error) throw error;
-
-  const user = data?.session?.user;
-  if (!user) {
-    setAuthUI(false, "signed-out", "-");
-    const next = encodeURIComponent("overview.html");
-    location.href = `./login.html?next=${next}`;
-    throw new Error("No session");
+  const { data: s } = await supabase.auth.getSession();
+  if (s?.session?.user) {
+    setAuthUI(true, "signed-in (anon)", s.session.user.id);
+    return s.session.user;
   }
-
-  setAuthUI(true, "signed-in", user.email ?? user.id);
-  return user;
+  const { data, error } = await supabase.auth.signInAnonymously();
+  if (error) throw error;
+  setAuthUI(true, "signed-in (anon)", data.user?.id);
+  return data.user;
 }
-
 
 async function resetSession() {
   setBusy(true);
@@ -304,6 +305,29 @@ function computeEffectiveDays() {
 
   if (!from || !to) return [];
 
+  // 1) Schedule (turni) nel range
+const { data: sched, error: schedErr } = await supabase
+  .from("resource_schedule_segments")
+  .select("operator_code, work_date, status, start_time, end_time, shift")
+  .gte("work_date", from)
+  .lte("work_date", to);
+
+if (schedErr) throw schedErr;
+
+// 2) Support segments reali nel range
+const { data: supSeg, error: supErr } = await supabase
+  .from("support_work_segments")
+  .select("account_used, real_name, start_dt, end_dt, kind")
+  .gte("start_dt", from + "T00:00:00")
+  .lte("end_dt", to + "T23:59:59")
+  .eq("kind", "support");
+
+if (supErr) throw supErr;
+
+// 3) Build windows map (turni effettivi per persona)
+const windowsMap = buildWindowsMap(sched, supSeg);
+
+
   const baseDays = dateRangeList(from, to);
 
   if (picked.length === 0) return baseDays;
@@ -320,7 +344,6 @@ function computeEffectiveDays() {
   return baseDays.filter(d => picked.includes(monthKey(new Date(`${d}T00:00:00`))));
 }
 
-
 // -------------------- Fetch ALL events for base range (pagination) --------------------
 async function fetchEventsAll(fromDay, toDay) {
   const start = `${fromDay}T00:00:00`;
@@ -335,7 +358,7 @@ async function fetchEventsAll(fromDay, toDay) {
 
     const { data, error } = await supabase
       .from("v_operator_events_effective")
-      .select("event_dt, source, category, warehouse_order, created_by, counter, operator_code")
+      .select("event_dt, source, category, warehouse_order, operator_code_effective, operator_base, operator_code")
       .gte("event_dt", start)
       .lte("event_dt", end)
       .order("operator_code", { ascending: true })
@@ -349,73 +372,22 @@ async function fetchEventsAll(fromDay, toDay) {
 
     if (batch.length < PAGE) break;
     from += PAGE;
-    if (from > 150000) break;
+    if (from > 100000) break;
   }
 
-  // normalizza campi attesi dall'app
-  for (const e of all) {
-    e.operator_code = canon(e.operator_code); // account usato (per ora)
-    e.operator_base = e.operator_code;        // alias compatibilità
-    e.created_by = e.created_by ? canon(e.created_by) : null;
-    e.counter = e.counter ? canon(e.counter) : null;
-  }
+events.forEach(e => {
+  e.operator = (e.operator_code_effective ?? e.operator_code ?? "").trim();
+  e.account_used = (e.operator_base ?? e.operator_code ?? "").trim(); // account realmente usato
+});
 
-  // rimappa su "persona effettiva" se c'è un segmento Supporto
-  applySupportMappingInPlace(all);
+
+  // tieni anche la base (account usato)
+  e.operator_base = String(e.operator_base ?? e.operator_original ?? "").trim();
+});
+
 
   return all;
 }
-
-function applySupportMappingInPlace(events) {
-  // indicizza segmenti: account -> [ {start,end,real}... ] (ordinati per start)
-  const byAcc = new Map();
-
-  for (const s of (supportSegCache ?? [])) {
-    const acc = canon(s.account_used);
-    const real = canon(s.real_name);
-    if (!acc || !real) continue;
-
-    const a = new Date(s.start_dt);
-    const b = new Date(s.end_dt);
-    if (isNaN(a.getTime()) || isNaN(b.getTime())) continue;
-
-    if (!byAcc.has(acc)) byAcc.set(acc, []);
-    byAcc.get(acc).push({ start: a, end: b, real });
-  }
-
-  for (const [acc, list] of byAcc.entries()) {
-    list.sort((x, y) => x.start - y.start);
-    byAcc.set(acc, list);
-  }
-
-  // events sono già ordinati per account e tempo -> scansione lineare per account
-  let curAcc = null;
-  let segs = null;
-  let j = 0;
-
-  for (const e of events) {
-    const base = canon(e.operator_base ?? e.operator_code);
-    const t = new Date(e.event_dt);
-    if (isNaN(t.getTime())) continue;
-
-    if (base !== curAcc) {
-      curAcc = base;
-      segs = byAcc.get(base) ?? null;
-      j = 0;
-    }
-
-    let eff = base;
-    if (segs) {
-      while (j < segs.length && t >= segs[j].end) j++;
-      if (j < segs.length && t >= segs[j].start && t < segs[j].end) eff = segs[j].real;
-    }
-
-    e.operator_base = base;
-    e.operator_code = eff;
-  }
-}
-
-
 
 // -------------------- Category mapping --------------------
 function mapCatForUI(ev) {
@@ -879,7 +851,7 @@ async function openDrilldown(operator) {
 
 // -------------------- Support modal --------------------
 function openSupportModal(supportAccount) {
-  supportAccountOpen = supportAccount;
+  supportAccountOpen = canonAccount(supportAccount);
   $("supportTitle").textContent = `Supporto account: ${supportAccount}`;
   $("supportSubtitle").textContent = `Assegna fasce Start-End a un operatore reale.`;
 
@@ -901,6 +873,8 @@ function dtLocalToTimestamp(val) {
   return val.replace("T", " ") + ":00";
 }
 
+function canonAccount(x){return String(x||"").trim().toUpperCase().replace(/\s+/g,"");}
+
 async function loadSupportRanges() {
   const tb = $("tblSupportRanges").querySelector("tbody");
   tb.innerHTML = "";
@@ -908,7 +882,7 @@ async function loadSupportRanges() {
 
   const { data, error } = await supabase
     .from("support_work_segments")
-    .select("id,real_name,start_dt,end_dt,dept")
+    .select("id,real_name,start_dt,end_dt,dept,used_resource")
     .eq("account_used", supportAccountOpen).eq("kind","support")
     .order("start_dt", { ascending: false });
 
@@ -917,7 +891,7 @@ async function loadSupportRanges() {
   for (const r of (data ?? [])) {
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td>${escapeHtml(r.real_name ?? "")}</td>
+      <td>${escapeHtml(r.real_name || "")}</td>
       <td class="mono">${escapeHtml(String(r.start_dt))}</td>
       <td class="mono">${escapeHtml(String(r.end_dt))}</td>
       <td><button class="btn danger" data-del="${r.id}">Elimina</button></td>
@@ -1074,36 +1048,6 @@ function recomputeFromCached() {
   $("drilldownSection").style.display = "none";
 }
 
-async function loadWindowsMap(fromDay, toDay) {
-  try {
-    const { data: sched, error: schedErr } = await supabase
-      .from("resource_schedule_segments")
-      .select("operator_code, work_date, status, start_time, end_time, shift")
-      .gte("work_date", fromDay)
-      .lte("work_date", toDay);
-
-    if (schedErr) throw schedErr;
-
-    const { data: supSeg, error: supErr } = await supabase
-      .from("support_work_segments")
-      .select("account_used, real_name, start_dt, end_dt, kind")
-      .gte("start_dt", fromDay + "T00:00:00Z")
-      .lte("end_dt", toDay + "T23:59:59Z")
-      .eq("kind", "support");
-
-    if (supErr) throw supErr;
-
-    supportSegCache = (supSeg ?? []);
-    windowsMap = buildWindowsMap(sched ?? [], supportSegCache);
-    log(`windowsMap loaded: ${windowsMap.size} keys`);
-  } catch (e) {
-    // non bloccare overview se schedule/support non disponibili
-    windowsMap = new Map();
-    log("⚠️ windowsMap not loaded:", e?.message ?? String(e));
-  }
-}
-
-
 async function loadBaseRangeAndRender() {
   const fromDay = $("fromDate").value;
   const toDay = $("toDate").value;
@@ -1111,12 +1055,8 @@ async function loadBaseRangeAndRender() {
 
   setBusy(true);
   try {
-    await loadWindowsMap(fromDay, toDay);
-
     cachedEvents = await fetchEventsAll(fromDay, toDay);
     log(`Loaded events (base range): ${cachedEvents.length}`);
-
-
     recomputeFromCached();
   } catch (e) {
     log("❌ load error:", e?.message ?? String(e));
@@ -1165,7 +1105,7 @@ function exportIntervalsCsv() {
   log("Init overview...");
 
   try {
-    currentUser = await requireSession();
+    currentUser = await ensureAnonymousSession();
     log("✅ Session:", currentUser.id);
 
     // strip arrows
