@@ -99,25 +99,14 @@ function hasSchedule(windowsMap, operator, day) {
   return (windowsMap.get(`${operator}__${day}`) ?? []).length > 0;
 }
 
-// quando selezioni operatore + giorno:
-if (hasSchedule(windowsMap, operator, day)) {
-  shiftSelect.disabled = true;
-  shiftSelect.style.display = "none";     // oppure lo disabiliti e lo lasci visibile
-  shiftLabel.textContent = "Shift da schedule";
-} else {
-  shiftSelect.disabled = false;
-  shiftSelect.style.display = "";
-  shiftLabel.textContent = "Shift manuale";
-}
-
-
-
 const PAUSE_THRESHOLD_SEC = 30 * 60;
 
 const SHIFTS = {
   AM: { start: "05:00", end: "13:00" },
   C:  { start: "08:00", end: "16:00" },
-  OM: { start: "14:00", end: "22:00" },
+  PM: { start: "14:00", end: "22:00" },
+  OM: { start: "14:00", end: "22:00" }, // compat
+
 };
 
 let currentUser = null;
@@ -357,7 +346,7 @@ async function fetchEventsAll(fromDay, toDay) {
     const to = from + PAGE - 1;
 
     const { data, error } = await supabase
-      .from("v_operator_events_effective")
+      .from("v_operator_events_effective_plus_support")
       .select("event_dt, source, category, warehouse_order, operator_code_effective, operator_base, operator_code")
       .gte("event_dt", start)
       .lte("event_dt", end)
@@ -851,7 +840,7 @@ async function openDrilldown(operator) {
 
 // -------------------- Support modal --------------------
 function openSupportModal(supportAccount) {
-  supportAccountOpen = canonAccount(supportAccount);
+  supportAccountOpen = supportAccount;
   $("supportTitle").textContent = `Supporto account: ${supportAccount}`;
   $("supportSubtitle").textContent = `Assegna fasce Start-End a un operatore reale.`;
 
@@ -873,17 +862,15 @@ function dtLocalToTimestamp(val) {
   return val.replace("T", " ") + ":00";
 }
 
-function canonAccount(x){return String(x||"").trim().toUpperCase().replace(/\s+/g,"");}
-
 async function loadSupportRanges() {
   const tb = $("tblSupportRanges").querySelector("tbody");
   tb.innerHTML = "";
   if (!supportAccountOpen) return;
 
   const { data, error } = await supabase
-    .from("support_work_segments")
-    .select("id,real_name,start_dt,end_dt,dept,used_resource")
-    .eq("account_used", supportAccountOpen).eq("kind","support")
+    .from("support_assignments")
+    .select("id,real_operator,start_dt,end_dt")
+    .eq("support_account", supportAccountOpen)
     .order("start_dt", { ascending: false });
 
   if (error) { log("❌ loadSupportRanges:", error.message); return; }
@@ -891,7 +878,7 @@ async function loadSupportRanges() {
   for (const r of (data ?? [])) {
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td>${escapeHtml(r.real_name || "")}</td>
+      <td>${escapeHtml(r.real_operator)}</td>
       <td class="mono">${escapeHtml(String(r.start_dt))}</td>
       <td class="mono">${escapeHtml(String(r.end_dt))}</td>
       <td><button class="btn danger" data-del="${r.id}">Elimina</button></td>
@@ -902,7 +889,7 @@ async function loadSupportRanges() {
   tb.querySelectorAll("[data-del]").forEach(btn => {
     btn.addEventListener("click", async () => {
       const id = btn.getAttribute("data-del");
-      await supabase.from("support_work_segments").delete().eq("id", id);
+      await supabase.from("support_assignments").delete().eq("id", id);
       await loadSupportRanges();
     });
   });
@@ -917,11 +904,10 @@ async function addSupportRange() {
 
   if (!realOperator || !start || !end) { log("⚠️ Compila Supporto reale + Start + End"); return; }
 
-  const { error } = await supabase.from("support_work_segments").insert({
+  const { error } = await supabase.from("support_assignments").insert({
     user_id: currentUser.id,
-    account_used: supportAccountOpen,
-    kind: "support",
-    real_name: realOperator,
+    support_account: supportAccountOpen,
+    real_operator: realOperator,
     start_dt: start,
     end_dt: end,
   });

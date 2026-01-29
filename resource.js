@@ -18,7 +18,9 @@ const ALIAS_MAP = new Map([
 const SHIFT_TIMES = {
   AM: { start: "05:00", end: "13:00" },
   C:  { start: "08:00", end: "16:00" },
-  OM: { start: "14:00", end: "22:00" },
+  PM: { start: "14:00", end: "22:00" },
+  OM: { start: "14:00", end: "22:00" }, // compat
+
 };
 
 let user = null;
@@ -625,10 +627,10 @@ function openSupportModal(account) {
   $("supTitle").textContent = `Set supporto — ${canon(account)}`;
 
   $("supDay").value = selectedWeekStart;
-  $("supStart").value = "";
-  $("supEnd").value = "";
-  $("supKind").value = "support";
-    $("supReal").value = "";
+  $("supStart").value = "08:00";
+  $("supEnd").value = "12:00";
+  $("supKind").value = "overtime_counter";
+  $("supReal").value = "";
   $("supDept").value = "";
   $("supUsed").value = "";
   $("supNote").value = "";
@@ -685,8 +687,8 @@ async function saveSupportSegment() {
     user_id: user.id,
     account_used: account,
     kind,
-    start_dt: `${day} ${startT}:00`,
-    end_dt: `${day} ${endT}:00`,
+    start_dt: `${day}T${startT}:00`,
+    end_dt: `${day}T${endT}:00`,
     note: $("supNote").value.trim() || null,
     real_name: null,
     dept: null,
